@@ -322,7 +322,7 @@ struct ServerCmd: ParsableCommand {
         commandName: "server",
         abstract: "Manage LAN machines with names under mpd.test (proxmox, forge, runner, …).",
         subcommands: [
-            ServerAddCmd.self, ServerListCmd.self, ServerRmCmd.self,
+            ServerAddCmd.self, ServerListCmd.self, ServerDeleteCmd.self,
             ServerCertCmd.self, ServerDeployCmd.self, ServerSyncCmd.self,
         ],
         defaultSubcommand: ServerListCmd.self
@@ -365,10 +365,14 @@ struct ServerListCmd: ParsableCommand {
     func run() throws { try MpdVirt.ServerAdmin.list(etcHosts: etcHosts) }
 }
 
-struct ServerRmCmd: ParsableCommand {
+struct ServerDeleteCmd: ParsableCommand {
+    // `delete`, not `rm`, to match `mpd-virt delete <NNN>` for VMs — one
+    // word for "remove a thing mpd-virt tracks". `rm` stays as an alias so
+    // the muscle memory of anyone who used the earlier spelling still works.
     static let configuration = CommandConfiguration(
-        commandName: "rm",
-        abstract: "Forget a LAN server and delete its certificate + key."
+        commandName: "delete",
+        abstract: "Forget a LAN server and delete its certificate + key.",
+        aliases: ["rm"]
     )
 
     @Argument(help: "Server name.")
@@ -377,7 +381,7 @@ struct ServerRmCmd: ParsableCommand {
     @Flag(name: .customLong("yes"), help: "Skip the confirmation prompt.")
     var assumeYes: Bool = false
 
-    func run() throws { try MpdVirt.ServerAdmin.rm(name: name, assumeYes: assumeYes) }
+    func run() throws { try MpdVirt.ServerAdmin.delete(name: name, assumeYes: assumeYes) }
 }
 
 struct ServerCertCmd: ParsableCommand {

@@ -295,11 +295,11 @@ ssh mpd-126 'podman run --rm --network mpd-internal alpine \
 ## Removing one
 
 ```sh
-mpd-virt server rm forge
+mpd-virt server delete forge
 mpd-virt server sync --all      # retract the name inside the VMs
 ```
 
-`rm` deletes the certificate and key along with the registry entry —
+`delete` deletes the certificate and key along with the registry entry —
 keeping key material for a machine nothing tracks is how an
 unaccounted-for private key ends up on disk. It cannot remove the copy
 already installed on the server; do that there.

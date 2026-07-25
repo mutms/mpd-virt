@@ -2,14 +2,15 @@
 //
 //   mpd-virt server add    <name> --ip <addr> [--kind <k>] [--ssh <user@host>]
 //   mpd-virt server list   [--etc-hosts]
-//   mpd-virt server rm     <name>
+//   mpd-virt server delete <name>            (alias: rm)
 //   mpd-virt server cert   <name> [--san <extra>]… [--force]
 //   mpd-virt server deploy <name>
 //   mpd-virt server sync   [<NNN> | --all]
 //
 // The registry model lives in `Server.swift`; this file is the user
-// interface to it. See `docs/proposals/lan-service-certificates.md` for
-// why LAN services get root-signed leaves while VMs get intermediates.
+// interface to it. `docs/LAN_SERVERS.md` is the operator-facing reference:
+// why LAN services get root-signed leaves while VMs get intermediates, and
+// what to install on each machine.
 
 import Foundation
 
@@ -102,9 +103,9 @@ extension MpdVirt.ServerAdmin {
         return "valid, \(days)d left"
     }
 
-    // MARK: - rm
+    // MARK: - delete
 
-    static func rm(name rawName: String, assumeYes: Bool) throws {
+    static func delete(name rawName: String, assumeYes: Bool) throws {
         let name = try MpdVirt.Server.normalise(rawName)
         let entry = try MpdVirt.Server.load(name)
 
@@ -320,7 +321,7 @@ extension MpdVirt.ServerAdmin {
     ///
     /// Always pushes, even with no servers registered: the file is then
     /// empty of records, which is what retracts names after the last
-    /// `server rm`.
+    /// `server delete`.
     static func pushHosts(to target: MpdVirt.Host.Ssh.Target) throws {
         let path = try MpdVirt.Server.writeHostsFile()
         try MpdVirt.Host.Ssh.put(
