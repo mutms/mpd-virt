@@ -156,11 +156,37 @@ MPD_VM_RAM=8G                    # diagnostic
 ```
 ~/.mpd-virt/                       ← everything mpd-virt owns
 ├── conf/                          ← identity (survives every `delete`)
-│   ├── caroot/{rootCA.pem,rootCA-key.pem}
+│   ├── caroot/
+│   │   ├── rootCA.pem             ← trust anchor; pushed to VMs, trusted in the Keychain
+│   │   ├── rootCA-key.pem         ← 0600. NEVER leaves this Mac
+│   │   └── rootCA.srl             ← serial counter
 │   ├── service/
 │   └── backend.env                ← MPD_VIRT_DEFAULT_BACKEND=<name>
-└── <NNN>/env                      ← per-VM registry entry (see Registry above)
+└── <NNN>/                         ← per-VM, removed by `delete`
+    ├── env                        ← registry entry (see Registry above)
+    └── ca/
+        ├── vmCA.pem               ← this VM's signing CA, signed by the root
+        └── vmCA-key.pem           ← 0600. Pushed to the VM — see below
 ```
+
+**Why two CAs.** The root's private key never leaves this Mac. Each VM
+instead gets its own intermediate, name-constrained to that VM's zone
+alone (`permitted;DNS:<NNN>.mpd.test`, `pathlen:0`), which the in-VM
+`mpd` uses to sign its service and project certificates:
+
+```
+mpd Root CA                        key: this Mac, and only this Mac
+└── mpd VM 200 CA                  key: pushed to VM 200
+      permitted;DNS:200.mpd.test
+      └── 200.mpd.test, moodle.200.mpd.test, …   signed inside the VM
+```
+
+So a compromised VM can forge names in its own zone and nowhere else —
+not another VM's zone, and not names issued directly under `mpd.test`.
+The VM CA lives under `<NNN>/` rather than `conf/` because that is its
+lifetime: `delete` takes it with the VM, and a re-created VM at the same
+octet gets a fresh one. Its validity is capped by whatever the root has
+left, since nothing may outlive its issuer.
 
 Octet range for managed VMs: `100–254` (Parallels Shared DHCP owns 1–99).
 The sandbox VM uses ID `000` and lives in the main mpd repo's sandbox
