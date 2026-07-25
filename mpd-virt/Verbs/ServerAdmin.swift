@@ -273,11 +273,17 @@ extension MpdVirt.ServerAdmin {
             ]
         case .forgejo:
             return [
+                "# Destination is whatever CERT_FILE / KEY_FILE name in app.ini —",
+                "# the default below is Forgejo's documented location, not a rule.",
+                "# Both must be readable by the user Forgejo runs as.",
                 "ssh \(target) '\(sudo)install -o git -g git -m 644 /tmp/cert.pem \\",
                 "    /var/lib/forgejo/custom/https/cert.pem && \\",
                 "    \(sudo)install -o git -g git -m 600 /tmp/key.pem \\",
                 "    /var/lib/forgejo/custom/https/key.pem && \(sudo)systemctl restart forgejo'",
-                "# app.ini needs PROTOCOL = https plus CERT_FILE / KEY_FILE under [server].",
+                "",
+                "# app.ini [server] needs PROTOCOL = https, ROOT_URL, CERT_FILE, KEY_FILE.",
+                "# Serving :443 as a non-root user also needs the unit to grant",
+                "# AmbientCapabilities=CAP_NET_BIND_SERVICE.",
             ]
         case .caddy:
             return [
