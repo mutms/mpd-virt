@@ -98,9 +98,14 @@ extension MpdVirt.Setup {
         try MpdVirt.Host.Ssh.ensureKeyAuth(initialTarget)
         info("SSH: key auth works")
 
-        // 2. CA — generate on first run, reuse thereafter.
+        // 2. CA — generate on first run, reuse thereafter. The root stays
+        // here; what goes to the VM is a per-VM intermediate constrained
+        // to this VM's zone, so the VM can sign its own certs without
+        // being able to name anything outside `<NNN>.mpd.test`.
         try MpdVirt.CA.loadOrGenerate()
         info("CA: \(MpdVirt.CA.certPath)")
+        try MpdVirt.CA.loadOrGenerateVMCA(octet: octet)
+        info("VM CA: \(MpdVirt.CA.vmCertPath(octet: octet)) (\(MpdVirt.Net.zone(octet: octet)) only)")
 
         // 3. VM-side bootstrap. Skipped only when the registry already
         // exists (the VM was previously claimed) AND it's reachable at
@@ -127,7 +132,8 @@ extension MpdVirt.Setup {
                 canonicalIP: canonicalIP,
                 username: username,
                 caCertPath: MpdVirt.CA.certPath,
-                caKeyPath: MpdVirt.CA.keyPath,
+                vmCaCertPath: MpdVirt.CA.vmCertPath(octet: octet),
+                vmCaKeyPath: MpdVirt.CA.vmKeyPath(octet: octet),
                 onCanonicalIPReady: {
                     // Backend-specific post-rename work (Parallels:
                     // rename Parallels VM to mpd-<NNN> so the GUI

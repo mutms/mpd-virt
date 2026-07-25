@@ -63,14 +63,20 @@ extension MpdVirt.Bootstrap.RunInVM {
     ///     `Backend.canonicalIP(octet:)`.
     ///   - username: dev user inside the VM (must already have SSH key
     ///     trust on the host's id_ed25519 / agent).
-    ///   - caCertPath: local path to the CA public cert.
+    ///   - caCertPath: local path to the root CA public cert — the trust
+    ///     anchor. Public material; the root's private key stays on the Mac.
+    ///   - vmCaCertPath: local path to this VM's signing certificate.
+    ///   - vmCaKeyPath: local path to this VM's signing key. This one is
+    ///     private and does travel — it is name-constrained to this VM's
+    ///     zone, which is the point.
     static func run(
         octet: Int,
         initialIP: String,
         canonicalIP: String,
         username: String,
         caCertPath: String,
-        caKeyPath: String,
+        vmCaCertPath: String,
+        vmCaKeyPath: String,
         /// Fires the instant the VM is confirmed reachable at the
         /// canonical IP. This is the "point of no return" — the VM has
         /// the right hostname, the right IP, and is committed to being
@@ -115,25 +121,34 @@ extension MpdVirt.Bootstrap.RunInVM {
 
         // Push host-generated material into the VM. /var/lib/mpd is
         // dev-user-owned after step 20.
+        // The trust anchor. Public material — this is what the VM's three
+        // trust stores (system, NSS, Firefox policy) are told to trust.
         try pushFile(
             initialTarget,
-            title: "push CA cert",
+            title: "push root CA cert",
             localPath: caCertPath,
             remotePath: "/var/lib/mpd/conf/caroot/rootCA.pem",
             mode: 0o644
         )
-        // The CA private key needs to land on the VM too — the in-VM
-        // `mpd --vm-setup` uses it to sign the service certificate caddy
-        // serves the zone apex and adminer with, and a leaf cert per
-        // project. Threat model is OK:
-        // the CA is name-constrained to *.mpd.test, and a VM-root
-        // compromise already implies the attacker has the dev's
-        // privileges inside the VM, so the marginal exposure is small.
+        // The signing CA. `mpd --vm-setup` signs the service certificate
+        // caddy serves the zone apex and adminer with, plus a leaf per
+        // project, so a private key has to be here — but it is this VM's
+        // own intermediate, name-constrained to `<NNN>.mpd.test`, not the
+        // root. Rooting this VM therefore buys the ability to forge names
+        // in a zone the attacker already controls, and nothing more. The
+        // root's private key has never been on a VM and never will be.
         try pushFile(
             initialTarget,
-            title: "push CA key",
-            localPath: caKeyPath,
-            remotePath: "/var/lib/mpd/conf/caroot/rootCA-key.pem",
+            title: "push VM CA cert",
+            localPath: vmCaCertPath,
+            remotePath: "/var/lib/mpd/conf/caroot/vmCA.pem",
+            mode: 0o644
+        )
+        try pushFile(
+            initialTarget,
+            title: "push VM CA key",
+            localPath: vmCaKeyPath,
+            remotePath: "/var/lib/mpd/conf/caroot/vmCA-key.pem",
             mode: 0o600
         )
 

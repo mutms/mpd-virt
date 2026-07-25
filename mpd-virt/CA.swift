@@ -20,6 +20,22 @@
 // File layout under `caRootDir`:
 //   rootCA.pem      — public cert. Pushed to VMs, trusted in System Keychain.
 //   rootCA-key.pem  — private key. NEVER leaves the Mac.
+//   rootCA.srl      — serial counter, so no two issued certs collide.
+//
+// "NEVER leaves the Mac" is literal, and it is why there is a second CA
+// here. Each VM gets its own intermediate under `~/.mpd-virt/<NNN>/ca/`,
+// signed by the root and name-constrained to that VM's zone alone:
+//
+//   mpd Root CA                         (key: this Mac, and only this Mac)
+//   └── mpd VM 200 CA                   (key: pushed to VM 200)
+//         permitted;DNS:200.mpd.test
+//         └── 200.mpd.test, moodle.200.mpd.test, …   signed inside the VM
+//
+// The VM signs its own service and project certificates, as it always
+// did, but with a CA that cannot name anything outside its own zone. A
+// compromised VM can therefore forge `*.200.mpd.test` and nothing else —
+// not another VM's zone, and not the names this Mac issues directly for
+// LAN services under `mpd.test`. See `generateVMCA`.
 
 import Foundation
 
@@ -130,6 +146,187 @@ extension MpdVirt.CA {
         // Tighten permissions on the private key.
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyPath)
         try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: certPath)
+    }
+
+    // MARK: - Per-VM signing CA
+
+    /// Longest an intermediate may live. 397 days is the macOS leaf
+    /// ceiling; the intermediate is not a leaf, but nothing signed by it
+    /// may outlive it, so keeping the two in step avoids a CA that is
+    /// alive while every certificate under it has expired.
+    private static let maxIntermediateDays = 397
+
+    /// Per-VM CA directory: `~/.mpd-virt/<NNN>/ca/`.
+    ///
+    /// Under the per-VM directory rather than `conf/`, so
+    /// `Registry.remove(octet:)` takes it with the VM. That is the
+    /// intended lifetime: the certificates this CA signed all named a VM
+    /// that no longer exists, and a re-created VM at the same octet gets
+    /// a fresh CA and fresh leaves.
+    static func vmCaDir(octet: Int) -> String { "\(MpdVirt.vmDir(octet: octet))/ca" }
+
+    /// This VM's signing certificate — public, pushed to the VM, and
+    /// served alongside every leaf the VM signs.
+    static func vmCertPath(octet: Int) -> String { "\(vmCaDir(octet: octet))/vmCA.pem" }
+
+    /// This VM's signing key. Mode 0600 here and on the VM. Unlike the
+    /// root key, this one is *meant* to travel — that is the point.
+    static func vmKeyPath(octet: Int) -> String { "\(vmCaDir(octet: octet))/vmCA-key.pem" }
+
+    /// Are both halves of this VM's CA present?
+    static func vmExists(octet: Int) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: vmCertPath(octet: octet))
+            && fm.fileExists(atPath: vmKeyPath(octet: octet))
+    }
+
+    /// Return this VM's signing CA, generating + persisting one if absent.
+    /// Idempotent, like `loadOrGenerate`.
+    static func loadOrGenerateVMCA(octet: Int) throws {
+        if vmExists(octet: octet) { return }
+        try generateVMCA(octet: octet)
+    }
+
+    /// Force-generate this VM's signing CA, overwriting any existing
+    /// files. Signed by the root, name-constrained to this VM's zone.
+    ///
+    /// The constraint is the entire point of the exercise. VM 200's CA
+    /// carries `permitted;DNS:200.mpd.test`, so a leaf it signs for
+    /// `201.mpd.test` — or for `forge.mpd.test` — is rejected by every
+    /// verifier that implements RFC 5280, which includes the macOS
+    /// Security framework and OpenSSL/LibreSSL. A rooted VM can therefore
+    /// mint certificates for its own names and for nothing else, which is
+    /// what makes it safe to hand `*.mpd.test` names to real machines on
+    /// the LAN.
+    static func generateVMCA(octet: Int) throws {
+        let fm = FileManager.default
+        try loadOrGenerate()
+        try assertRootCanSignIntermediates()
+
+        // Nothing may outlive its issuer: a certificate valid past the
+        // date its CA expires simply stops verifying, on a day nobody
+        // wrote down. Cap to whatever the root has left.
+        let rootDaysLeft = try daysUntilExpiry()
+        guard rootDaysLeft > 0 else {
+            throw MpdVirt.BackendError.other("""
+                The mpd root CA at \(certPath) expired \(-rootDaysLeft) day(s) ago.
+                Regenerate and re-trust it before setting up a VM.
+                """)
+        }
+        let days = min(maxIntermediateDays, rootDaysLeft)
+
+        try fm.createDirectory(
+            atPath: vmCaDir(octet: octet), withIntermediateDirectories: true
+        )
+        try fm.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: vmCaDir(octet: octet)
+        )
+
+        let zone = MpdVirt.Net.zone(octet: octet)
+        let subject =
+            "/CN=mpd VM \(MpdVirt.vmId(octet: octet)) CA/OU=mpd-virt/O=mpd local development"
+
+        // pathlen:0 — this CA signs leaves and never another CA.
+        let extBody = """
+            [ v3_intermediate ]
+            subjectKeyIdentifier   = hash
+            authorityKeyIdentifier = keyid:always,issuer
+            basicConstraints       = critical, CA:TRUE, pathlen:0
+            keyUsage               = critical, keyCertSign, cRLSign
+            nameConstraints        = critical, permitted;DNS:\(zone)
+            """
+        let extURL = try writeTempFile(named: "mpd-virt-vmca.cnf", body: extBody)
+        let csrURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mpd-virt-vmca-\(UUID().uuidString).csr")
+        defer {
+            try? fm.removeItem(at: extURL)
+            try? fm.removeItem(at: csrURL)
+        }
+
+        // Two calls rather than one: the root signs this, so it cannot be
+        // a self-signing `req -x509` the way the root itself was.
+        let csr = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "req",
+            "-new",
+            "-newkey", "rsa:4096",
+            "-nodes",
+            "-keyout", vmKeyPath(octet: octet),
+            "-out", csrURL.path,
+            "-subj", subject,
+        ])
+        guard csr.ok else {
+            try? fm.removeItem(atPath: vmKeyPath(octet: octet))
+            throw MpdVirt.BackendError.other("""
+                VM CA request failed (openssl exit \(csr.exitCode)):
+                \(csr.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                """)
+        }
+
+        // The serial file lives beside the root, which is the one place
+        // that sees every certificate the root has ever signed — keeping
+        // it there is what stops two VMs being issued the same serial.
+        let sign = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "x509",
+            "-req",
+            "-in", csrURL.path,
+            "-CA", certPath,
+            "-CAkey", keyPath,
+            "-CAserial", "\(MpdVirt.caRootDir)/rootCA.srl",
+            "-CAcreateserial",
+            "-sha256",
+            "-days", String(days),
+            "-out", vmCertPath(octet: octet),
+            "-extfile", extURL.path,
+            "-extensions", "v3_intermediate",
+        ])
+        guard sign.ok else {
+            try? fm.removeItem(atPath: vmKeyPath(octet: octet))
+            try? fm.removeItem(atPath: vmCertPath(octet: octet))
+            throw MpdVirt.BackendError.other("""
+                VM CA signing failed (openssl exit \(sign.exitCode)):
+                \(sign.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                """)
+        }
+
+        try fm.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: vmKeyPath(octet: octet)
+        )
+        try fm.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: vmCertPath(octet: octet)
+        )
+    }
+
+    /// Refuse to sign an intermediate under a root that forbids one.
+    ///
+    /// A root carrying `pathlen:0` can sign leaves and nothing else, so
+    /// the intermediate would be issued happily by openssl and then fail
+    /// to verify in every client — a confusing failure that shows up as
+    /// broken HTTPS long after the cause. mpd-virt's own roots have never
+    /// set pathlen, but `mpd`'s in-VM generator does (`cert/ca.go`), and
+    /// an adopted VM can bring one with it.
+    private static func assertRootCanSignIntermediates() throws {
+        let r = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "x509", "-in", certPath, "-noout", "-text",
+        ])
+        guard r.ok else {
+            throw MpdVirt.BackendError.other(
+                "openssl could not read the root CA at \(certPath): \(r.stderr)"
+            )
+        }
+        // LibreSSL renders the extension as `CA:TRUE, pathlen:0`.
+        guard !r.stdout.contains("pathlen:0") else {
+            throw MpdVirt.BackendError.other("""
+                The root CA at \(certPath) carries a pathlen:0 basic constraint,
+                so it cannot sign the per-VM intermediate mpd-virt issues. This
+                root was generated by an older in-VM `mpd` (cert/ca.go) rather
+                than by mpd-virt.
+
+                Regenerate the root and re-trust it:
+
+                    mpd-virt uninstall     # removes the CA + keychain entry
+                    mpd-virt setup <NNN>   # generates a fresh, unconstrained root
+                """)
+        }
     }
 
     // MARK: - Expiry
