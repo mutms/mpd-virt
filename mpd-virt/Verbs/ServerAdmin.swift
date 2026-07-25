@@ -44,7 +44,7 @@ extension MpdVirt.ServerAdmin {
 
         MpdVirt.Ui.header("server \(entry.host)")
         ok("registered \(entry.host) → \(entry.ip)  (kind: \(kind.rawValue))")
-        info("registry: \(MpdVirt.Server.envFile(name))")
+        info("registry: \(MpdVirt.Ui.path(MpdVirt.Server.envFile(name)))")
         print("")
         MpdVirt.Ui.indent("Next:")
         MpdVirt.Ui.indent("  mpd-virt server cert \(name)     # issue its TLS certificate")
@@ -110,7 +110,7 @@ extension MpdVirt.ServerAdmin {
         let entry = try MpdVirt.Server.load(name)
 
         MpdVirt.Ui.header("remove \(entry.host)")
-        info("this deletes \(MpdVirt.Server.dir(name))/, including its private key")
+        info("this deletes \(MpdVirt.Ui.path(MpdVirt.Server.dir(name)))/, including its private key")
         guard MpdVirt.Ui.confirm("Remove \(entry.host)?", assumeYes: assumeYes) else {
             info("aborted")
             return
@@ -168,8 +168,8 @@ extension MpdVirt.ServerAdmin {
 
         let days = (try? MpdVirt.CA.daysUntilExpiry(of: certPath)) ?? 0
         ok("issued for \(signature.joined(separator: ", "))  (\(days) days)")
-        info("cert: \(certPath)")
-        info("key:  \(MpdVirt.Server.keyPath(name))")
+        info("cert: \(MpdVirt.Ui.path(certPath))")
+        info("key:  \(MpdVirt.Ui.path(MpdVirt.Server.keyPath(name)))")
         print("")
         MpdVirt.Ui.indent("Install it with:  mpd-virt server deploy \(name)")
     }
@@ -192,23 +192,26 @@ extension MpdVirt.ServerAdmin {
             return
         }
 
-        let target = entry.ssh ?? "<user>@\(entry.ip)"
+        // Address the host by name, not by address: this Mac's /etc/hosts
+        // resolves it (that is step 3 of this very recipe), and a name in
+        // the printed commands survives the machine changing address.
+        let target = entry.ssh ?? "\(entry.kind.defaultSSHUser)@\(entry.host)"
+        // No point prefixing sudo onto commands already running as root.
+        let sudo = target.hasPrefix("root@") ? "" : "sudo "
 
         MpdVirt.Ui.section("1. Trust the mpd root CA on \(entry.host)")
         MpdVirt.Ui.indent("Every mpd certificate chains to this. Without it the host")
         MpdVirt.Ui.indent("serves a certificate its own tools will not verify.")
         print("")
-        MpdVirt.Ui.indent("    mpd-virt ca export > /tmp/mpd-root.crt")
-        MpdVirt.Ui.indent("    scp /tmp/mpd-root.crt \(target):/tmp/")
-        for line in trustRecipe(target) { MpdVirt.Ui.indent("    \(line)") }
+        for line in trustRecipe(target, sudo) { MpdVirt.Ui.indent("    \(line)") }
 
         MpdVirt.Ui.section("2. Install the certificate")
         // Copy under the name the service expects, so the file can go
         // straight where it belongs without a rename on the far side.
         let names = entry.kind.installedNames
-        MpdVirt.Ui.indent("    scp \(certPath) \(target):/tmp/\(names.cert)")
-        MpdVirt.Ui.indent("    scp \(MpdVirt.Server.keyPath(name)) \(target):/tmp/\(names.key)")
-        for line in installRecipe(entry.kind, target) { MpdVirt.Ui.indent("    \(line)") }
+        MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(certPath)) \(target):/tmp/\(names.cert)")
+        MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(MpdVirt.Server.keyPath(name))) \(target):/tmp/\(names.key)")
+        for line in installRecipe(entry.kind, target, sudo) { MpdVirt.Ui.indent("    \(line)") }
 
         MpdVirt.Ui.section("3. Names this host should resolve")
         MpdVirt.Ui.indent("Add to /etc/hosts on \(entry.host) so it can reach the others")
@@ -222,46 +225,65 @@ extension MpdVirt.ServerAdmin {
 
     /// How a host installs a trusted root. Debian-family paths throughout:
     /// Proxmox is Debian, and the rest of this LAN is too.
-    private static func trustRecipe(_ target: String) -> [String] {
-        [
-            "ssh \(target) 'sudo install -m 644 /tmp/mpd-root.crt \\",
-            "    /usr/local/share/ca-certificates/mpd-root.crt \\",
-            "    && sudo update-ca-certificates'",
+    ///
+    /// The source is the CA's own file — there is no export step, because
+    /// the public certificate already lives at a stable path and copying
+    /// it somewhere else first would only create a second file that can
+    /// fall out of date after a rotation.
+    ///
+    /// The destination extension is `.crt`, not `.pem`, and that is not
+    /// cosmetic: `update-ca-certificates` only reads files ending in
+    /// `.crt` from that directory, so a `.pem` lands and is silently
+    /// ignored. scp renames in flight, so this costs nothing.
+    private static func trustRecipe(_ target: String, _ sudo: String) -> [String] {
+        let root = MpdVirt.Ui.path(MpdVirt.CA.certPath)
+        let installed = "/usr/local/share/ca-certificates/mpd-root.crt"
+        // As root, scp straight to the final location — the /tmp hop only
+        // exists to give an unprivileged account somewhere it may write.
+        if sudo.isEmpty {
+            return [
+                "scp \(root) \(target):\(installed)",
+                "ssh \(target) update-ca-certificates",
+            ]
+        }
+        return [
+            "scp \(root) \(target):/tmp/mpd-root.crt",
+            "ssh \(target) '\(sudo)install -m 644 /tmp/mpd-root.crt \\",
+            "    \(installed) && \(sudo)update-ca-certificates'",
         ]
     }
 
     /// Where the leaf goes, per service. One table, not a plugin system —
     /// these are the shapes that exist on this LAN.
-    private static func installRecipe(_ kind: MpdVirt.Server.Kind, _ target: String) -> [String] {
+    private static func installRecipe(
+        _ kind: MpdVirt.Server.Kind, _ target: String, _ sudo: String
+    ) -> [String] {
         switch kind {
         case .proxmox:
             return [
-                "ssh \(target) 'sudo pvenode cert set \\",
+                "ssh \(target) '\(sudo)pvenode cert set \\",
                 "    /tmp/pveproxy-ssl.pem /tmp/pveproxy-ssl.key --force --restart'",
                 "",
-                "# pvenode writes /etc/pve/local/pveproxy-ssl.{pem,key} and restarts",
-                "# pveproxy — the web UI drops for a second. Equivalent by hand:",
-                "#   install -m 640 -o root -g www-data /tmp/pveproxy-ssl.pem \\",
-                "#       /etc/pve/local/pveproxy-ssl.pem   (same for the .key)",
+                "# Writes /etc/pve/local/pveproxy-ssl.{pem,key} and restarts pveproxy;",
+                "# the web UI drops for a second.",
                 "#",
-                "# Do NOT overwrite /etc/pve/pve-root-ca.pem or pve-ssl.pem. Those",
-                "# are Proxmox's OWN cluster CA and the node certificate it signs;",
-                "# cluster traffic authenticates against them and `pvecm updatecerts`",
-                "# regenerates them. pveproxy-ssl.* exists precisely so a custom",
-                "# certificate can front the web UI and API without touching that.",
+                "# Do NOT overwrite /etc/pve/pve-root-ca.pem or pve-ssl.pem — those are",
+                "# Proxmox's own CA and node cert. pvecm regenerates them, so anything",
+                "# written there is silently reverted later.",
             ]
         case .forgejo:
             return [
-                "ssh \(target) 'sudo install -o git -g git -m 644 /tmp/cert.pem /var/lib/forgejo/custom/https/cert.pem \\",
-                "    && sudo install -o git -g git -m 600 /tmp/key.pem /var/lib/forgejo/custom/https/key.pem \\",
-                "    && sudo systemctl restart forgejo'",
+                "ssh \(target) '\(sudo)install -o git -g git -m 644 /tmp/cert.pem \\",
+                "    /var/lib/forgejo/custom/https/cert.pem && \\",
+                "    \(sudo)install -o git -g git -m 600 /tmp/key.pem \\",
+                "    /var/lib/forgejo/custom/https/key.pem && \(sudo)systemctl restart forgejo'",
                 "# app.ini needs PROTOCOL = https plus CERT_FILE / KEY_FILE under [server].",
             ]
         case .caddy:
             return [
-                "ssh \(target) 'sudo install -m 644 /tmp/cert.pem /etc/caddy/cert.pem \\",
-                "    && sudo install -m 600 /tmp/key.pem /etc/caddy/key.pem \\",
-                "    && sudo systemctl reload caddy'",
+                "ssh \(target) '\(sudo)install -m 644 /tmp/cert.pem /etc/caddy/cert.pem && \\",
+                "    \(sudo)install -m 600 /tmp/key.pem /etc/caddy/key.pem && \\",
+                "    \(sudo)systemctl reload caddy'",
                 "# Caddyfile: `tls /etc/caddy/cert.pem /etc/caddy/key.pem` in the site block.",
             ]
         case .generic:
@@ -344,7 +366,7 @@ extension MpdVirt.ServerAdmin {
             return
         }
         try pem.write(toFile: path, atomically: true, encoding: .utf8)
-        MpdVirt.Ui.ok("wrote \(path)")
+        MpdVirt.Ui.ok("wrote \(MpdVirt.Ui.path(path))")
     }
 
     // MARK: - /etc/hosts on this Mac

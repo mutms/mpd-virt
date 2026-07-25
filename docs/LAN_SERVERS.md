@@ -111,12 +111,29 @@ Do this first and on every LAN machine, including ones that only *talk*
 to the others. Debian family:
 
 ```sh
-mpd-virt ca export > /tmp/mpd-root.crt
-scp /tmp/mpd-root.crt user@192.168.1.99:/tmp/
-ssh user@192.168.1.99 'sudo install -m 644 /tmp/mpd-root.crt \
-    /usr/local/share/ca-certificates/mpd-root.crt \
-    && sudo update-ca-certificates'
+scp ~/.mpd-virt/conf/caroot/rootCA.pem \
+    root@kitchenbox.mpd.test:/usr/local/share/ca-certificates/mpd-root.crt
+ssh root@kitchenbox.mpd.test update-ca-certificates
 ```
+
+There is no export step: the root's *public* certificate already lives at
+a stable path, so the recipe copies that file directly. Making a second
+copy elsewhere would only create something that can fall out of date after
+a rotation.
+
+The destination extension is `.crt`, not `.pem`, and that matters —
+`update-ca-certificates` reads only `*.crt` from that directory, so a
+`.pem` lands there and is silently ignored. `scp` renames in flight.
+
+As root the file goes straight to its final location; an unprivileged
+account gets a `/tmp` hop plus `sudo install` instead.
+
+Hosts are addressed **by name**, since `/etc/hosts` on the Mac resolves
+them — a name in the recipe keeps working if the machine changes address.
+Proxmox permits root login out of the box and every command here is a root
+command, so `server deploy --kind proxmox` addresses `root@` and drops
+`sudo` entirely. Other kinds print `<user>@` and keep `sudo`; set
+`--ssh root@<host>` on those too and the `sudo` disappears there as well.
 
 Only the *public* certificate leaves the Mac. The root private key never
 does — not to a VM, not to a LAN server, not anywhere.
@@ -127,9 +144,9 @@ does — not to a VM, not to a LAN server, not anywhere.
 install them:
 
 ```sh
-scp ~/.mpd-virt/servers/kitchenbox/cert.pem user@192.168.1.99:/tmp/pveproxy-ssl.pem
-scp ~/.mpd-virt/servers/kitchenbox/key.pem  user@192.168.1.99:/tmp/pveproxy-ssl.key
-ssh user@192.168.1.99 'sudo pvenode cert set \
+scp ~/.mpd-virt/servers/kitchenbox/cert.pem root@kitchenbox.mpd.test:/tmp/pveproxy-ssl.pem
+scp ~/.mpd-virt/servers/kitchenbox/key.pem  root@kitchenbox.mpd.test:/tmp/pveproxy-ssl.key
+ssh root@kitchenbox.mpd.test 'pvenode cert set \
     /tmp/pveproxy-ssl.pem /tmp/pveproxy-ssl.key --force --restart'
 ```
 
@@ -197,7 +214,7 @@ ROOT_URL  = https://forge.mpd.test/
 ```
 
 ```sh
-ssh user@192.168.1.100 'sudo install -o git -g git -m 644 /tmp/cert.pem \
+ssh user@forge.mpd.test 'sudo install -o git -g git -m 644 /tmp/cert.pem \
       /var/lib/forgejo/custom/https/cert.pem \
     && sudo install -o git -g git -m 600 /tmp/key.pem \
       /var/lib/forgejo/custom/https/key.pem \

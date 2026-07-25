@@ -103,9 +103,9 @@ extension MpdVirt.Setup {
         // to this VM's zone, so the VM can sign its own certs without
         // being able to name anything outside `<NNN>.mpd.test`.
         try MpdVirt.CA.loadOrGenerate()
-        info("CA: \(MpdVirt.CA.certPath)")
+        info("CA: \(MpdVirt.Ui.path(MpdVirt.CA.certPath))")
         try MpdVirt.CA.loadOrGenerateVMCA(octet: octet)
-        info("VM CA: \(MpdVirt.CA.vmCertPath(octet: octet)) (\(MpdVirt.Net.zone(octet: octet)) only)")
+        info("VM CA: \(MpdVirt.Ui.path(MpdVirt.CA.vmCertPath(octet: octet))) (\(MpdVirt.Net.zone(octet: octet)) only)")
 
         // 3. VM-side bootstrap. Skipped only when the registry already
         // exists (the VM was previously claimed) AND it's reachable at

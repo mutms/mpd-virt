@@ -47,6 +47,21 @@ extension MpdVirt.Ui {
         print("    \(s)")
     }
 
+    /// Abbreviate the user's home directory to `~` for display.
+    ///
+    /// Every path mpd-virt prints lives under `~/.mpd-virt/`, so the home
+    /// prefix is noise that pushes the interesting part of the line off to
+    /// the right — and these lines are meant to be copy-pasted, where `~`
+    /// is what a shell expands anyway.
+    ///
+    /// Display only. Anything handed to a `Process` keeps the real path:
+    /// `~` is a shell convention, and we exec without a shell.
+    static func path(_ p: String) -> String {
+        let home = MpdVirt.homeDir
+        guard !home.isEmpty, p == home || p.hasPrefix(home + "/") else { return p }
+        return "~" + p.dropFirst(home.count)
+    }
+
     /// Yes/No confirmation prompt. Returns true if `assumeYes` is set
     /// or the user answers y/Y. Empty answer = "no" (safer default
     /// for destructive operations like `delete`).

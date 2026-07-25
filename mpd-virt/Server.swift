@@ -72,6 +72,16 @@ extension MpdVirt.Server {
         /// and the API is scripted the same way — so a name-only
         /// certificate would fail verification on the URL actually used.
         var wantsIPSAN: Bool { self == .proxmox }
+
+        /// The account `server deploy` addresses when the registry has no
+        /// explicit `--ssh`. Proxmox permits root login out of the box and
+        /// every command below is a root command, so addressing anyone
+        /// else there only adds a `sudo` that buys nothing.
+        ///
+        /// Everything else gets a placeholder rather than a guess: a wrong
+        /// username in a printed recipe is a copy-paste failure, while an
+        /// obvious `<user>` is a prompt to fill it in.
+        var defaultSSHUser: String { self == .proxmox ? "root" : "<user>" }
     }
 
     /// One registered LAN server.
