@@ -210,10 +210,10 @@ extension MpdVirt.ServerAdmin {
         MpdVirt.Ui.section("2. Install the certificate")
         // Copy under the name the service expects, so the file can go
         // straight where it belongs without a rename on the far side.
-        let names = entry.kind.installedNames
+        let names = entry.kind.installedNames(server: name)
         MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(certPath)) \(target):/tmp/\(names.cert)")
         MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(MpdVirt.Server.keyPath(name))) \(target):/tmp/\(names.key)")
-        for line in installRecipe(entry.kind, target, sudo) { MpdVirt.Ui.indent("    \(line)") }
+        for line in installRecipe(entry.kind, target, sudo, names) { MpdVirt.Ui.indent("    \(line)") }
 
         MpdVirt.Ui.section("3. Names this host should resolve")
         MpdVirt.Ui.indent("Add to /etc/hosts on \(entry.host) so it can reach the others")
@@ -258,7 +258,8 @@ extension MpdVirt.ServerAdmin {
     /// Where the leaf goes, per service. One table, not a plugin system —
     /// these are the shapes that exist on this LAN.
     private static func installRecipe(
-        _ kind: MpdVirt.Server.Kind, _ target: String, _ sudo: String
+        _ kind: MpdVirt.Server.Kind, _ target: String, _ sudo: String,
+        _ names: (cert: String, key: String)
     ) -> [String] {
         switch kind {
         case .proxmox:
@@ -274,18 +275,20 @@ extension MpdVirt.ServerAdmin {
                 "# written there is silently reverted later.",
             ]
         case .forgejo:
+            // Destination must equal CERT_FILE / KEY_FILE in app.ini. There is
+            // no single right answer — it varies by how Forgejo was installed —
+            // so this names the files after the server under /etc/forgejo/,
+            // beside the config that points at them, and says to check.
             return [
-                "# Destination is whatever CERT_FILE / KEY_FILE name in app.ini —",
-                "# the default below is Forgejo's documented location, not a rule.",
-                "# Both must be readable by the user Forgejo runs as.",
-                "ssh \(target) '\(sudo)install -o git -g git -m 644 /tmp/cert.pem \\",
-                "    /var/lib/forgejo/custom/https/cert.pem && \\",
-                "    \(sudo)install -o git -g git -m 600 /tmp/key.pem \\",
-                "    /var/lib/forgejo/custom/https/key.pem && \(sudo)systemctl restart forgejo'",
+                "ssh \(target) '\(sudo)install -o git -g git -m 644 /tmp/\(names.cert) \\",
+                "    /etc/forgejo/certs/\(names.cert) && \\",
+                "    \(sudo)install -o git -g git -m 600 /tmp/\(names.key) \\",
+                "    /etc/forgejo/certs/\(names.key) && \(sudo)systemctl restart forgejo'",
                 "",
-                "# app.ini [server] needs PROTOCOL = https, ROOT_URL, CERT_FILE, KEY_FILE.",
-                "# Serving :443 as a non-root user also needs the unit to grant",
-                "# AmbientCapabilities=CAP_NET_BIND_SERVICE.",
+                "# Destination MUST match CERT_FILE / KEY_FILE in app.ini — confirm with:",
+                "#   ssh \(target) 'grep -E \"CERT_FILE|KEY_FILE\" /etc/forgejo/app.ini'",
+                "# [server] also needs PROTOCOL = https and ROOT_URL. Serving :443 as a",
+                "# non-root user needs AmbientCapabilities=CAP_NET_BIND_SERVICE on the unit.",
             ]
         case .caddy:
             return [

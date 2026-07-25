@@ -57,10 +57,13 @@ extension MpdVirt.Server {
         /// Proxmox is the reason this exists. `/etc/pve/local/` holds
         /// `pveproxy-ssl.pem` + `pveproxy-ssl.key`, and a file landing
         /// there under any other name is simply ignored.
-        var installedNames: (cert: String, key: String) {
+        /// `server` is the registry name, used where a service keeps its
+        /// certificates in a shared directory and tells them apart by
+        /// filename.
+        func installedNames(server: String) -> (cert: String, key: String) {
             switch self {
             case .proxmox: return ("pveproxy-ssl.pem", "pveproxy-ssl.key")
-            case .forgejo: return ("cert.pem", "key.pem")
+            case .forgejo: return ("\(server).crt", "\(server).key")
             case .caddy:   return ("cert.pem", "key.pem")
             case .generic: return ("cert.pem", "key.pem")
             }
