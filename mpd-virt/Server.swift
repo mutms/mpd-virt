@@ -75,13 +75,14 @@ extension MpdVirt.Server {
 
         /// The account `server deploy` addresses when the registry has no
         /// explicit `--ssh`. Proxmox permits root login out of the box and
-        /// every command below is a root command, so addressing anyone
-        /// else there only adds a `sudo` that buys nothing.
+        /// every command there is a root command, so addressing anyone else
+        /// only adds a `sudo` that buys nothing.
         ///
-        /// Everything else gets a placeholder rather than a guess: a wrong
-        /// username in a printed recipe is a copy-paste failure, while an
-        /// obvious `<user>` is a prompt to fill it in.
-        var defaultSSHUser: String { self == .proxmox ? "root" : "<user>" }
+        /// nil everywhere else, which prints a bare hostname — ssh then uses
+        /// the local username, which is the common case and is right far more
+        /// often than any name we could guess. A placeholder like `<user>@`
+        /// would have to be edited out of every line before pasting.
+        var defaultSSHUser: String? { self == .proxmox ? "root" : nil }
     }
 
     /// One registered LAN server.

@@ -195,7 +195,9 @@ extension MpdVirt.ServerAdmin {
         // Address the host by name, not by address: this Mac's /etc/hosts
         // resolves it (that is step 3 of this very recipe), and a name in
         // the printed commands survives the machine changing address.
-        let target = entry.ssh ?? "\(entry.kind.defaultSSHUser)@\(entry.host)"
+        let target = entry.ssh
+            ?? entry.kind.defaultSSHUser.map { "\($0)@\(entry.host)" }
+            ?? entry.host
         // No point prefixing sudo onto commands already running as root.
         let sudo = target.hasPrefix("root@") ? "" : "sudo "
 
