@@ -47,6 +47,31 @@ extension MpdVirt.Server {
         case forgejo
         case caddy
         case generic
+
+        /// What this service expects its certificate and key to be called
+        /// once installed. mpd-virt stores every certificate under the
+        /// same two names locally — uniform listing, renewal and removal —
+        /// and renames on the way out, where the service's convention is
+        /// what matters.
+        ///
+        /// Proxmox is the reason this exists. `/etc/pve/local/` holds
+        /// `pveproxy-ssl.pem` + `pveproxy-ssl.key`, and a file landing
+        /// there under any other name is simply ignored.
+        var installedNames: (cert: String, key: String) {
+            switch self {
+            case .proxmox: return ("pveproxy-ssl.pem", "pveproxy-ssl.key")
+            case .forgejo: return ("cert.pem", "key.pem")
+            case .caddy:   return ("cert.pem", "key.pem")
+            case .generic: return ("cert.pem", "key.pem")
+            }
+        }
+
+        /// Whether a certificate for this kind should carry an IP SAN by
+        /// default. Proxmox is administered by address at least as often
+        /// as by name — the web UI is bookmarked as `https://<ip>:8006/`
+        /// and the API is scripted the same way — so a name-only
+        /// certificate would fail verification on the URL actually used.
+        var wantsIPSAN: Bool { self == .proxmox }
     }
 
     /// One registered LAN server.

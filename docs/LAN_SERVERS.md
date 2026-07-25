@@ -1,6 +1,6 @@
 # LAN servers under `mpd.test`
 
-How the machines on the home LAN — Proxmox, Forgejo, the runner — get
+How the machines on the home LAN — the Proxmox box, Forgejo, the runner — get
 names in the `mpd.test` tree, certificates that everything here already
 trusts, and DNS that answers the same way from the Mac, from every mpd
 VM, and from every container inside those VMs.
@@ -14,7 +14,7 @@ Current inventory:
 
 | Name               | Address         | Kind      |
 |--------------------|-----------------|-----------|
-| `proxmox.mpd.test` | `192.168.1.99`  | `proxmox` |
+| `kitchenbox.mpd.test` | `192.168.1.99`  | `proxmox` |
 | `forge.mpd.test`   | `192.168.1.100` | `forgejo` |
 | `runner.mpd.test`  | `192.168.1.101` | `generic` |
 
@@ -43,7 +43,7 @@ mpd.test
 ├── 126.mpd.test          ← a VM zone: 3-digit first label
 │   └── m45.126.mpd.test  ← signed inside VM 126, by its own constrained CA
 ├── forge.mpd.test        ← a LAN service: any non-numeric label
-├── proxmox.mpd.test
+├── kitchenbox.mpd.test   ← named for the machine; --kind selects the recipe
 └── runner.mpd.test
 ```
 
@@ -55,15 +55,22 @@ not sign it.
 ## Registering a server
 
 ```sh
-mpd-virt server add proxmox --ip 192.168.1.99  --kind proxmox
-mpd-virt server add forge   --ip 192.168.1.100 --kind forgejo
-mpd-virt server add runner  --ip 192.168.1.101 --kind generic
+mpd-virt server add kitchenbox --ip 192.168.1.99  --kind proxmox
+mpd-virt server add forge      --ip 192.168.1.100 --kind forgejo
+mpd-virt server add runner     --ip 192.168.1.101 --kind generic
 mpd-virt server list
 ```
 
 State lands in `~/.mpd-virt/servers/<name>/` — an `env` file with the
-address and kind, and later the certificate beside it. `--kind` only
-selects which deployment hints `server deploy` prints.
+address and kind, and later the certificate beside it.
+
+**Name it after the machine, not the software.** The name becomes the DNS
+name and the certificate's CN, so it should match the host's own
+hostname — `kitchenbox`, which happens to run Proxmox. `--kind` is a
+separate field precisely so the two need not agree: it only selects which
+deployment hints `server deploy` prints and whether an IP SAN is added by
+default. Making the DNS name disagree with the node's hostname means
+keeping two names in step forever.
 
 `--ssh user@host` is optional; it just makes the printed recipe name a
 real target instead of a placeholder.
@@ -116,14 +123,68 @@ does — not to a VM, not to a LAN server, not anywhere.
 
 ### 2. Install the leaf
 
-**Proxmox.** `pvenode` takes the pair directly and restarts `pveproxy`
-itself; the web UI drops for a second.
+**Proxmox.** Copy under the names Proxmox uses, then let `pvenode`
+install them:
 
 ```sh
-scp ~/.mpd-virt/servers/proxmox/cert.pem user@192.168.1.99:/tmp/cert.pem
-scp ~/.mpd-virt/servers/proxmox/key.pem  user@192.168.1.99:/tmp/key.pem
-ssh user@192.168.1.99 'sudo pvenode cert set /tmp/cert.pem /tmp/key.pem --force'
+scp ~/.mpd-virt/servers/kitchenbox/cert.pem user@192.168.1.99:/tmp/pveproxy-ssl.pem
+scp ~/.mpd-virt/servers/kitchenbox/key.pem  user@192.168.1.99:/tmp/pveproxy-ssl.key
+ssh user@192.168.1.99 'sudo pvenode cert set \
+    /tmp/pveproxy-ssl.pem /tmp/pveproxy-ssl.key --force --restart'
 ```
+
+`pvenode` writes `/etc/pve/local/pveproxy-ssl.pem` and `pveproxy-ssl.key`
+and restarts `pveproxy`; the web UI drops for a second. By hand it is
+`install -m 640 -o root -g www-data` into the same two paths.
+
+> **Do not touch `/etc/pve/pve-root-ca.pem` or `pve-ssl.pem`.** Those look
+> like the files to replace, and they are not. `pve-root-ca.pem` is
+> Proxmox's *own* cluster CA and `pve-ssl.pem` is the node certificate it
+> signs; cluster members authenticate to each other with them, and
+> `pvecm updatecerts` regenerates them from the cluster CA key. Overwrite
+> them with mpd material and you break cluster communication while the web
+> UI keeps working — a confusing failure.
+>
+> `pveproxy-ssl.*` exists precisely so a custom certificate can front the
+> web UI and API without disturbing any of that. Two independent CAs,
+> each doing its own job.
+>
+> This holds on a **standalone node too**. PVE runs `pmxcfs` and its own
+> CA whether or not a cluster exists — `pvedaemon`, `pveproxy` and `pvesh`
+> authenticate to each other with it over localhost. `pvecm updatecerts
+> --force` re-signs `pve-ssl.pem` from that CA (the command is not
+> cluster-only, despite the name), and PVE regenerates the node
+> certificate on startup when it is missing. So an mpd-signed certificate
+> written over `pve-ssl.pem` does not merely fail — it is silently
+> re-signed back to the PVE CA later, which is harder to debug than an
+> outright error.
+
+### If you rename the Proxmox node
+
+`/etc/pve/local` is a symlink to `/etc/pve/nodes/$(hostname)`. Renaming
+the host makes `pmxcfs` create a new node directory and `local` resolve
+there, which moves the ground under both certificates:
+
+```sh
+ls -l /etc/pve/local          # should point at the new name
+ls /etc/pve/nodes/            # two entries = leftovers from the rename
+pvecm updatecerts --force     # sign pve-ssl.pem for the new node name
+```
+
+Then **re-run `pvenode cert set`**: a custom certificate installed before
+the rename is sitting in the old node directory, which nothing reads any
+more.
+
+Unrelated to TLS but the same trap — guest configs live under the node
+directory too. If VMs or containers disappeared from the UI after a
+rename, they are still in `/etc/pve/nodes/<oldname>/qemu-server/` and
+`/lxc/`, and need moving across with the guests stopped.
+
+Proxmox certificates carry an **IP SAN** by default (`--kind proxmox`),
+because the web UI is bookmarked as `https://192.168.1.99:8006/` and the
+API is scripted the same way — a name-only certificate would fail
+verification on the URL actually used. Override per-issue with `--no-ip`,
+or add one to any other server with `--ip`.
 
 **Forgejo.** Needs `app.ini` to be serving HTTPS itself:
 
@@ -245,10 +306,15 @@ already installed on the server; do that there.
 
 ## Notes and limits
 
-- **DNS SANs only.** The root constrains `dNSName`, but under RFC 5280 a
-  name type absent from `permittedSubtrees` is *unconstrained* — so an IP
-  SAN would be the one field of these certificates the name constraint
-  does not cover. Reach hosts by name, not by address.
+- **IP SANs are not covered by the root's name constraint.** The root
+  constrains `dNSName` to `mpd.test`, but says nothing about
+  `iPAddress`, and under RFC 5280 a name type absent from
+  `permittedSubtrees` is *unconstrained*. So the root can sign for any
+  address — which is true whether or not we issue IP SANs, so putting one
+  on the Proxmox certificate does not widen the exposure. Narrowing it
+  properly means adding `permitted;IP:192.168.1.0/24` to the root, which
+  costs a regeneration and a re-trust everywhere; the annual rotation is
+  when to do it.
 - **No revocation.** No CRL, no OCSP. Certificates expire; to retire one
   early, remove it from the server.
 - **`~/.mpd-virt/conf/` is not backed up.** Losing it now costs more than

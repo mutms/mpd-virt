@@ -123,7 +123,8 @@ extension MpdVirt.ServerAdmin {
 
     // MARK: - cert
 
-    static func cert(name rawName: String, extraSans: [String], force: Bool) throws {
+    static func cert(name rawName: String, extraSans: [String],
+                     withIP: Bool?, force: Bool) throws {
         let name = try MpdVirt.Server.normalise(rawName)
         let entry = try MpdVirt.Server.load(name)
 
@@ -135,6 +136,10 @@ extension MpdVirt.ServerAdmin {
             let host = MpdVirt.Net.serviceHost(label)
             if !sans.contains(host) { sans.append(host) }
         }
+
+        // --with-ip / --no-ip override the per-kind default.
+        let includeIP = withIP ?? entry.kind.wantsIPSAN
+        let ipSans = includeIP ? [entry.ip] : []
 
         let certPath = MpdVirt.Server.certPath(name)
         if FileManager.default.fileExists(atPath: certPath), !force {
@@ -150,14 +155,18 @@ extension MpdVirt.ServerAdmin {
         MpdVirt.Ui.header("certificate for \(entry.host)")
         try MpdVirt.CA.issueLeaf(
             sans: sans,
+            ipSans: ipSans,
             certPath: certPath,
             keyPath: MpdVirt.Server.keyPath(name)
         )
-        try sans.joined(separator: "\n").appending("\n")
+        // Record IP SANs too, so a re-issue reproduces the same
+        // certificate rather than silently dropping the address.
+        let signature = (sans.map { "DNS:\($0)" } + ipSans.map { "IP:\($0)" })
+        try signature.joined(separator: "\n").appending("\n")
             .write(toFile: MpdVirt.Server.sansPath(name), atomically: true, encoding: .utf8)
 
         let days = (try? MpdVirt.CA.daysUntilExpiry(of: certPath)) ?? 0
-        ok("issued for \(sans.joined(separator: ", "))  (\(days) days)")
+        ok("issued for \(signature.joined(separator: ", "))  (\(days) days)")
         info("cert: \(certPath)")
         info("key:  \(MpdVirt.Server.keyPath(name))")
         print("")
@@ -193,8 +202,11 @@ extension MpdVirt.ServerAdmin {
         for line in trustRecipe(target) { MpdVirt.Ui.indent("    \(line)") }
 
         MpdVirt.Ui.section("2. Install the certificate")
-        MpdVirt.Ui.indent("    scp \(certPath) \(target):/tmp/cert.pem")
-        MpdVirt.Ui.indent("    scp \(MpdVirt.Server.keyPath(name)) \(target):/tmp/key.pem")
+        // Copy under the name the service expects, so the file can go
+        // straight where it belongs without a rename on the far side.
+        let names = entry.kind.installedNames
+        MpdVirt.Ui.indent("    scp \(certPath) \(target):/tmp/\(names.cert)")
+        MpdVirt.Ui.indent("    scp \(MpdVirt.Server.keyPath(name)) \(target):/tmp/\(names.key)")
         for line in installRecipe(entry.kind, target) { MpdVirt.Ui.indent("    \(line)") }
 
         MpdVirt.Ui.section("3. Names this host should resolve")
@@ -223,8 +235,19 @@ extension MpdVirt.ServerAdmin {
         switch kind {
         case .proxmox:
             return [
-                "ssh \(target) 'sudo pvenode cert set /tmp/cert.pem /tmp/key.pem --force'",
-                "# pveproxy restarts itself; the web UI drops for a second.",
+                "ssh \(target) 'sudo pvenode cert set \\",
+                "    /tmp/pveproxy-ssl.pem /tmp/pveproxy-ssl.key --force --restart'",
+                "",
+                "# pvenode writes /etc/pve/local/pveproxy-ssl.{pem,key} and restarts",
+                "# pveproxy — the web UI drops for a second. Equivalent by hand:",
+                "#   install -m 640 -o root -g www-data /tmp/pveproxy-ssl.pem \\",
+                "#       /etc/pve/local/pveproxy-ssl.pem   (same for the .key)",
+                "#",
+                "# Do NOT overwrite /etc/pve/pve-root-ca.pem or pve-ssl.pem. Those",
+                "# are Proxmox's OWN cluster CA and the node certificate it signs;",
+                "# cluster traffic authenticates against them and `pvecm updatecerts`",
+                "# regenerates them. pveproxy-ssl.* exists precisely so a custom",
+                "# certificate can front the web UI and API without touching that.",
             ]
         case .forgejo:
             return [

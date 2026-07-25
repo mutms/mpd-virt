@@ -398,8 +398,12 @@ struct ServerCertCmd: ParsableCommand {
           help: "Re-issue even when the current certificate has plenty of life left.")
     var force: Bool = false
 
+    @Flag(inversion: .prefixedNo, exclusivity: .exclusive,
+          help: "Include the server's IP as an IP SAN, so https://<ip>/ verifies too. Default: on for --kind proxmox.")
+    var ip: Bool?
+
     func run() throws {
-        try MpdVirt.ServerAdmin.cert(name: name, extraSans: sans, force: force)
+        try MpdVirt.ServerAdmin.cert(name: name, extraSans: sans, withIP: ip, force: force)
     }
 }
 
@@ -421,10 +425,22 @@ struct ServerSyncCmd: ParsableCommand {
         abstract: "Publish every LAN name into VMs' resolvers, so containers resolve them too."
     )
 
-    @Argument(help: "Octet of a single VM (100–254). Omit to sync every registered VM.")
+    @Argument(help: "Octet of a single VM (100–254). Omit (or pass --all) to sync every registered VM.")
     var octet: Int?
 
-    func run() throws { try MpdVirt.ServerAdmin.sync(octet: octet) }
+    /// Accepted and equivalent to omitting the octet. Every message that
+    /// suggests this command spells it `--all`, and a flag that the docs
+    /// use but the parser rejects fails as "Unknown option" — which reads
+    /// like the command is broken rather than the flag being redundant.
+    @Flag(name: .customLong("all"), help: "Sync every registered VM (the default).")
+    var all: Bool = false
+
+    func run() throws {
+        if all, octet != nil {
+            throw ValidationError("pass either an octet or --all, not both.")
+        }
+        try MpdVirt.ServerAdmin.sync(octet: octet)
+    }
 }
 
 // MARK: - CA
