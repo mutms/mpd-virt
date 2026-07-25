@@ -57,6 +57,35 @@ extension MpdVirt.Net {
         static let gateway = 1
     }
 
+    // MARK: - Who owns which name
+
+    /// Is this first label a VM zone rather than a LAN service name?
+    ///
+    /// `mpd.test` holds two kinds of thing: VM zones (`126.mpd.test`) and
+    /// names for real machines on the LAN (`forge.mpd.test`). The rule that
+    /// keeps them apart is positional — a 3-digit first label is a VM, and
+    /// everything else is not — which is what lets both live in one tree
+    /// with no registry of reservations to consult.
+    ///
+    /// It follows from `vmId(octet:)` formatting every octet to three
+    /// digits, so this is the inverse of that, not a second convention.
+    /// `managedOctetRange` is deliberately *not* checked: `099.mpd.test`
+    /// is not a VM mpd-virt would create, but it still reads as a VM zone,
+    /// and a LAN service that looked like one would be a trap.
+    static func isVMZoneLabel(_ label: String) -> Bool {
+        label.count == 3 && label.allSatisfy(\.isNumber)
+    }
+
+    /// A LAN service's name: `forge` → `forge.mpd.test`.
+    ///
+    /// These sit directly under the root, beside the VM zones rather than
+    /// inside one, because they belong to machines no VM owns. Their
+    /// certificates are signed by the root on the Mac — a VM's
+    /// zone-constrained CA could not issue them even if it tried.
+    static func serviceHost(_ name: String) -> String {
+        "\(name).\(rootDomain)"
+    }
+
     // MARK: - Per-VM facts
 
     /// This VM's DNS zone: `150.mpd.test`. Also the zone apex, which

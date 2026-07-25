@@ -43,6 +43,8 @@ struct MpdVirtCLI: ParsableCommand {
             UpdateCmd.self,
             UninstallCmd.self,
             BackendCmd.self,
+            ServerCmd.self,
+            CaCmd.self,
         ],
         defaultSubcommand: ListCmd.self
     )
@@ -311,6 +313,141 @@ struct BackendSetDefaultCmd: ParsableCommand {
     var name: String
 
     func run() throws { try MpdVirt.BackendAdmin.setDefault(name) }
+}
+
+// MARK: - LAN servers (machines that are not mpd VMs)
+
+struct ServerCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "server",
+        abstract: "Manage LAN machines with names under mpd.test (proxmox, forge, runner, …).",
+        subcommands: [
+            ServerAddCmd.self, ServerListCmd.self, ServerRmCmd.self,
+            ServerCertCmd.self, ServerDeployCmd.self, ServerSyncCmd.self,
+        ],
+        defaultSubcommand: ServerListCmd.self
+    )
+}
+
+struct ServerAddCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "add",
+        abstract: "Register a LAN server. Name is a single label under mpd.test (`forge` → forge.mpd.test)."
+    )
+
+    @Argument(help: "Server name: `forge` or `forge.mpd.test`. Numeric names are VM zones and are refused.")
+    var name: String
+
+    @Option(name: .customLong("ip"), help: "IPv4 or IPv6 address on the LAN.")
+    var ip: String
+
+    @Option(name: .customLong("kind"), help: "proxmox|forgejo|caddy|generic — selects the deploy hints.")
+    var kind: String = "generic"
+
+    @Option(name: .customLong("ssh"), help: "Optional user@host, used to address the deploy recipe.")
+    var ssh: String?
+
+    func run() throws {
+        try MpdVirt.ServerAdmin.add(name: name, ip: ip, kind: kind, ssh: ssh)
+    }
+}
+
+struct ServerListCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "list",
+        abstract: "List registered LAN servers with address, kind and certificate state."
+    )
+
+    @Flag(name: .customLong("etc-hosts"),
+          help: "Emit only the hosts(5) block, ready to paste into /etc/hosts on this Mac.")
+    var etcHosts: Bool = false
+
+    func run() throws { try MpdVirt.ServerAdmin.list(etcHosts: etcHosts) }
+}
+
+struct ServerRmCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "rm",
+        abstract: "Forget a LAN server and delete its certificate + key."
+    )
+
+    @Argument(help: "Server name.")
+    var name: String
+
+    @Flag(name: .customLong("yes"), help: "Skip the confirmation prompt.")
+    var assumeYes: Bool = false
+
+    func run() throws { try MpdVirt.ServerAdmin.rm(name: name, assumeYes: assumeYes) }
+}
+
+struct ServerCertCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "cert",
+        abstract: "Issue (or renew) this server's TLS certificate, signed by the mpd root CA."
+    )
+
+    @Argument(help: "Server name.")
+    var name: String
+
+    @Option(name: .customLong("san"),
+            parsing: .singleValue,
+            help: "Extra DNS name under mpd.test to cover. Repeatable.")
+    var sans: [String] = []
+
+    @Flag(name: .customLong("force"),
+          help: "Re-issue even when the current certificate has plenty of life left.")
+    var force: Bool = false
+
+    func run() throws {
+        try MpdVirt.ServerAdmin.cert(name: name, extraSans: sans, force: force)
+    }
+}
+
+struct ServerDeployCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "deploy",
+        abstract: "Print exactly what to install on this server: root CA, certificate, hosts entries."
+    )
+
+    @Argument(help: "Server name.")
+    var name: String
+
+    func run() throws { try MpdVirt.ServerAdmin.deploy(name: name) }
+}
+
+struct ServerSyncCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "sync",
+        abstract: "Publish every LAN name into VMs' resolvers, so containers resolve them too."
+    )
+
+    @Argument(help: "Octet of a single VM (100–254). Omit to sync every registered VM.")
+    var octet: Int?
+
+    func run() throws { try MpdVirt.ServerAdmin.sync(octet: octet) }
+}
+
+// MARK: - CA
+
+struct CaCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "ca",
+        abstract: "Inspect and export the mpd root CA.",
+        subcommands: [CaExportCmd.self],
+        defaultSubcommand: CaExportCmd.self
+    )
+}
+
+struct CaExportCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "export",
+        abstract: "Print the root CA's public certificate, for installing on a LAN host's trust store."
+    )
+
+    @Option(name: .customLong("path"), help: "Write here instead of stdout.")
+    var path: String?
+
+    func run() throws { try MpdVirt.ServerAdmin.caExport(path: path) }
 }
 
 // MARK: - Helpers

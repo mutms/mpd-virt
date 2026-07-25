@@ -70,6 +70,7 @@ enum MpdVirt {
     enum Diag {}
     enum Update {}
     enum BackendAdmin {}
+    enum ServerAdmin {}
     enum Uninstall {}
 
     // MARK: - Backend implementation namespaces (one per file under Backend/)
@@ -97,6 +98,7 @@ enum MpdVirt {
 
     enum Net {}                // Net.swift               — container subnet / DNS addressing
     enum Registry {}
+    enum Server {}             // Server.swift            — LAN hosts with names under mpd.test
     enum CA {}                 // CA.swift                — name-constrained CA for *.mpd.test
     enum CloudInit {}          // CloudInit.swift         — cloud image cache + cidata ISO gen
     enum Ui {}                 // Ui.swift                — shared section / ok / warn / fail printers

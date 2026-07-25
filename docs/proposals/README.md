@@ -26,6 +26,14 @@ Per-VM addressing (zones like `222.mpd.test`, subnets like
 tunnel) shipped on 2026-07-20 and its proposal has been removed — the
 model is documented where it is implemented: this repo's `README.md`
 and `MpdVirt.Net`, and the mpd repo's `docs/NETWORKING.md`.
+
+Per-VM signing CAs (each VM gets an intermediate constrained to its own
+zone; the root private key never leaves the Mac) and LAN service
+certificates (`forge.mpd.test` and friends, with their names published
+into every VM's resolver) shipped on 2026-07-25. Same treatment: the
+design lives where it is implemented — this repo's `README.md`,
+[`docs/LAN_SERVERS.md`](../LAN_SERVERS.md), `MpdVirt.CA` /
+`MpdVirt.Server`, and the mpd repo's `docs/SECURITY.md`.
 - [`mpd-virt.md`](mpd-virt.md) — `mpd-virt`'s verb surface, sudo-recipe
   UX, VM identity model (octet as canonical key), and the
   Parallels-Desktop-Pro backend specifics.

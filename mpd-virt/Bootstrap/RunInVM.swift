@@ -193,6 +193,12 @@ extension MpdVirt.Bootstrap.RunInVM {
             command: "bash /opt/mpd/bootstrap/50-build.sh"
         )
 
+        // Names for LAN machines that are not VMs. Pushed before
+        // `--vm-setup` so that run publishes them into the VM's resolver,
+        // rather than needing a second pass.
+        step(0, "push LAN host records → \(MpdVirt.Server.remoteLanHostsPath)")
+        try MpdVirt.ServerAdmin.pushHosts(to: postRenameTarget)
+
         try runRemoteScript(
             postRenameTarget,
             title: "mpd --vm-setup",

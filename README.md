@@ -188,6 +188,11 @@ lifetime: `delete` takes it with the VM, and a re-created VM at the same
 octet gets a fresh one. Its validity is capped by whatever the root has
 left, since nothing may outlive its issuer.
 
+LAN machines that are not VMs — `proxmox.mpd.test`, `forge.mpd.test`,
+`runner.mpd.test` — live under `~/.mpd-virt/servers/<name>/` and get
+leaves signed directly by the root here on the Mac. See
+[`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md).
+
 Octet range for managed VMs: `100–254` (Parallels Shared DHCP owns 1–99).
 The sandbox VM uses ID `000` and lives in the main mpd repo's sandbox
 flow, not here.

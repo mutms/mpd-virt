@@ -124,6 +124,12 @@ extension MpdVirt.Setup {
             && MpdVirt.Host.Ssh.reachable(canonicalTarget)
         if alreadyProvisioned {
             info("VM reachable at \(canonicalIP) and registry entry present — skipping bootstrap")
+            // Bootstrap would have pushed these; on the skip path nothing
+            // else does, so a VM adopted before a `server add` would never
+            // learn the name until someone ran `server sync` by hand.
+            try MpdVirt.ServerAdmin.pushHosts(to: canonicalTarget)
+            _ = try MpdVirt.Host.Ssh.stream(canonicalTarget, "mpd --vm-setup >/dev/null")
+            info("LAN host records pushed and republished")
         } else {
             info("running VM-side bootstrap pipeline …")
             try MpdVirt.Bootstrap.RunInVM.run(

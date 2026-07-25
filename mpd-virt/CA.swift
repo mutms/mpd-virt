@@ -329,6 +329,135 @@ extension MpdVirt.CA {
         }
     }
 
+    // MARK: - Leaf certificates for LAN services
+
+    /// Longest a leaf may live. macOS rejects leaf certificates valid for
+    /// 398 days or more, so a longer one would be untrusted on the very
+    /// Mac that issued it.
+    private static let maxLeafDays = 397
+
+    /// Sign a leaf for a LAN service, directly with the root.
+    ///
+    /// Directly rather than via an intermediate because this signing
+    /// happens here, on the Mac, where the root key already lives. The
+    /// per-VM intermediates exist to keep a signing key off a machine we
+    /// do not control; that reasoning does not apply to a certificate
+    /// mpd-virt hands to the user on a USB-stick basis.
+    ///
+    /// `sans` is the full SAN list; the first entry becomes the CN.
+    static func issueLeaf(sans: [String], certPath: String, keyPath: String) throws {
+        guard let cn = sans.first else {
+            throw MpdVirt.BackendError.other("issueLeaf: no SANs given")
+        }
+        let fm = FileManager.default
+        try loadOrGenerate()
+
+        // Same rule as the per-VM CA: nothing outlives its issuer.
+        let rootDaysLeft = try daysUntilExpiry()
+        guard rootDaysLeft > 0 else {
+            throw MpdVirt.BackendError.other("""
+                The mpd root CA at \(certPath) expired \(-rootDaysLeft) day(s) ago.
+                Regenerate and re-trust it before issuing certificates.
+                """)
+        }
+        let days = min(maxLeafDays, rootDaysLeft)
+
+        try fm.createDirectory(
+            atPath: (certPath as NSString).deletingLastPathComponent,
+            withIntermediateDirectories: true
+        )
+
+        // DNS SANs only. The root constrains dNSName, but under RFC 5280 a
+        // name type absent from permittedSubtrees is *unconstrained* — so
+        // an IP SAN would be the one field of this certificate the name
+        // constraint does not cover.
+        let sanList = sans.map { "DNS:\($0)" }.joined(separator: ", ")
+        let extBody = """
+            [ v3_leaf ]
+            subjectKeyIdentifier   = hash
+            authorityKeyIdentifier = keyid,issuer
+            basicConstraints       = critical, CA:FALSE
+            keyUsage               = critical, digitalSignature, keyEncipherment
+            extendedKeyUsage       = serverAuth
+            subjectAltName         = \(sanList)
+            """
+        let extURL = try writeTempFile(named: "mpd-virt-leaf.cnf", body: extBody)
+        let csrURL = fm.temporaryDirectory
+            .appendingPathComponent("mpd-virt-leaf-\(UUID().uuidString).csr")
+        defer {
+            try? fm.removeItem(at: extURL)
+            try? fm.removeItem(at: csrURL)
+        }
+
+        let csr = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "req",
+            "-new",
+            "-newkey", "rsa:2048",
+            "-nodes",
+            "-keyout", keyPath,
+            "-out", csrURL.path,
+            "-subj", "/CN=\(cn)",
+        ])
+        guard csr.ok else {
+            try? fm.removeItem(atPath: keyPath)
+            throw MpdVirt.BackendError.other("""
+                Certificate request failed (openssl exit \(csr.exitCode)):
+                \(csr.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                """)
+        }
+
+        let sign = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "x509",
+            "-req",
+            "-in", csrURL.path,
+            "-CA", self.certPath,
+            "-CAkey", self.keyPath,
+            "-CAserial", "\(MpdVirt.caRootDir)/rootCA.srl",
+            "-CAcreateserial",
+            "-sha256",
+            "-days", String(days),
+            "-out", certPath,
+            "-extfile", extURL.path,
+            "-extensions", "v3_leaf",
+        ])
+        guard sign.ok else {
+            try? fm.removeItem(atPath: keyPath)
+            try? fm.removeItem(atPath: certPath)
+            throw MpdVirt.BackendError.other("""
+                Certificate signing failed (openssl exit \(sign.exitCode)):
+                \(sign.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                """)
+        }
+
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyPath)
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: certPath)
+    }
+
+    /// Days until an arbitrary certificate expires. Negative once past.
+    static func daysUntilExpiry(of path: String) throws -> Int {
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw MpdVirt.BackendError.other("certificate missing: \(path)")
+        }
+        let r = try MpdVirt.Host.Ssh.runProcess(argv: [
+            "/usr/bin/openssl", "x509", "-in", path, "-noout", "-enddate",
+        ])
+        guard r.ok else {
+            throw MpdVirt.BackendError.other("openssl could not read \(path): \(r.stderr)")
+        }
+        let line = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let eq = line.firstIndex(of: "=") else {
+            throw MpdVirt.BackendError.other("unexpected openssl output: \(line)")
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "MMM d HH:mm:ss yyyy zzz"
+        guard let notAfter = formatter.date(from: String(line[line.index(after: eq)...])) else {
+            throw MpdVirt.BackendError.other("could not parse cert expiry from '\(line)'")
+        }
+        return Int(notAfter.timeIntervalSinceNow / 86_400)
+    }
+
     // MARK: - Expiry
 
     /// Days remaining until the on-disk CA expires. Negative if already
