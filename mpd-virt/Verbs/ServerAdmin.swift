@@ -93,7 +93,9 @@ extension MpdVirt.ServerAdmin {
     private static func certStatus(_ name: String) -> String {
         let path = MpdVirt.Server.certPath(name)
         guard FileManager.default.fileExists(atPath: path) else {
-            return "none — run `mpd-virt server cert \(name)`"
+            // Not a defect. A host that only dials out never presents a
+            // certificate, so nagging about it forever would be wrong.
+            return "none (only needed if it serves TLS)"
         }
         guard let days = try? MpdVirt.CA.daysUntilExpiry(of: path) else {
             return "unreadable"
@@ -187,10 +189,12 @@ extension MpdVirt.ServerAdmin {
 
         MpdVirt.Ui.header("deploy \(entry.host)")
 
-        guard FileManager.default.fileExists(atPath: certPath) else {
-            warn("no certificate yet — run `mpd-virt server cert \(name)` first")
-            return
-        }
+        // A machine with no certificate still has something to install:
+        // trusting the root is what lets it *verify* everything else here,
+        // and a pure client — a CI runner, anything that only dials out —
+        // never needs a certificate of its own. Refusing to print anything
+        // without one would leave exactly those machines unserved.
+        let hasCert = FileManager.default.fileExists(atPath: certPath)
 
         // Address the host by name, not by address: this Mac's /etc/hosts
         // resolves it (that is step 3 of this very recipe), and a name in
@@ -202,18 +206,29 @@ extension MpdVirt.ServerAdmin {
         let sudo = target.hasPrefix("root@") ? "" : "sudo "
 
         MpdVirt.Ui.section("1. Trust the mpd root CA on \(entry.host)")
-        MpdVirt.Ui.indent("Every mpd certificate chains to this. Without it the host")
-        MpdVirt.Ui.indent("serves a certificate its own tools will not verify.")
+        MpdVirt.Ui.indent("Every mpd certificate chains to this — needed whether the host")
+        MpdVirt.Ui.indent("serves TLS or only talks to things that do.")
         print("")
         for line in trustRecipe(target, sudo) { MpdVirt.Ui.indent("    \(line)") }
 
-        MpdVirt.Ui.section("2. Install the certificate")
-        // Copy under the name the service expects, so the file can go
-        // straight where it belongs without a rename on the far side.
-        let names = entry.kind.installedNames(server: name)
-        MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(certPath)) \(target):/tmp/\(names.cert)")
-        MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(MpdVirt.Server.keyPath(name))) \(target):/tmp/\(names.key)")
-        for line in installRecipe(entry.kind, target, sudo, names) { MpdVirt.Ui.indent("    \(line)") }
+        if hasCert {
+            MpdVirt.Ui.section("2. Install the certificate")
+            // Copy under the name the service expects, so the file can go
+            // straight where it belongs without a rename on the far side.
+            let names = entry.kind.installedNames(server: name)
+            MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(certPath)) \(target):/tmp/\(names.cert)")
+            MpdVirt.Ui.indent("    scp \(MpdVirt.Ui.path(MpdVirt.Server.keyPath(name))) \(target):/tmp/\(names.key)")
+            for line in installRecipe(entry.kind, target, sudo, names) { MpdVirt.Ui.indent("    \(line)") }
+        } else {
+            MpdVirt.Ui.section("2. No certificate — and it may not need one")
+            MpdVirt.Ui.indent("Certificates are for machines that LISTEN. A host that only dials")
+            MpdVirt.Ui.indent("out — a CI runner, a scripted API client — verifies others using the")
+            MpdVirt.Ui.indent("root above and never presents one of its own.")
+            print("")
+            MpdVirt.Ui.indent("If something here does serve TLS:")
+            MpdVirt.Ui.indent("    mpd-virt server cert \(name)")
+            MpdVirt.Ui.indent("    mpd-virt server deploy \(name)   # then prints the install step")
+        }
 
         MpdVirt.Ui.section("3. Names this host should resolve")
         MpdVirt.Ui.indent("Add to /etc/hosts on \(entry.host) so it can reach the others")
