@@ -235,7 +235,7 @@ extension MpdVirt.ServerAdmin {
         MpdVirt.Ui.indent("by name over verified TLS:")
         print("")
         for other in try MpdVirt.Server.loadAll() where other.name != name {
-            MpdVirt.Ui.indent("    \(other.ip)\t\(other.host)")
+            print("\(other.ip)\t\(other.host)")
         }
         print("")
     }
@@ -427,7 +427,7 @@ extension MpdVirt.ServerAdmin {
         warn("this Mac cannot resolve \(missing.count) of these names yet")
         MpdVirt.Ui.indent("Add to /etc/hosts (mpd-virt won't edit it for you):")
         print("")
-        for e in missing { MpdVirt.Ui.indent("    \(e.ip)\t\(e.host)") }
+        for e in missing { print("\(e.ip)\t\(e.host)") }
         print("")
         MpdVirt.Ui.indent("    sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder")
         print("")
