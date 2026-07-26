@@ -83,10 +83,47 @@ its own next hop at `10.211.55.<NNN>`, and each zone's resolver is
 resolver files collapse. Those backends keep `Net.resolverFile(octet:)`
 and the per-VM sudo prompt.
 
-What would remove it is giving those hypervisors a warp-equivalent: a
-resolver on the Mac holding one `server=` line per zone, or a router VM
-per backend. Neither is worth it while Parallels VMs are few; the
-supernets above leave room to try either later.
+The sudo prompt still goes away, just by pre-creating rather than
+aggregating. A block is 32 ids, so all of it can be written once, before
+any VM exists — a Parallels next hop at `10.211.55.<NNN>` is on-link, so
+the route installs and simply drops packets until that VM is up, and an
+unused `/etc/resolver/<NNN>.mpd.test` is only reached by a query nobody
+makes.
+
+macOS routes do not persist, so the durable form is a LaunchDaemon.
+
+Shape: one script per backend, `~/.mpd-virt/conf/parallels-setup.sh`,
+`utm-setup.sh`, `proxmox-setup.sh`, which the user reads and runs with
+sudo. That is the entire privileged step for that backend, and enabling a
+backend you do not use costs nothing. Each is self-contained — resolver
+contents inline, not copied from sibling files — so reviewing it means
+reading one file rather than thirty-five. It writes, for its own block
+only:
+
+* `/etc/resolver/<NNN>.mpd.test` for every id in the block
+* `/usr/local/libexec/mpd-routes-<backend>.sh` — its routes
+* `/Library/LaunchDaemons/test.mpd.routes.<backend>.plist` — RunAtLoad,
+  invoking that script, so the routes survive a reboot
+* a DNS cache flush
+
+Idempotent, regenerated whenever that backend's block changes;
+`parallels-setup.sh --remove` is what `uninstall` runs. Each written file
+carries a marker comment so removal never touches a hand-written one.
+
+`proxmox-setup.sh` is much smaller, because warp is both that backend's
+resolver and its single next hop: one `/etc/resolver/mpd.test` pointing
+at `192.168.1.102` rather than 32 per-VM files, and two aggregate routes
+rather than 32. LAN server names resolve as a side effect of the same
+file, which is what makes section 1 possible.
+
+This extends the existing `Host/SudoRecipe.swift` pattern — print it,
+offer to run it — from a few inline commands to a reviewable file.
+Afterwards create and delete are unprivileged for every backend.
+
+A warp-equivalent for those hypervisors — a resolver on the Mac with one
+`server=` line per zone, or a router VM per backend — would collapse the
+files rather than pre-create them. Not worth it at this size; the free
+blocks leave room to try it later.
 
 **Cost.** A query for a Proxmox zone with no VM behind it times out
 rather than returning NXDOMAIN quickly.
