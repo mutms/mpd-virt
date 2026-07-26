@@ -42,6 +42,12 @@ design lives where it is implemented — this repo's `README.md`,
   paid-Parallels-license barrier for evaluation. Simplified by the in-VM
   `bootstrap/` chain being hypervisor-agnostic; UTM platform existed in
   git history before the `mpd-virt` split — lift as reference.
+- [`proxmox-backend-and-warp-dns.md`](proxmox-backend-and-warp-dns.md) — a
+  Proxmox backend driven by a pool-scoped API token, plus what a LAN
+  resolver (`warp`) makes unnecessary: `/etc/hosts` entries for LAN
+  servers, and one `/etc/resolver/` file per Proxmox VM. Both replaced by
+  a single `/etc/resolver/mpd.test` and two aggregate routes, all written
+  once because the Proxmox id range is bounded.
 - [`sandbox-takeover-and-ca-refresh.md`](sandbox-takeover-and-ca-refresh.md) —
   One mechanism, two use cases: adopting an existing `mpd-sandbox` VM
   as a managed `mpd-<NNN>` VM, and rotating the local CA before its
