@@ -6,9 +6,11 @@ HTTPS — get names in the `mpd.test` tree, certificates that everything in this
 setup already trusts, and DNS that answers identically from the Mac, from
 every mpd VM, and from every container inside those VMs.
 
-`mpd-virt` issues the material and tells you what to install. It never logs
-into those machines: they are not VMs it created, and how you administer your
-own servers is your business.
+`mpd-virt` issues the material and publishes the names. It never logs into
+those machines and knows nothing about what runs on them: they are not VMs it
+created, and how you administer your own servers is your business. Where a
+certificate goes and what to restart afterwards belongs in each machine's own
+documentation.
 
 The names and addresses used below are **examples**, so the commands stay
 concrete rather than full of placeholders. Yours will differ — nothing here is
@@ -38,7 +40,7 @@ mpd.test
 ├── 126.mpd.test          ← a VM zone: 3-digit first label
 │   └── m45.126.mpd.test  ← signed inside VM 126, by its own constrained CA
 ├── forge.mpd.test        ← a LAN service: any non-numeric label
-├── kitchenbox.mpd.test   ← named for the machine; --kind selects the recipe
+├── kitchenbox.mpd.test   ← named for the machine, not the software it runs
 └── runner.mpd.test
 ```
 
@@ -52,26 +54,21 @@ not sign it.
 Example — substitute your own names and addresses:
 
 ```sh
-mpd-virt server add kitchenbox --ip 192.168.1.99  --kind proxmox
-mpd-virt server add forge      --ip 192.168.1.100 --kind forgejo
-mpd-virt server add runner     --ip 192.168.1.101 --kind generic
+mpd-virt server add kitchenbox --ip 192.168.1.99
+mpd-virt server add forge      --ip 192.168.1.100
+mpd-virt server add runner     --ip 192.168.1.101
 mpd-virt server list
 ```
 
 State lands in `~/.mpd-virt/servers/<name>/` — an `env` file with the
-address and kind, and later the certificate beside it.
+address, and later the certificate beside it. Name and address is all the
+registry holds; there is no field for what the machine runs.
 
 **Name it after the machine, not the software.** The name becomes the DNS
-name and the certificate's CN, so it should match the host's own
-hostname — a box called `kitchenbox` that happens to run Proxmox is
-`kitchenbox`, not `proxmox`. `--kind` is a separate field precisely so the two
-need not agree: it only selects which
-deployment hints `server deploy` prints and whether an IP SAN is added by
-default. Making the DNS name disagree with the node's hostname means
+name and the certificate's CN, so it should match the host's own hostname —
+a box called `kitchenbox` that happens to run Proxmox is `kitchenbox`, not
+`proxmox`. Making the DNS name disagree with the node's hostname means
 keeping two names in step forever.
-
-`--ssh user@host` is optional; it just makes the printed recipe name a
-real target instead of a placeholder.
 
 ## Issuing a certificate
 
@@ -96,33 +93,33 @@ more than 30 days left unless you pass `--force`.
 > **The root CA is only valid for 365 days.** macOS rejects long-lived
 > user-trusted roots, so this rotates annually — and when it does, every
 > LAN certificate must be re-issued and redeployed:
-> `mpd-virt server cert <name> --force` then `server deploy` for each.
+> `mpd-virt server cert <name> --force`, then reinstall each.
+
+**DNS names only — no IP SANs.** The root constrains `dNSName` to `mpd.test`,
+but under RFC 5280 a name type absent from `permittedSubtrees` is
+*unconstrained*, so an `iPAddress` SAN would be the one field the constraint
+does not cover. Reach these hosts by name; that is what the DNS below is for.
 
 ## Installing it on the server
 
-```sh
-mpd-virt server deploy <name>
-```
+mpd-virt does not do this and prints no recipe for it. Where the certificate
+goes, what owns it, and what to restart differs per machine and changes over
+time — a copy of that inside mpd-virt would only be a staler second copy of
+each machine's own runbook.
 
-prints the exact commands for that machine: where to put the root CA, where
-that service expects its certificate and key, and the `/etc/hosts` block so it
-can reach the other servers by name. `--kind` selects which form is printed.
+Two things that are the same everywhere:
 
-mpd-virt stops there and does not run them. These are not machines it created,
-it has no business restarting services on them unasked, and how you administer
-your own servers is your business — the recipes exist to save you looking up
-`pvenode` syntax, not to prescribe a setup.
-
-Two details it is worth knowing before you paste anything:
-
-- The root CA must land with a **`.crt`** extension in
+- The **root CA** goes on every one of these machines, whether or not it
+  serves TLS — it is what lets the machine *verify* the others.
+  `~/.mpd-virt/conf/caroot/rootCA.pem` is the file, at a stable path, so
+  there is no export step.
+- On Debian-family hosts it must land with a **`.crt`** extension in
   `/usr/local/share/ca-certificates/`. `update-ca-certificates` reads only
   `*.crt`, so a `.pem` is silently ignored and the CA never takes effect.
-- Certificates for `--kind proxmox` carry an **IP SAN** by default, because
-  such a box is typically also reached as `https://<ip>:8006/` and a name-only
-  certificate would fail verification on the URL actually used. Override with
-  `--no-ip`, or add one elsewhere with `--ip`.
+  `scp` renames in flight, so this costs nothing.
 
+A host that only dials out — a CI runner, a scripted API client — needs the
+root and nothing else. `server cert` is for machines that listen.
 
 ## DNS: three resolvers, three mechanisms
 
@@ -207,15 +204,10 @@ already installed on the server; do that there.
 
 ## Notes and limits
 
-- **IP SANs are not covered by the root's name constraint.** The root
-  constrains `dNSName` to `mpd.test`, but says nothing about
-  `iPAddress`, and under RFC 5280 a name type absent from
-  `permittedSubtrees` is *unconstrained*. So the root can sign for any
-  address — which is true whether or not we issue IP SANs, so putting one
-  on the Proxmox certificate does not widen the exposure. Narrowing it
-  properly means adding `permitted;IP:<your LAN>/24` to the root, which
-  costs a regeneration and a re-trust everywhere; the annual rotation is
-  when to do it.
+- **The root can still sign for any IP.** It constrains `dNSName` only.
+  mpd-virt never issues an `iPAddress` SAN, but narrowing the root itself
+  means adding `permitted;IP:<your LAN>/24`, which costs a regeneration and
+  a re-trust everywhere; the annual rotation is when to do it.
 - **No revocation.** No CRL, no OCSP. Certificates expire; to retire one
   early, remove it from the server.
 - **`~/.mpd-virt/conf/` is not backed up.** Losing it now costs more than

@@ -2,9 +2,12 @@
 //
 // A "server" here is a real host on the local network that gets a name in
 // the `mpd.test` tree — `proxmox.mpd.test`, `forge.mpd.test`,
-// `runner.mpd.test`. mpd-virt does not manage those machines; it issues
-// their certificates, remembers their addresses, and publishes their names
-// into every VM's resolver so containers can reach them over verified TLS.
+// `runner.mpd.test`. mpd-virt does not manage those machines and knows
+// nothing about what runs on them; it issues their certificates, remembers
+// their addresses, and publishes their names into every VM's resolver so
+// containers can reach them over verified TLS. What to install where is a
+// property of the machine, not of mpd-virt — it belongs in that machine's
+// own documentation.
 //
 // ── Why a registry rather than a flat hosts file ───────────────────────
 // Every operation needs more than one fact about the same machine:
@@ -17,7 +20,7 @@
 // "directory exists + env inside" definition of known:
 //
 //   ~/.mpd-virt/servers/forge/
-//   ├── env        — MPD_SERVER_{NAME,IP,KIND,SSH}
+//   ├── env        — MPD_SERVER_{NAME,IP}
 //   ├── cert.pem   — leaf, signed directly by the root on this Mac
 //   ├── key.pem    — 0600
 //   └── sans       — the SAN list, so a re-issue reproduces it
@@ -39,65 +42,12 @@ import Foundation
 
 extension MpdVirt.Server {
 
-    /// What kind of service runs here. Drives nothing but the deployment
-    /// hints `server deploy` prints — mpd-virt never logs into these
-    /// machines uninvited.
-    enum Kind: String, CaseIterable {
-        case proxmox
-        case forgejo
-        case caddy
-        case generic
-
-        /// What this service expects its certificate and key to be called
-        /// once installed. mpd-virt stores every certificate under the
-        /// same two names locally — uniform listing, renewal and removal —
-        /// and renames on the way out, where the service's convention is
-        /// what matters.
-        ///
-        /// Proxmox is the reason this exists. `/etc/pve/local/` holds
-        /// `pveproxy-ssl.pem` + `pveproxy-ssl.key`, and a file landing
-        /// there under any other name is simply ignored.
-        /// `server` is the registry name, used where a service keeps its
-        /// certificates in a shared directory and tells them apart by
-        /// filename.
-        func installedNames(server: String) -> (cert: String, key: String) {
-            switch self {
-            case .proxmox: return ("pveproxy-ssl.pem", "pveproxy-ssl.key")
-            case .forgejo: return ("\(server).crt", "\(server).key")
-            case .caddy:   return ("cert.pem", "key.pem")
-            case .generic: return ("cert.pem", "key.pem")
-            }
-        }
-
-        /// Whether a certificate for this kind should carry an IP SAN by
-        /// default. Proxmox is administered by address at least as often
-        /// as by name — the web UI is bookmarked as `https://<ip>:8006/`
-        /// and the API is scripted the same way — so a name-only
-        /// certificate would fail verification on the URL actually used.
-        var wantsIPSAN: Bool { self == .proxmox }
-
-        /// The account `server deploy` addresses when the registry has no
-        /// explicit `--ssh`. Proxmox permits root login out of the box and
-        /// every command there is a root command, so addressing anyone else
-        /// only adds a `sudo` that buys nothing.
-        ///
-        /// nil everywhere else, which prints a bare hostname — ssh then uses
-        /// the local username, which is the common case and is right far more
-        /// often than any name we could guess. A placeholder like `<user>@`
-        /// would have to be edited out of every line before pasting.
-        var defaultSSHUser: String? { self == .proxmox ? "root" : nil }
-    }
-
     /// One registered LAN server.
     struct Entry {
         /// Bare label: `forge`. The DNS name is derived, never stored
         /// twice — see `host`.
         let name: String
         let ip: String
-        let kind: Kind
-        /// Optional `user@host` for the deploy helper. Absent means
-        /// "print the recipe, I'll run it myself".
-        let ssh: String?
 
         /// `forge.mpd.test`.
         var host: String { MpdVirt.Net.serviceHost(name) }
@@ -160,9 +110,7 @@ extension MpdVirt.Server {
         }
         return Entry(
             name: try required("MPD_SERVER_NAME"),
-            ip: try required("MPD_SERVER_IP"),
-            kind: Kind(rawValue: kv["MPD_SERVER_KIND"] ?? "") ?? .generic,
-            ssh: kv["MPD_SERVER_SSH"].flatMap { $0.isEmpty ? nil : $0 }
+            ip: try required("MPD_SERVER_IP")
         )
     }
 
@@ -190,9 +138,7 @@ extension MpdVirt.Server {
             # Managed by `mpd-virt server add`. Edit at your own risk.
             MPD_SERVER_NAME=\(entry.name)
             MPD_SERVER_IP=\(entry.ip)
-            MPD_SERVER_KIND=\(entry.kind.rawValue)
             """
-        if let ssh = entry.ssh { body += "\nMPD_SERVER_SSH=\(ssh)" }
         body += "\n"
         try body.write(toFile: envFile(entry.name), atomically: true, encoding: .utf8)
     }

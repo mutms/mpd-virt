@@ -320,10 +320,10 @@ struct BackendSetDefaultCmd: ParsableCommand {
 struct ServerCmd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "server",
-        abstract: "Manage LAN machines with names under mpd.test (proxmox, forge, runner, …).",
+        abstract: "Manage LAN machines with names under mpd.test — name, address, certificate.",
         subcommands: [
             ServerAddCmd.self, ServerListCmd.self, ServerDeleteCmd.self,
-            ServerCertCmd.self, ServerDeployCmd.self, ServerSyncCmd.self,
+            ServerCertCmd.self, ServerSyncCmd.self,
         ],
         defaultSubcommand: ServerListCmd.self
     )
@@ -341,21 +341,15 @@ struct ServerAddCmd: ParsableCommand {
     @Option(name: .customLong("ip"), help: "IPv4 or IPv6 address on the LAN.")
     var ip: String
 
-    @Option(name: .customLong("kind"), help: "proxmox|forgejo|caddy|generic — selects the deploy hints.")
-    var kind: String = "generic"
-
-    @Option(name: .customLong("ssh"), help: "Optional user@host, used to address the deploy recipe.")
-    var ssh: String?
-
     func run() throws {
-        try MpdVirt.ServerAdmin.add(name: name, ip: ip, kind: kind, ssh: ssh)
+        try MpdVirt.ServerAdmin.add(name: name, ip: ip)
     }
 }
 
 struct ServerListCmd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List registered LAN servers with address, kind and certificate state."
+        abstract: "List registered LAN servers with address and certificate state."
     )
 
     @Flag(name: .customLong("etc-hosts"),
@@ -402,25 +396,9 @@ struct ServerCertCmd: ParsableCommand {
           help: "Re-issue even when the current certificate has plenty of life left.")
     var force: Bool = false
 
-    @Flag(inversion: .prefixedNo, exclusivity: .exclusive,
-          help: "Include the server's IP as an IP SAN, so https://<ip>/ verifies too. Default: on for --kind proxmox.")
-    var ip: Bool?
-
     func run() throws {
-        try MpdVirt.ServerAdmin.cert(name: name, extraSans: sans, withIP: ip, force: force)
+        try MpdVirt.ServerAdmin.cert(name: name, extraSans: sans, force: force)
     }
-}
-
-struct ServerDeployCmd: ParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "deploy",
-        abstract: "Print exactly what to install on this server: root CA, certificate, hosts entries."
-    )
-
-    @Argument(help: "Server name.")
-    var name: String
-
-    func run() throws { try MpdVirt.ServerAdmin.deploy(name: name) }
 }
 
 struct ServerSyncCmd: ParsableCommand {

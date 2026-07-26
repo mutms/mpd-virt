@@ -345,20 +345,14 @@ extension MpdVirt.CA {
     /// mpd-virt hands to the user on a USB-stick basis.
     ///
     /// `sans` is the DNS SAN list; the first entry becomes the CN.
-    /// `ipSans` adds `IP:` entries, for hosts reached by address as well
-    /// as by name — a Proxmox box answers on `192.168.1.99:8006` long
-    /// before anything resolves `proxmox.mpd.test`.
     ///
-    /// Note what an IP SAN is *not* covered by. The root constrains
-    /// `dNSName` to `mpd.test`, but says nothing about `iPAddress`, and
-    /// under RFC 5280 a name type absent from `permittedSubtrees` is
-    /// unconstrained. So the root can sign for any address, with or
-    /// without this parameter — issuing one here does not widen that.
-    /// Narrowing it means adding `permitted;IP:<LAN>/24` to the root,
-    /// which costs a regeneration and a re-trust; the place to do that is
-    /// the annual rotation.
+    /// DNS names only, deliberately. The root constrains `dNSName` to
+    /// `mpd.test`, but under RFC 5280 a name type absent from
+    /// `permittedSubtrees` is unconstrained — so an `iPAddress` SAN would
+    /// be the one field the constraint does not cover. Reach these hosts
+    /// by name.
     static func issueLeaf(
-        sans: [String], ipSans: [String] = [], certPath: String, keyPath: String
+        sans: [String], certPath: String, keyPath: String
     ) throws {
         guard let cn = sans.first else {
             throw MpdVirt.BackendError.other("issueLeaf: no SANs given")
@@ -381,8 +375,7 @@ extension MpdVirt.CA {
             withIntermediateDirectories: true
         )
 
-        let sanList = (sans.map { "DNS:\($0)" } + ipSans.map { "IP:\($0)" })
-            .joined(separator: ", ")
+        let sanList = sans.map { "DNS:\($0)" }.joined(separator: ", ")
         let extBody = """
             [ v3_leaf ]
             subjectKeyIdentifier   = hash
