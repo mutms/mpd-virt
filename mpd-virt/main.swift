@@ -349,11 +349,11 @@ struct ServerAddCmd: ParsableCommand {
 struct ServerListCmd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List registered LAN servers with address and certificate state."
+        abstract: "Print every LAN server as a hosts(5) line, then what /etc/hosts here still lacks."
     )
 
     @Flag(name: .customLong("etc-hosts"),
-          help: "Emit only the hosts(5) block, ready to paste into /etc/hosts on this Mac.")
+          help: "Emit only the hosts(5) lines, with no trailing report, so the output pipes.")
     var etcHosts: Bool = false
 
     func run() throws { try MpdVirt.ServerAdmin.list(etcHosts: etcHosts) }

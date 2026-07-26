@@ -48,58 +48,32 @@ extension MpdVirt.ServerAdmin {
         MpdVirt.Ui.indent("  mpd-virt server cert \(name)   # issue its TLS certificate, if it serves any")
         MpdVirt.Ui.indent("  mpd-virt server sync --all    # publish the name inside every VM")
         print("")
-        try printEtcHostsReminder()
+        try printEtcHostsReminder(MpdVirt.Server.loadAll())
     }
 
     // MARK: - list
 
+    /// Print the registry in hosts(5) form, then what this Mac still needs.
+    ///
+    /// Always the pasteable form, never a decorated table: this output is
+    /// read in order to copy it into `/etc/hosts`, so anything indented or
+    /// columnised would have to be edited back out.
     static func list(etcHosts: Bool) throws {
         let entries = try MpdVirt.Server.loadAll()
 
-        // --etc-hosts is the paste-ready form and nothing else, so it can
-        // be piped: `mpd-virt server list --etc-hosts | sudo tee -a /etc/hosts`.
-        if etcHosts {
-            print(try MpdVirt.Server.hostsBody(), terminator: "")
-            return
-        }
-
         guard !entries.isEmpty else {
-            MpdVirt.Ui.header("LAN servers")
-            info("none registered — add one with `mpd-virt server add <name> --ip <addr>`")
+            if !etcHosts {
+                info("no LAN servers registered — add one with `mpd-virt server add <name> --ip <addr>`")
+            }
             return
         }
 
-        MpdVirt.Ui.header("LAN servers")
-        let nameWidth = max(4, entries.map(\.host.count).max() ?? 4)
-        let ipWidth = max(7, entries.map(\.ip.count).max() ?? 7)
-        MpdVirt.Ui.indent(
-            "NAME".padded(nameWidth) + "  " + "ADDRESS".padded(ipWidth)
-            + "  CERTIFICATE"
-        )
-        for e in entries {
-            MpdVirt.Ui.indent(
-                e.host.padded(nameWidth) + "  " + e.ip.padded(ipWidth)
-                + "  " + certStatus(e.name)
-            )
-        }
-        print("")
-        try printEtcHostsReminder()
-    }
+        for e in entries { print("\(e.ip)\t\(e.host)") }
 
-    /// Human-readable state of a server's certificate.
-    private static func certStatus(_ name: String) -> String {
-        let path = MpdVirt.Server.certPath(name)
-        guard FileManager.default.fileExists(atPath: path) else {
-            // Not a defect. A host that only dials out never presents a
-            // certificate, so nagging about it forever would be wrong.
-            return "none (only needed if it serves TLS)"
-        }
-        guard let days = try? MpdVirt.CA.daysUntilExpiry(of: path) else {
-            return "unreadable"
-        }
-        if days < 0 { return "EXPIRED \(-days)d ago — re-issue" }
-        if days <= expiryWarningDays { return "expires in \(days)d — re-issue soon" }
-        return "valid, \(days)d left"
+        // --etc-hosts suppresses everything else so the output pipes:
+        //   mpd-virt server list --etc-hosts | sudo tee -a /etc/hosts
+        guard !etcHosts else { return }
+        try printEtcHostsReminder(entries)
     }
 
     // MARK: - delete
@@ -253,10 +227,7 @@ extension MpdVirt.ServerAdmin {
     /// the lookup goes to the system resolver, which asks the internet
     /// about a reserved TLD. `/etc/hosts` is consulted first, which is why
     /// hand-editing works and is the right answer here.
-    private static func printEtcHostsReminder() throws {
-        let entries = try MpdVirt.Server.loadAll()
-        guard !entries.isEmpty else { return }
-
+    private static func printEtcHostsReminder(_ entries: [MpdVirt.Server.Entry]) throws {
         let live = (try? String(contentsOfFile: "/etc/hosts", encoding: .utf8)) ?? ""
         let missing = entries.filter { e in
             !live.split(separator: "\n").contains { line in
@@ -266,24 +237,14 @@ extension MpdVirt.ServerAdmin {
                 return f[0] == e.ip && f.dropFirst().contains(e.host)
             }
         }
+        print("")
         guard !missing.isEmpty else {
-            ok("/etc/hosts on this Mac already resolves every registered server")
+            ok("/etc/hosts on this Mac resolves all of these")
             return
         }
-
-        warn("this Mac cannot resolve \(missing.count) of these names yet")
-        MpdVirt.Ui.indent("Add to /etc/hosts (mpd-virt won't edit it for you):")
-        print("")
-        for e in missing { print("\(e.ip)\t\(e.host)") }
-        print("")
-        MpdVirt.Ui.indent("    sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder")
-        print("")
+        warn("/etc/hosts on this Mac is missing \(missing.count) of these:")
+        for e in missing { MpdVirt.Ui.indent(e.host) }
+        MpdVirt.Ui.indent("then: sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder")
     }
 }
 
-/// Left-pad to a column width. Table rendering only.
-private extension String {
-    func padded(_ width: Int) -> String {
-        count >= width ? self : self + String(repeating: " ", count: width - count)
-    }
-}
