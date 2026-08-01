@@ -37,11 +37,19 @@ design lives where it is implemented — this repo's `README.md`,
 - [`mpd-virt.md`](mpd-virt.md) — `mpd-virt`'s verb surface, sudo-recipe
   UX, VM identity model (octet as canonical key), and the
   Parallels-Desktop-Pro backend specifics.
-- [`utm-backend.md`](utm-backend.md) — **high priority.** Second backend
-  for macOS: UTM (free, native AVF on Apple Silicon). Removes the
-  paid-Parallels-license barrier for evaluation. Simplified by the in-VM
-  `bootstrap/` chain being hypervisor-agnostic; UTM platform existed in
-  git history before the `mpd-virt` split — lift as reference.
+- [`utm-backend.md`](utm-backend.md) — **superseded, pending a spike.**
+  Second backend for macOS: UTM (free, native AVF on Apple Silicon).
+  Removes the paid-Parallels-license barrier for evaluation.
+  [`apple-container-backend.md`](apple-container-backend.md) proposes
+  removing this backend instead of building it; keep until that
+  proposal's §7 spike passes.
+- [`apple-container-backend.md`](apple-container-backend.md) — Apple's
+  `container machine` (WWDC26) as the macOS backend, replacing UTM and
+  eventually Parallels. Runs the image's own `/sbin/init`, so systemd
+  works and podman-inside is podman-in-a-VM rather than nesting. Covers
+  the per-octet MAC that substitutes for the missing `--ip`, the Debian
+  Trixie image the mpd repo must build, and the id ranges re-cut by how
+  the Mac reaches a VM. Gated on a hardware spike.
 - [`proxmox-backend-and-warp-dns.md`](proxmox-backend-and-warp-dns.md) — a
   Proxmox backend driven by a pool-scoped API token, plus what a LAN
   resolver (`warp`) makes unnecessary: `/etc/hosts` entries for LAN
