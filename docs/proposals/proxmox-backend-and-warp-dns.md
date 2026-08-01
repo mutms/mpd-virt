@@ -6,7 +6,10 @@ the Proxmox VM network. Everything mpd-virt currently writes into
 `/etc/hosts` and `/etc/resolver/` on the Mac is a workaround for that box
 not existing.
 
-Status: proposed. Nothing here is implemented.
+Status: proposed. Nothing here is implemented. Reframed 2026-08-01: the
+automated backend is deferred behind manual creation plus takeover (§4),
+and the id blocks are now cut by reachability class rather than by
+hypervisor product (§2).
 
 ---
 
@@ -43,24 +46,31 @@ the failure by one step.
 
 ## 2. Drop per-VM resolver files for the Proxmox range
 
-VM ids are bounded per backend. Blocks of 32, CIDR-aligned, so each is a
-single supernet and the reserved low ids cost nothing:
+VM ids are bounded per class. Blocks of 32, CIDR-aligned, so each is a
+single supernet and the reserved low ids cost nothing.
 
-| ids     | container supernet | VM address        | backend   |
-|---------|--------------------|-------------------|-----------|
-| 100-127 | -                  | -                 | free      |
-| 128-159 | `10.163.128.0/19`  | 10.211.55.\<NNN\> | parallels |
-| 160-191 | `10.163.160.0/19`  | -                 | utm       |
-| 192-223 | `10.163.192.0/19`  | 10.212.56.\<NNN\> | proxmox   |
-| 224-255 | `10.163.224.0/19`  | -                 | free      |
+The blocks are cut by **how the Mac reaches the VM**, not by which
+product made it — Parallels, UTM and an adopted Proxmox-less VM are
+indistinguishable from the host's point of view, so splitting them was
+never buying anything:
+
+| ids     | container supernet | VM address        | class                 | host reachability       |
+|---------|--------------------|-------------------|-----------------------|-------------------------|
+| 100-127 | -                  | -                 | free                  | —                       |
+| 128-159 | `10.163.128.0/19`  | 10.211.55.\<NNN\> | general VMs (adopted) | per-VM on-link next hop |
+| 160-191 | `10.163.160.0/19`  | -                 | native containers     | vmnet, one next hop     |
+| 192-223 | `10.163.192.0/19`  | 10.212.56.\<NNN\> | proxmox               | single gateway (warp)   |
+| 224-255 | `10.163.224.0/19`  | -                 | free                  | —                       |
+
+General VMs take the lower block so existing hand-made VMs — `mpd-130`
+among them — keep their ids and need no renumbering. Native containers
+are the class with no installed base, so they are the ones that can be
+assigned freely. See
+[`apple-container-backend.md`](apple-container-backend.md) §6.
 
 A block grows by promoting its prefix rather than renumbering — proxmox
 taking 224-255 makes it `10.163.192.0/18`, which is the route already
 written below, so today's route is already the grown form.
-
-**No migration.** Parallels currently allocates from 100, but those VMs
-are being recreated on 2026-07-28 before any of this lands, so the range
-is free by the time it matters.
 
 So warp can carry the whole Proxmox range as static forwarders, written
 once, before any VM exists:
@@ -75,39 +85,45 @@ A forwarder whose target is not up is inert. That removes 63
 `/etc/resolver/<NNN>.mpd.test` files from every client that uses warp,
 and removes the privileged step from creating a Proxmox VM.
 
-**This does not extend to Parallels or UTM**, and no carve of the id
+**This does not extend to the other two classes**, and no carve of the id
 space changes that. Aggregation works for Proxmox because all its
-container subnets sit behind **one** next hop, warp. Each Parallels VM is
+container subnets sit behind **one** next hop, warp. Each general VM is
 its own next hop at `10.211.55.<NNN>`, and each zone's resolver is
 `10.163.<NNN>.1` — 32 different gateways, so neither the routes nor the
-resolver files collapse. Those backends keep `Net.resolverFile(octet:)`
+resolver files collapse. Those classes keep `Net.resolverFile(octet:)`
 and the per-VM sudo prompt.
+
+Native containers sit between the two: every machine is behind the same
+vmnet next hop, but that address is assigned rather than chosen, so the
+routes cannot be written before the machines exist. Which of the two
+shapes that block ends up taking depends on the addressing decision in
+[`apple-container-backend.md`](apple-container-backend.md) §3.
 
 The sudo prompt still goes away, just by pre-creating rather than
 aggregating. A block is 32 ids, so all of it can be written once, before
-any VM exists — a Parallels next hop at `10.211.55.<NNN>` is on-link, so
+any VM exists — a general-VM next hop at `10.211.55.<NNN>` is on-link, so
 the route installs and simply drops packets until that VM is up, and an
 unused `/etc/resolver/<NNN>.mpd.test` is only reached by a query nobody
 makes.
 
 macOS routes do not persist, so the durable form is a LaunchDaemon.
 
-Shape: one script per backend, `~/.mpd-virt/conf/parallels-setup.sh`,
-`utm-setup.sh`, `proxmox-setup.sh`, which the user reads and runs with
-sudo. That is the entire privileged step for that backend, and enabling a
-backend you do not use costs nothing. Each is self-contained — resolver
-contents inline, not copied from sibling files — so reviewing it means
-reading one file rather than thirty-five. It writes, for its own block
-only:
+Shape: one script per class, `~/.mpd-virt/conf/general-setup.sh`,
+`container-setup.sh`, `proxmox-setup.sh`, which the user reads and runs
+with sudo. That is the entire privileged step for that class, and
+enabling a class you do not use costs nothing. Each is self-contained —
+resolver contents inline, not copied from sibling files — so reviewing it
+means reading one file rather than thirty-five. It writes, for its own
+block only:
 
 * `/etc/resolver/<NNN>.mpd.test` for every id in the block
-* `/usr/local/libexec/mpd-routes-<backend>.sh` — its routes
-* `/Library/LaunchDaemons/test.mpd.routes.<backend>.plist` — RunAtLoad,
+* `/usr/local/libexec/mpd-routes-<class>.sh` — its routes
+* `/Library/LaunchDaemons/test.mpd.routes.<class>.plist` — RunAtLoad,
   invoking that script, so the routes survive a reboot
 * a DNS cache flush
 
-Idempotent, regenerated whenever that backend's block changes;
-`parallels-setup.sh --remove` is what `uninstall` runs. Each written file
+Idempotent, regenerated whenever that class's block changes;
+`general-setup.sh --remove` is what `uninstall` runs. Each written file
 carries a marker comment so removal never touches a hand-written one.
 
 `proxmox-setup.sh` is much smaller, because warp is both that backend's
@@ -130,9 +146,9 @@ rather than returning NXDOMAIN quickly.
 
 ## 3. Routing
 
-Two aggregate routes replace the per-VM route Parallels needs. `192-254`
-supernets cleanly, and `10.163.192.0/18` cannot collide with the
-Parallels container subnets at `10.163.100-191`:
+Two aggregate routes replace the per-VM route a general VM needs.
+`192-254` supernets cleanly, and `10.163.192.0/18` cannot collide with
+the other classes' container subnets at `10.163.100-191`:
 
 ```sh
 route -n add 10.163.192.0/18 192.168.1.102     # container subnets
@@ -152,13 +168,89 @@ exercises the same path the MacBook Air uses.
 **Uninstall.** `mpd-virt uninstall` should remove the LaunchDaemon along
 with the resolver files it already handles.
 
-## 4. Proxmox backend
+## 4. Proxmox by takeover — the version to build
 
-`MpdVirt.Backend` gains `case proxmox` alongside `parallels`, `utm`,
-`general`, with `canonicalSubnet = "10.212.56"`.
+**There is no Proxmox backend in the first version.** Creating a VM by
+hand and taking it over is enough, and it needs no API token, no pool, no
+ACLs and no code in this repo. §5 keeps the automated backend on record
+for when VM creation becomes frequent enough to be worth it.
 
-Provisioning is REST only — no `ssh root@kitchenbox` anywhere in the
-path, because that would bypass every restriction below.
+A VM joins by hand:
+
+1. **Fill in the Proxmox cloud-init panel.** It already asks for exactly
+   what the pre-takeover state requires — user, SSH public key, DNS,
+   static IP `10.212.56.<NNN>/24` — and the VM name supplies the
+   hostname, so name it `mpd-<NNN>`. Nothing else to seed, and in
+   particular no certificates: the per-VM intermediate is pushed later by
+   `setup`, from the root CA that never leaves the Mac.
+2. Run the tweak script in the VM, in one command fetched from GitHub.
+   This is **mandatory and happens before takeover** — it is what makes
+   the VM match the definition of an mpd environment. Same script, same
+   contract, for every taken-over VM regardless of hypervisor. See
+   [`apple-container-backend.md`](apple-container-backend.md) §4.
+3. `mpd-virt setup <NNN> --backend=proxmox`, which *verifies* the VM
+   conforms, pushes the CA, and writes the registry entry. No `--ip`:
+   the address is `10.212.56.<NNN>`, derived from the octet like every
+   other mpd fact.
+
+Step 1 is the entire hypervisor-side job, and it is a form. That is the
+argument in §5 for probably never automating it: an API that automates
+filling in a form is worth building only when you fill it in often.
+
+Steps 1 and 2 can collapse into one if wanted, by having cloud-init run
+the tweak script itself. Note that Proxmox's *UI* cloud-init panel covers
+identity and networking but not `runcmd` — custom user-data needs a
+snippet passed with `--cicustom`. So fully hands-off costs a snippet
+file; otherwise step 2 is one SSH command after first boot.
+
+For a VM that is not cloud-init, step 1 becomes `ssh-copy-id` plus
+setting the hostname and address by hand; steps 2 and 3 are unchanged.
+
+### `proxmox` is a thin backend case, not `general` with documentation
+
+`MpdVirt.Backend` gains `case proxmox` **now**, with no API client
+behind it:
+
+```swift
+case proxmox:
+    canonicalSubnet = "10.212.56"
+    capabilities    = (create: false, clone: false, lifecycle: false)
+```
+
+The reason is addressing. A `general` VM lives at whatever `--ip` the
+user passes; a Proxmox VM lives at `10.212.56.<NNN>`, derived from the
+octet. So `locate(octet:ipHint:)` computes the address instead of
+demanding it, the 192-223 range becomes enforceable rather than a
+convention, and `proxmox-setup.sh` versus `general-setup.sh` map onto
+backend cases instead of loose naming.
+
+Roughly twenty lines. What varies between these two classes is not how
+the VM is taken over — that is identical — but whether the host can
+compute where it is.
+
+## 5. Automated provisioning — recorded, probably not building
+
+This section is research, not a queued task. Automating creation is only
+worth it at volume: many VMs, CI creating and destroying them, or other
+people onboarding without access to the Proxmox UI. None of that is the
+current situation, and two things argue against it even later.
+
+**All it automates is a form.** The tweak script already handles the part
+that is actually hard — making the VM conform. Filling in the cloud-init
+panel is the residue.
+
+**It creates a credential that otherwise need not exist.** A pool, a
+user, an API token with write access on the hypervisor: something to
+store, rotate and eventually revoke. That cuts against the posture the
+rest of mpd takes — the root CA never leaves the Mac, VM certs are
+zone-constrained intermediates, LAN certs are scoped. Not creating a
+standing credential beats scoping one well.
+
+What follows is written down so whoever eventually wants it does not have
+to rediscover the permissions model or the `SDN.Use` trap.
+
+Provisioning would be REST only — no `ssh root@kitchenbox` anywhere in
+the path, because that would bypass every restriction below.
 
 **Config** (new keys, alongside the existing per-VM registry):
 
@@ -175,7 +267,9 @@ looks like a Proxmox error rather than a CA mismatch.
 **Create** clones template VMID 190 (`debian-13-genericcloud`, kept at a
 constant id and name so refreshing the image changes nothing), sets
 cloud-init user, ssh key, nameserver and static IP
-`10.212.56.<NNN>/24`, then runs the existing bootstrap over SSH.
+`10.212.56.<NNN>/24`, then runs the tweak script over SSH and hands to
+`setup` — the same two steps §4 does by hand. All this backend automates
+is the form.
 
 **Bootstrap fit.** `bootstrap/30-networking.sh` in the mpd repo already
 targets systemd-networkd + systemd-resolved and writes
@@ -218,5 +312,10 @@ convention. Nor can ACLs cap disk usage — only separate storage does.
   `lan-hosts`, and push both, or does warp stay hand-maintained? Pushing
   needs SSH to warp, which is a smaller credential than Proxmox root but
   is still a credential.
-* Parallels and Proxmox now differ in whether creating a VM needs sudo.
+* The reachability classes differ in whether creating a VM needs sudo.
   Worth surfacing in `backend list` output.
+* Does the tweak script need a Proxmox-specific branch at all? §5's
+  "bootstrap fit" notes below — netplan ordering, cloud-init re-rendering
+  `/etc/hosts` — are properties of `debian-13-genericcloud`, not of
+  Proxmox. If the script handles them generally, there is nothing
+  Proxmox-shaped left in the takeover path.

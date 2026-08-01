@@ -50,12 +50,18 @@ design lives where it is implemented — this repo's `README.md`,
   the per-octet MAC that substitutes for the missing `--ip`, the Debian
   Trixie image the mpd repo must build, and the id ranges re-cut by how
   the Mac reaches a VM. Gated on a hardware spike.
-- [`proxmox-backend-and-warp-dns.md`](proxmox-backend-and-warp-dns.md) — a
-  Proxmox backend driven by a pool-scoped API token, plus what a LAN
-  resolver (`warp`) makes unnecessary: `/etc/hosts` entries for LAN
-  servers, and one `/etc/resolver/` file per Proxmox VM. Both replaced by
-  a single `/etc/resolver/mpd.test` and two aggregate routes, all written
-  once because the Proxmox id range is bounded.
+- [`proxmox-backend-and-warp-dns.md`](proxmox-backend-and-warp-dns.md) —
+  Proxmox by **manual creation plus takeover**: fill in the cloud-init
+  panel, run the tweak script, `setup --backend=proxmox` — a thin backend
+  case that derives the address from the octet rather than being told it.
+  The pool-scoped API-token version is recorded as research and probably
+  will not be built: all it automates is a form, and it creates a standing
+  credential that otherwise need not exist. Also: what a LAN resolver
+  (`warp`) makes unnecessary —
+  `/etc/hosts` entries for LAN servers and one `/etc/resolver/` file per
+  Proxmox VM, both replaced by a single `/etc/resolver/mpd.test` and two
+  aggregate routes; and the id blocks, now cut by reachability class
+  rather than hypervisor product.
 - [`sandbox-takeover-and-ca-refresh.md`](sandbox-takeover-and-ca-refresh.md) —
   One mechanism, two use cases: adopting an existing `mpd-sandbox` VM
   as a managed `mpd-<NNN>` VM, and rotating the local CA before its
