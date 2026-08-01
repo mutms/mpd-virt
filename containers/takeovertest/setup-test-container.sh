@@ -11,7 +11,7 @@
 
 set -e
 
-NAME=mpd-141
+NAME=mpd-181
 DEVUSER=skodak
 MEMORY=10g
 KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO61UcrKSqmzE7chEPW3jxexm/7afk7252JsjUoG5I3Y testkey"
