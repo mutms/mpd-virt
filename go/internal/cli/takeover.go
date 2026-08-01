@@ -97,6 +97,18 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string) error {
 	}
 	pass("Debian Trixie")
 
+	// The box must already be on systemd-resolved (the prepare script
+	// converts the network stack). Fail fast with the fix rather than
+	// after the long clone + build that vm-setup would then reject.
+	if r, err := t.Run(ctx, "systemctl is-active --quiet systemd-resolved"); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("box at %s is not prepared — systemd-resolved is not active.\n"+
+			"Run the prepare script on the VM first (follow its reboot prompt until it says ready):\n"+
+			"    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)", ip)
+	}
+	pass("network prepared (systemd-resolved active)")
+
 	// --- Per-VM CA generated on the Mac. Root key stays here; the
 	//     intermediate is name-constrained to this box's zone.
 	if err := ca.LoadOrGenerateRoot(); err != nil {
