@@ -31,7 +31,7 @@ FROM debian:trixie-slim
 
 ARG OCTET=128
 ARG SUBNET=192.168.64
-ARG GATEWAY=
+ARG GATEWAY=192.168.64.1
 ARG DEVUSER=skodak
 
 # systemd as init + the tools takeover's Phase A expects to find already
@@ -53,19 +53,45 @@ RUN set -eux; \
     fi
 
 # --- Identity: hostname mpd-0NN (zero-padded 3 digits, matches vmName) ------
+# Only /etc/hostname is baked — systemd applies it at boot. /etc/hosts is
+# bind-mounted read-only during the build (the runtime owns it), so its
+# 127.0.1.1 entry is added at boot by the oneshot unit below instead.
 RUN set -eux; \
     nnn="$(printf '%03d' "${OCTET}")"; \
-    echo "mpd-${nnn}" > /etc/hostname; \
+    echo "mpd-${nnn}" > /etc/hostname
+
+# Add the loopback name mapping at boot (build-time /etc/hosts is read-only).
+# The logic lives in a script so systemd never tries to $-expand it; the unit
+# just runs the script. Reads /etc/hostname so it's correct for any OCTET.
+# Keeps `hostname -f`/sudo from griping about an unresolvable host.
+RUN set -eux; \
     { \
-      echo "127.0.0.1   localhost"; \
-      echo "127.0.1.1   mpd-${nnn}"; \
-    } > /etc/hosts
+      echo '#!/bin/sh'; \
+      echo 'set -eu'; \
+      echo 'h=$(cat /etc/hostname)'; \
+      echo 'grep -q "127.0.1.1 $h" /etc/hosts || echo "127.0.1.1 $h" >> /etc/hosts'; \
+    } > /usr/local/sbin/mpd-hosts.sh; \
+    chmod 0755 /usr/local/sbin/mpd-hosts.sh; \
+    { \
+      echo '[Unit]'; \
+      echo 'Description=Add mpd hostname to /etc/hosts'; \
+      echo 'After=systemd-hostnamed.service'; \
+      echo 'Before=ssh.service'; \
+      echo ''; \
+      echo '[Service]'; \
+      echo 'Type=oneshot'; \
+      echo 'RemainAfterExit=yes'; \
+      echo 'ExecStart=/usr/local/sbin/mpd-hosts.sh'; \
+      echo ''; \
+      echo '[Install]'; \
+      echo 'WantedBy=multi-user.target'; \
+    } > /etc/systemd/system/mpd-hosts.service; \
+    systemctl enable mpd-hosts.service
 
 # --- Static networking via systemd-networkd ---------------------------------
 # Match any ethernet iface (name is en0/eth0/enp0s1 depending on the runtime)
 # and pin the canonical address. DHCP off — this box owns its IP.
 RUN set -eux; \
-    gw="${GATEWAY:-${SUBNET}.1}"; \
     mkdir -p /etc/systemd/network; \
     { \
       echo '[Match]'; \
@@ -73,7 +99,7 @@ RUN set -eux; \
       echo ''; \
       echo '[Network]'; \
       echo "Address=${SUBNET}.${OCTET}/24"; \
-      echo "Gateway=${gw}"; \
+      echo "Gateway=${GATEWAY}"; \
       echo 'DNS=1.1.1.1'; \
     } > /etc/systemd/network/10-mpd.network; \
     systemctl enable systemd-networkd
