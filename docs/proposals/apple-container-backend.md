@@ -558,6 +558,47 @@ must be the compiled-in default backend on macOS, or step 4 needs
 throws when no default is stored. And step 5's build caching is what
 stops steps 5–7 being repeated slowly for the second and third machine.
 
+## 9. The CLI surface that falls out
+
+None of the decisions above were about the command line, but together
+they remove most of it. Recording *why* each flag goes, because
+"we deleted some flags" reads as arbitrary later, while "the octet
+already told us" does not.
+
+| removed | because |
+|---|---|
+| `clone` verb, `--template` | Parallels was its only implementation — §6 |
+| `--ip` on `setup` | the IP *is* the argument; the octet is its last byte — §4 |
+| `--backend` on `setup` | the block the octet falls in determines the class — §4 |
+| `--backend` on `create` | only one class has `create` at all — §6 |
+| `backend set-default`, `conf/backend.env` | nothing left to default between |
+| `--vm-disk` | machines are thin-provisioned against the Mac's disk — the spike reported `graphRootAllocated: 541GB` |
+| `--username` | defaults to `whoami`, which is what mpd's own identity detection already does; an override, not an argument |
+
+`backend list` survives as information rather than configuration.
+
+What remains:
+
+```
+mpd-virt create 165 [--memory 10G]
+mpd-virt setup 10.212.56.200
+mpd-virt start|stop|delete 165
+mpd-virt list | diag 165 | update 165 | uninstall
+```
+
+Against today's `clone 150 --template=mpd-template-trixie
+--username=USER --backend=parallels`, that is the difference between a
+tool you look up and one you remember.
+
+The gain is not only brevity. Every flag removed is a flag that cannot be
+passed inconsistently, so a whole class of "I passed
+`--backend=general` but the IP was in the proxmox range" stops being
+something to diagnose, and starts being something that cannot be
+expressed.
+
+**Downstream.** [`mpd-virt.md`](mpd-virt.md) defines the verb surface and
+`README.md` documents it; both need updating to match once this lands.
+
 ## Open questions
 
 * Does a pinned address survive a stop/start cycle, and does Apple's

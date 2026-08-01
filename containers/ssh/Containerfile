@@ -1,0 +1,45 @@
+# OCI recipe: minimal SSH target for Apple `container` on the host macOS.
+#
+# Purpose: a host-side Linux container the Parallels dev VM can reach over SSH
+# with key auth only. Built/pushed on the Mac, pulled + run via Apple container.
+#
+#   Build:  container build -t ssh-target:latest containers/ssh
+#   Run:    container run -d --name ssh-target ssh-target:latest
+#   Reach:  ssh root@<container-ip>   (from the VM; key baked in below)
+#
+# Base matches the mpd platform target (Debian Trixie).
+FROM debian:trixie-slim
+
+# openssh-server + a CA bundle (harmless, handy for anything that phones home).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-server ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Runtime dir sshd needs for its privilege-separation socket.
+RUN mkdir -p /run/sshd
+
+# Key-only auth, no passwords, no interactive root password login.
+# PermitRootLogin prohibit-password => root allowed with a key, never a password.
+RUN set -eux; \
+    conf=/etc/ssh/sshd_config.d/10-hardening.conf; \
+    { \
+      echo 'PermitRootLogin prohibit-password'; \
+      echo 'PasswordAuthentication no'; \
+      echo 'KbdInteractiveAuthentication no'; \
+      echo 'PubkeyAuthentication yes'; \
+      echo 'PermitEmptyPasswords no'; \
+      echo 'X11Forwarding no'; \
+      echo 'UseDNS no'; \
+    } > "$conf"
+
+# Authorize the dev VM's key for root.
+COPY authorized_keys /root/.ssh/authorized_keys
+RUN chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys
+
+# Host keys are generated on first boot (see entrypoint) so the image doesn't
+# ship a fixed, shared host identity.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
+
+EXPOSE 22
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
