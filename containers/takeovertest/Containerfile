@@ -1,12 +1,19 @@
 # Takeover-test container: a fake freshly-provisioned mpd VM for `mpd-virt
-# setup` to adopt. Plain `container run` (vminitd), no systemd. Hostname comes
-# from --name (`--name mpd-<NNN>` -> hostname mpd-<NNN>); the IP is whatever
-# vmnet assigns (a guest-set IP is never routed, so we don't try). Generic
-# image, no build args. Add --cap-add ALL when Podman must run inside.
+# takeover` to adopt. Plain `container run` (vminitd), no systemd. Hostname
+# comes from --name (`--name mpd-<NNN>` -> hostname mpd-<NNN>); the IP is
+# whatever vmnet assigns (a guest-set IP is never routed, so we don't try).
+#
+# The image is FULLY generic: it bakes only the base OS, openssh, sudo, a few
+# tools, and a tiny entrypoint that runs sshd. The dev user, its passwordless
+# sudo, and the authorized SSH key are all created AFTER the container starts,
+# with `container exec` (which runs via the runtime, so it needs no SSH — the
+# ordering just works). One image serves every box and every user, and adding
+# or rotating a key — or even the account — is a runtime step, never a rebuild.
+# `mpd create` drives those exec calls; for manual use see the README.
 #
 #   container build -t takeovertest containers/takeovertest
-#   container run -d --name mpd-128 --cap-add ALL takeovertest
-#   container ls        # note the vmnet-assigned IP, then: ssh skodak@<ip>
+#   container run -d --name mpd-128 --cap-add ALL takeovertest   # ALL: for Podman
+#   # then create the user + sudo + authorize a key with `container exec` (README)
 FROM debian:trixie-slim
 
 RUN apt-get update \
@@ -14,19 +21,8 @@ RUN apt-get update \
         openssh-server sudo wget git ca-certificates iproute2 iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-# Dev user: skodak, passwordless sudo, authorized key.
-RUN set -eux; \
-    useradd --create-home --shell /bin/bash skodak; \
-    usermod -aG sudo skodak; \
-    echo 'skodak ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-skodak; \
-    chmod 0440 /etc/sudoers.d/90-skodak; \
-    install -d -m 0700 -o skodak -g skodak /home/skodak/.ssh
-COPY authorized_keys /tmp/authorized_keys
-RUN set -eux; \
-    install -m 0600 -o skodak -g skodak /tmp/authorized_keys /home/skodak/.ssh/authorized_keys; \
-    rm -f /tmp/authorized_keys
-
-# sshd: key-only. Host keys generated on first boot by the entrypoint.
+# sshd: key-only. Host keys are generated on first boot by the entrypoint.
+# sshd needs no dev user to start; the account is added later via exec.
 RUN set -eux; \
     mkdir -p /run/sshd; \
     printf '%s\n' \
