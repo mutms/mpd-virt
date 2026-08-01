@@ -1,0 +1,109 @@
+# OCI recipe: a container that SIMULATES a freshly-provisioned mpd VM,
+# ready for `mpd-virt setup <NNN>` to take over.
+#
+# Unlike containers/ssh (a bare SSH endpoint), this boots systemd as PID 1
+# and stands up the usual Debian networking stack at a *static* canonical
+# address — so from the host's point of view it is indistinguishable from a
+# Parallels/UTM VM sitting at mpd-<NNN> / <subnet>.<NNN>, waiting to be
+# adopted. `30-networking.sh` therefore has nothing to do; takeover resumes
+# straight into the install/build/vm-setup steps.
+#
+# Everything provisioned here (dev user, sudo, key, static net, hostname) is
+# the same groundwork the eventual *native* container backend will bake in.
+#
+#   Build:  container build \
+#             --build-arg OCTET=128 \
+#             -t takeovertest:128 containers/takeovertest
+#   Run:    container run -d --name takeovertest takeovertest:128
+#   Reach:  ssh skodak@192.168.64.128
+#
+# OCTET must be in the general/adopted band — 128..159. That range is the
+# subnet plan's slot for "general VMs (adopted)" (per-VM on-link next hop),
+# which is exactly what an adopted Apple container is. The build fails below
+# if OCTET falls outside it, so a stray value can't produce a mislabelled box.
+#
+# Build args (override per box):
+#   OCTET    canonical NNN in 128..159 -> hostname mpd-0NN, IP <SUBNET>.OCTET
+#   SUBNET   /24 the container lives on                (default 192.168.64)
+#   GATEWAY  default route                             (default <SUBNET>.1)
+#   DEVUSER  dev account name                          (default skodak)
+FROM debian:trixie-slim
+
+ARG OCTET=128
+ARG SUBNET=192.168.64
+ARG GATEWAY=
+ARG DEVUSER=skodak
+
+# systemd as init + the tools takeover's Phase A expects to find already
+# present (wget/git for the bootstrap scripts, sudo, a CA bundle), plus
+# systemd-networkd for the static address.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        systemd systemd-sysv \
+        openssh-server \
+        sudo wget git ca-certificates \
+        iproute2 iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Guard: OCTET must be in the general/adopted band (128..159) ------------
+RUN set -eux; \
+    if [ "${OCTET}" -lt 128 ] || [ "${OCTET}" -gt 159 ]; then \
+        echo "OCTET=${OCTET} is out of the general/adopted range 128..159" >&2; \
+        exit 1; \
+    fi
+
+# --- Identity: hostname mpd-0NN (zero-padded 3 digits, matches vmName) ------
+RUN set -eux; \
+    nnn="$(printf '%03d' "${OCTET}")"; \
+    echo "mpd-${nnn}" > /etc/hostname; \
+    { \
+      echo "127.0.0.1   localhost"; \
+      echo "127.0.1.1   mpd-${nnn}"; \
+    } > /etc/hosts
+
+# --- Static networking via systemd-networkd ---------------------------------
+# Match any ethernet iface (name is en0/eth0/enp0s1 depending on the runtime)
+# and pin the canonical address. DHCP off — this box owns its IP.
+RUN set -eux; \
+    gw="${GATEWAY:-${SUBNET}.1}"; \
+    mkdir -p /etc/systemd/network; \
+    { \
+      echo '[Match]'; \
+      echo 'Type=ether'; \
+      echo ''; \
+      echo '[Network]'; \
+      echo "Address=${SUBNET}.${OCTET}/24"; \
+      echo "Gateway=${gw}"; \
+      echo 'DNS=1.1.1.1'; \
+    } > /etc/systemd/network/10-mpd.network; \
+    systemctl enable systemd-networkd
+
+# --- Dev user: skodak, passwordless sudo, authorized key --------------------
+RUN set -eux; \
+    useradd --create-home --shell /bin/bash "${DEVUSER}"; \
+    usermod -aG sudo "${DEVUSER}"; \
+    echo "${DEVUSER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${DEVUSER}; \
+    chmod 0440 /etc/sudoers.d/90-${DEVUSER}; \
+    install -d -m 0700 -o "${DEVUSER}" -g "${DEVUSER}" /home/${DEVUSER}/.ssh
+COPY authorized_keys /tmp/authorized_keys
+RUN set -eux; \
+    install -m 0600 -o "${DEVUSER}" -g "${DEVUSER}" \
+        /tmp/authorized_keys /home/${DEVUSER}/.ssh/authorized_keys; \
+    rm -f /tmp/authorized_keys
+
+# --- sshd: enable the unit; host keys are generated on first boot -----------
+RUN set -eux; \
+    mkdir -p /run/sshd; \
+    { \
+      echo 'PasswordAuthentication no'; \
+      echo 'KbdInteractiveAuthentication no'; \
+      echo 'PubkeyAuthentication yes'; \
+      echo 'PermitRootLogin no'; \
+      echo 'UseDNS no'; \
+    } > /etc/ssh/sshd_config.d/10-hardening.conf; \
+    systemctl enable ssh
+
+EXPOSE 22
+# systemd brings up networking, host keys, and sshd. It expects to be PID 1.
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/sbin/init"]
