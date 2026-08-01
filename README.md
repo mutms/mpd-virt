@@ -33,7 +33,7 @@ The 3-digit octet `NNN` is the canonical key for every VM — and it keys the ad
 | `create <NNN>` | `--backend= --username= --vm-disk= --vm-ram= --yes` | User-friendly. Materialize a new VM (UTM cloud-init → eventually Parallels too) → `setup` → interactive `diag`. |
 | `clone <NNN>` | `--backend= --template=mpd-template-<suffix> --username= --vm-disk= --vm-ram= --yes` | User-friendly. Duplicate an existing VM (Parallels `prlctl clone` → eventually UTM too) → `setup` → interactive `diag`. |
 | `setup <NNN>` | `--ip= --backend= --username= --debug` | **VM side only.** Set up host↔VM SSH, run the in-VM bootstrap pipeline, install `mpd`. Non-interactive — for advanced/scripted use. Finishes with `diag --non-interactive`. |
-| `diag <NNN>` | `--non-interactive` | **macOS side.** Mandatory phase: registry → backend → ping → platform.env compare → SSH alias. Optional phase: DNS / routing check + CA trust suggestion (always reported; interactive mode also pauses to apply fixes and re-test). |
+| `diag <NNN>` | `--non-interactive` | **macOS side.** Mandatory phase: registry → backend → ping → hostname check → SSH alias. Optional phase: DNS / routing check + CA trust suggestion (always reported; interactive mode also pauses to apply fixes and re-test). |
 | `update <NNN>` | — | Pull latest mpd source on the VM, rebuild the `mpd` binary, re-run `mpd --vm-setup`. Just runs `bash /opt/mpd/bootstrap/99-update.sh` over SSH — the update flow itself is mpd's contract, not mpd-virt's. |
 | `delete <NNN>` | `--keep-vm --yes` | Remove VM and registry entry. `--keep-vm` keeps the hypervisor VM (re-add with `setup`). |
 | `start <NNN>` | — | Hypervisor start. General: hard error. |

@@ -156,7 +156,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string) error {
 	}
 
 	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
-	// own IP off the interface — there is no platform.env to write.
+	// own IP off the interface.
 	if err := step(ctx, t, "mpd --vm-setup", "/opt/mpd/bin/mpd --vm-setup"); err != nil {
 		return err
 	}
