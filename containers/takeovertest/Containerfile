@@ -2,6 +2,11 @@
 # under plain `container run`. Needs `--cap-add ALL` (systemd needs SYS_ADMIN
 # to mount cgroups; without it, it exits silently). Hostname comes from --name.
 #
+# libnss-resolve is what mpd-prepare-takeover.sh installs on a real VM: it
+# points nss `hosts` at systemd-resolved, so `getent`/ssh on the box resolve
+# *.mpd.test FQDNs (routed to the podman-gateway dnsmasq) the same way a
+# prepped VM does. Without it only `resolvectl` sees the zone.
+#
 # The image is generic: the dev user + passwordless sudo + authorized key are
 # provisioned AFTER start with `container exec` (see README), so one image
 # serves every box and keys can be rotated without a rebuild.
@@ -13,7 +18,7 @@ FROM debian:trixie-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        systemd systemd-sysv systemd-resolved dbus \
+        systemd systemd-sysv systemd-resolved libnss-resolve dbus \
         openssh-server sudo wget git ca-certificates iproute2 iputils-ping \
     && rm -rf /var/lib/apt/lists/* \
     && systemctl enable ssh systemd-resolved \
