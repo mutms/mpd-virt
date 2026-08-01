@@ -1,11 +1,12 @@
 # Takeover-test container: a fake freshly-provisioned mpd VM for `mpd-virt
-# setup` to adopt. Plain `container run` (vminitd), no systemd. Identity comes
-# from --name: `--name mpd-<NNN>` -> hostname mpd-<NNN> -> IP 192.168.64.<NNN>
-# (pinned by entrypoint.sh). Generic image, no build args.
+# setup` to adopt. Plain `container run` (vminitd), no systemd. Hostname comes
+# from --name (`--name mpd-<NNN>` -> hostname mpd-<NNN>); the IP is whatever
+# vmnet assigns (a guest-set IP is never routed, so we don't try). Generic
+# image, no build args. Add --cap-add ALL when Podman must run inside.
 #
 #   container build -t takeovertest containers/takeovertest
-#   container run -d --name mpd-128 takeovertest
-#   ssh skodak@192.168.64.128
+#   container run -d --name mpd-128 --cap-add ALL takeovertest
+#   container ls        # note the vmnet-assigned IP, then: ssh skodak@<ip>
 FROM debian:trixie-slim
 
 RUN apt-get update \
