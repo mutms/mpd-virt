@@ -1,12 +1,18 @@
 # OCI recipe: a container that SIMULATES a freshly-provisioned mpd VM,
 # ready for `mpd-virt setup <NNN>` to take over.
 #
-# Unlike containers/ssh (a bare SSH endpoint), this boots systemd as PID 1
-# and stands up the usual Debian networking stack at a *static* canonical
-# address — so from the host's point of view it is indistinguishable from a
-# Parallels/UTM VM sitting at mpd-<NNN> / <subnet>.<NNN>, waiting to be
-# adopted. `30-networking.sh` therefore has nothing to do; takeover resumes
-# straight into the install/build/vm-setup steps.
+# Runs under plain `container run` (vminitd as PID 1), NOT `container machine`.
+# We deliberately avoid machine mode: it boots real systemd but also mounts
+# your Mac home over virtiofs, hands out a DHCP IP, forces the hostname to the
+# machine name, and logs you in as the host UID — breaking isolation and three
+# of the four takeover requirements. Under Apple `container`, "isolated VM at a
+# fixed IP" and "runs systemd" are mutually exclusive; for a takeover target,
+# isolation wins. So there is no systemd here — a small entrypoint plays init:
+# it sets the hostname, pins the canonical static IP, and runs sshd as PID 1.
+#
+# From the host's side the box is indistinguishable from a Parallels/UTM VM
+# sitting at mpd-<NNN> / <subnet>.<NNN>, waiting to be adopted:
+# `30-networking.sh` has nothing to do; takeover resumes at install/build/setup.
 #
 # Everything provisioned here (dev user, sudo, key, static net, hostname) is
 # the same groundwork the eventual *native* container backend will bake in.
@@ -34,12 +40,12 @@ ARG SUBNET=192.168.64
 ARG GATEWAY=192.168.64.1
 ARG DEVUSER=skodak
 
-# systemd as init + the tools takeover's Phase A expects to find already
-# present (wget/git for the bootstrap scripts, sudo, a CA bundle), plus
-# systemd-networkd for the static address.
+# The tools takeover's Phase A expects to find already present (wget/git for
+# the bootstrap scripts, sudo, a CA bundle) plus iproute2 for network
+# diagnostics. No systemd — vminitd just execs our entrypoint, and the IP is
+# left as vmnet assigned it (see entrypoint.sh).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        systemd systemd-sysv \
         openssh-server \
         sudo wget git ca-certificates \
         iproute2 iputils-ping \
@@ -52,57 +58,17 @@ RUN set -eux; \
         exit 1; \
     fi
 
-# --- Identity: hostname mpd-0NN (zero-padded 3 digits, matches vmName) ------
-# Only /etc/hostname is baked — systemd applies it at boot. /etc/hosts is
-# bind-mounted read-only during the build (the runtime owns it), so its
-# 127.0.1.1 entry is added at boot by the oneshot unit below instead.
+# --- Baked canonical identity + network, consumed by the entrypoint ---------
+# Resolved once at build so the entrypoint stays generic. Hostname is
+# zero-padded to 3 digits to match vmName(octet:) = "mpd-%03d".
 RUN set -eux; \
     nnn="$(printf '%03d' "${OCTET}")"; \
+    { \
+      echo "HOSTNAME=mpd-${nnn}"; \
+      echo "IPCIDR=${SUBNET}.${OCTET}/24"; \
+      echo "GATEWAY=${GATEWAY}"; \
+    } > /etc/mpd-net.conf; \
     echo "mpd-${nnn}" > /etc/hostname
-
-# Add the loopback name mapping at boot (build-time /etc/hosts is read-only).
-# The logic lives in a script so systemd never tries to $-expand it; the unit
-# just runs the script. Reads /etc/hostname so it's correct for any OCTET.
-# Keeps `hostname -f`/sudo from griping about an unresolvable host.
-RUN set -eux; \
-    { \
-      echo '#!/bin/sh'; \
-      echo 'set -eu'; \
-      echo 'h=$(cat /etc/hostname)'; \
-      echo 'grep -q "127.0.1.1 $h" /etc/hosts || echo "127.0.1.1 $h" >> /etc/hosts'; \
-    } > /usr/local/sbin/mpd-hosts.sh; \
-    chmod 0755 /usr/local/sbin/mpd-hosts.sh; \
-    { \
-      echo '[Unit]'; \
-      echo 'Description=Add mpd hostname to /etc/hosts'; \
-      echo 'After=systemd-hostnamed.service'; \
-      echo 'Before=ssh.service'; \
-      echo ''; \
-      echo '[Service]'; \
-      echo 'Type=oneshot'; \
-      echo 'RemainAfterExit=yes'; \
-      echo 'ExecStart=/usr/local/sbin/mpd-hosts.sh'; \
-      echo ''; \
-      echo '[Install]'; \
-      echo 'WantedBy=multi-user.target'; \
-    } > /etc/systemd/system/mpd-hosts.service; \
-    systemctl enable mpd-hosts.service
-
-# --- Static networking via systemd-networkd ---------------------------------
-# Match any ethernet iface (name is en0/eth0/enp0s1 depending on the runtime)
-# and pin the canonical address. DHCP off — this box owns its IP.
-RUN set -eux; \
-    mkdir -p /etc/systemd/network; \
-    { \
-      echo '[Match]'; \
-      echo 'Type=ether'; \
-      echo ''; \
-      echo '[Network]'; \
-      echo "Address=${SUBNET}.${OCTET}/24"; \
-      echo "Gateway=${GATEWAY}"; \
-      echo 'DNS=1.1.1.1'; \
-    } > /etc/systemd/network/10-mpd.network; \
-    systemctl enable systemd-networkd
 
 # --- Dev user: skodak, passwordless sudo, authorized key --------------------
 RUN set -eux; \
@@ -117,7 +83,7 @@ RUN set -eux; \
         /tmp/authorized_keys /home/${DEVUSER}/.ssh/authorized_keys; \
     rm -f /tmp/authorized_keys
 
-# --- sshd: enable the unit; host keys are generated on first boot -----------
+# --- sshd hardening (key-only). Host keys generated on first boot -----------
 RUN set -eux; \
     mkdir -p /run/sshd; \
     { \
@@ -126,10 +92,11 @@ RUN set -eux; \
       echo 'PubkeyAuthentication yes'; \
       echo 'PermitRootLogin no'; \
       echo 'UseDNS no'; \
-    } > /etc/ssh/sshd_config.d/10-hardening.conf; \
-    systemctl enable ssh
+    } > /etc/ssh/sshd_config.d/10-hardening.conf
+
+COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
+RUN chmod 0755 /usr/local/sbin/entrypoint.sh
 
 EXPOSE 22
-# systemd brings up networking, host keys, and sshd. It expects to be PID 1.
-STOPSIGNAL SIGRTMIN+3
-ENTRYPOINT ["/sbin/init"]
+# The entrypoint IS init here: sets hostname, pins the static IP, execs sshd.
+ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]
