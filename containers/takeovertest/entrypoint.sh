@@ -1,32 +1,31 @@
 #!/bin/sh
-# Minimal init for the takeover-test container. Under `container run`, vminitd
-# execs this as the container's process; it does the parts of a VM's early boot
-# that a takeover target must present, then hands PID 1 to sshd.
-#
-# NOTE: the IP is left as vmnet assigned it (dynamic). We do NOT pin a static
-# address here — under Apple `container`, a guest-chosen IP isn't routed by
-# vmnet, and flushing the iface strands the box. Pinning the canonical address
-# (if possible at all) belongs at `container run` time, not in the guest.
-#
-# Everything below is best-effort and MUST fall through to `exec sshd` — a
-# takeover target that isn't reachable over SSH is useless, so nothing here is
-# allowed to abort before sshd starts.
+# Init for the takeover-test container (container run / vminitd, no systemd).
+# Identity comes from --name: `--name mpd-<NNN>` -> hostname mpd-<NNN> ->
+# IP 192.168.64.<NNN>. Reads the octet off the hostname, pins the static IP,
+# runs sshd. No build args.
+set -u
 
-# Canonical identity, baked at build time (HOSTNAME=mpd-<NNN>, plus unused
-# IPCIDR/GATEWAY kept for when runtime IP assignment lands).
-. /etc/mpd-net.conf 2>/dev/null || true
+SUBNET="192.168.64"
+GATEWAY="192.168.64.1"
 
-# Hostname -> mpd-<NNN> (vminitd otherwise names it after the container --name).
-hostname "${HOSTNAME:-}" 2>/dev/null || echo "warn: could not set hostname" >&2
+# Octet from the hostname: mpd-128 -> 128.
+h="$(hostname 2>/dev/null || echo '')"
+octet="${h##*-}"
+case "${octet}" in ''|*[!0-9]*) octet="" ;; esac
 
-# Loopback name mapping (best effort — /etc/hosts may be a read-only mount).
-if [ -n "${HOSTNAME:-}" ] && ! grep -q "127.0.1.1 ${HOSTNAME}" /etc/hosts 2>/dev/null; then
-    echo "127.0.1.1 ${HOSTNAME}" >> /etc/hosts 2>/dev/null \
-        || echo "warn: /etc/hosts not writable, skipping loopback entry" >&2
+# Pin the static IP for a valid adopted octet (128..159); otherwise keep the
+# DHCP address so a mis-named box isn't stranded.
+if [ -n "${octet}" ] && [ "${octet}" -ge 128 ] && [ "${octet}" -le 159 ]; then
+    IFACE="$(ip -o -4 route show default 2>/dev/null | awk '{print $5; exit}')"
+    IFACE="${IFACE:-eth0}"
+    ip addr flush dev "${IFACE}" 2>/dev/null || true
+    ip addr add "${SUBNET}.${octet}/24" dev "${IFACE}" 2>/dev/null || true
+    ip route replace default via "${GATEWAY}" 2>/dev/null || true
+    echo "net: ${IFACE} -> ${SUBNET}.${octet}/24 via ${GATEWAY}" >&2
+else
+    echo "warn: hostname '${h}' has no octet in 128..159 — keeping DHCP IP" >&2
 fi
 
-# Host keys on first boot (not baked, so containers don't share an identity).
+grep -q "127.0.1.1 ${h}" /etc/hosts 2>/dev/null || echo "127.0.1.1 ${h}" >> /etc/hosts 2>/dev/null || true
 [ -f /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -A
-
-# sshd in the foreground as PID 1.
 exec /usr/sbin/sshd -D -e

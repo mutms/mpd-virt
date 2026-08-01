@@ -1,102 +1,43 @@
-# OCI recipe: a container that SIMULATES a freshly-provisioned mpd VM,
-# ready for `mpd-virt setup <NNN>` to take over.
+# Takeover-test container: a fake freshly-provisioned mpd VM for `mpd-virt
+# setup` to adopt. Plain `container run` (vminitd), no systemd. Identity comes
+# from --name: `--name mpd-<NNN>` -> hostname mpd-<NNN> -> IP 192.168.64.<NNN>
+# (pinned by entrypoint.sh). Generic image, no build args.
 #
-# Runs under plain `container run` (vminitd as PID 1), NOT `container machine`.
-# We deliberately avoid machine mode: it boots real systemd but also mounts
-# your Mac home over virtiofs, hands out a DHCP IP, forces the hostname to the
-# machine name, and logs you in as the host UID — breaking isolation and three
-# of the four takeover requirements. Under Apple `container`, "isolated VM at a
-# fixed IP" and "runs systemd" are mutually exclusive; for a takeover target,
-# isolation wins. So there is no systemd here — a small entrypoint plays init:
-# it sets the hostname, pins the canonical static IP, and runs sshd as PID 1.
-#
-# From the host's side the box is indistinguishable from a Parallels/UTM VM
-# sitting at mpd-<NNN> / <subnet>.<NNN>, waiting to be adopted:
-# `30-networking.sh` has nothing to do; takeover resumes at install/build/setup.
-#
-# Everything provisioned here (dev user, sudo, key, static net, hostname) is
-# the same groundwork the eventual *native* container backend will bake in.
-#
-#   Build:  container build \
-#             --build-arg OCTET=128 \
-#             -t takeovertest:128 containers/takeovertest
-#   Run:    container run -d --name takeovertest takeovertest:128
-#   Reach:  ssh skodak@192.168.64.128
-#
-# OCTET must be in the general/adopted band — 128..159. That range is the
-# subnet plan's slot for "general VMs (adopted)" (per-VM on-link next hop),
-# which is exactly what an adopted Apple container is. The build fails below
-# if OCTET falls outside it, so a stray value can't produce a mislabelled box.
-#
-# Build args (override per box):
-#   OCTET    canonical NNN in 128..159 -> hostname mpd-0NN, IP <SUBNET>.OCTET
-#   SUBNET   /24 the container lives on                (default 192.168.64)
-#   GATEWAY  default route                             (default <SUBNET>.1)
-#   DEVUSER  dev account name                          (default skodak)
+#   container build -t takeovertest containers/takeovertest
+#   container run -d --name mpd-128 takeovertest
+#   ssh skodak@192.168.64.128
 FROM debian:trixie-slim
 
-ARG OCTET=128
-ARG SUBNET=192.168.64
-ARG GATEWAY=192.168.64.1
-ARG DEVUSER=skodak
-
-# The tools takeover's Phase A expects to find already present (wget/git for
-# the bootstrap scripts, sudo, a CA bundle) plus iproute2 for network
-# diagnostics. No systemd — vminitd just execs our entrypoint, and the IP is
-# left as vmnet assigned it (see entrypoint.sh).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        openssh-server \
-        sudo wget git ca-certificates \
-        iproute2 iputils-ping \
+        openssh-server sudo wget git ca-certificates iproute2 iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Guard: OCTET must be in the general/adopted band (128..159) ------------
+# Dev user: skodak, passwordless sudo, authorized key.
 RUN set -eux; \
-    if [ "${OCTET}" -lt 128 ] || [ "${OCTET}" -gt 159 ]; then \
-        echo "OCTET=${OCTET} is out of the general/adopted range 128..159" >&2; \
-        exit 1; \
-    fi
-
-# --- Baked canonical identity + network, consumed by the entrypoint ---------
-# Resolved once at build so the entrypoint stays generic. Hostname is
-# zero-padded to 3 digits to match vmName(octet:) = "mpd-%03d".
-RUN set -eux; \
-    nnn="$(printf '%03d' "${OCTET}")"; \
-    { \
-      echo "HOSTNAME=mpd-${nnn}"; \
-      echo "IPCIDR=${SUBNET}.${OCTET}/24"; \
-      echo "GATEWAY=${GATEWAY}"; \
-    } > /etc/mpd-net.conf; \
-    echo "mpd-${nnn}" > /etc/hostname
-
-# --- Dev user: skodak, passwordless sudo, authorized key --------------------
-RUN set -eux; \
-    useradd --create-home --shell /bin/bash "${DEVUSER}"; \
-    usermod -aG sudo "${DEVUSER}"; \
-    echo "${DEVUSER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${DEVUSER}; \
-    chmod 0440 /etc/sudoers.d/90-${DEVUSER}; \
-    install -d -m 0700 -o "${DEVUSER}" -g "${DEVUSER}" /home/${DEVUSER}/.ssh
+    useradd --create-home --shell /bin/bash skodak; \
+    usermod -aG sudo skodak; \
+    echo 'skodak ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-skodak; \
+    chmod 0440 /etc/sudoers.d/90-skodak; \
+    install -d -m 0700 -o skodak -g skodak /home/skodak/.ssh
 COPY authorized_keys /tmp/authorized_keys
 RUN set -eux; \
-    install -m 0600 -o "${DEVUSER}" -g "${DEVUSER}" \
-        /tmp/authorized_keys /home/${DEVUSER}/.ssh/authorized_keys; \
+    install -m 0600 -o skodak -g skodak /tmp/authorized_keys /home/skodak/.ssh/authorized_keys; \
     rm -f /tmp/authorized_keys
 
-# --- sshd hardening (key-only). Host keys generated on first boot -----------
+# sshd: key-only. Host keys generated on first boot by the entrypoint.
 RUN set -eux; \
     mkdir -p /run/sshd; \
-    { \
-      echo 'PasswordAuthentication no'; \
-      echo 'KbdInteractiveAuthentication no'; \
-      echo 'PubkeyAuthentication yes'; \
-      echo 'PermitRootLogin no'; \
-      echo 'UseDNS no'; \
-    } > /etc/ssh/sshd_config.d/10-hardening.conf
+    printf '%s\n' \
+      'PasswordAuthentication no' \
+      'KbdInteractiveAuthentication no' \
+      'PubkeyAuthentication yes' \
+      'PermitRootLogin no' \
+      'UseDNS no' \
+      > /etc/ssh/sshd_config.d/10-hardening.conf
 
 COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
 RUN chmod 0755 /usr/local/sbin/entrypoint.sh
 
 EXPOSE 22
-# The entrypoint IS init here: sets hostname, pins the static IP, execs sshd.
 ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]
