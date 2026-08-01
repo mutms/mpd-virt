@@ -1,0 +1,180 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os/user"
+
+	"github.com/mutms/mpd-virt-macos/go/internal/ca"
+	"github.com/mutms/mpd-virt-macos/go/internal/host"
+	"github.com/mutms/mpd-virt-macos/go/internal/paths"
+	"github.com/mutms/mpd-virt-macos/go/internal/registry"
+	"github.com/mutms/mpd-virt-macos/go/internal/sshconfig"
+	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/spf13/cobra"
+)
+
+// bootstrapBaseURL is where the two wget'able bootstrap steps fetch
+// themselves from. The rest run from the checkout 20-git-clone lands.
+const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/main/bootstrap"
+
+// takeoverCmd adopts a box as mpd-<NNN>, installing mpd from source.
+//
+// A takeover target is a stock Debian Trixie VM with only its *identity*
+// set up — hostname mpd-<NNN>, the dev user, this Mac's key authorized,
+// passwordless sudo. mpd itself is NOT required: takeover clones it from
+// GitHub and compiles it in place. What it verifies first is only that
+// the box at the given IP really is mpd-<NNN> — then it refuses to touch
+// the wrong one, rather than remediating it.
+func takeoverCmd() *cobra.Command {
+	var username string
+	cmd := &cobra.Command{
+		Use:   "takeover <NNN> <IP>",
+		Short: "Adopt a Debian box at <IP> as mpd-<NNN> (installs mpd from source)",
+		Long: "Takeover always takes an explicit IP: you name the address, and\n" +
+			"mpd-virt verifies the box there really is mpd-<NNN> before touching\n" +
+			"it. The box need only be stock Debian Trixie with its identity set\n" +
+			"up (hostname, dev user, authorized key, passwordless sudo) — mpd is\n" +
+			"cloned from GitHub and built in place.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := vmid.Parse(args[0])
+			if err != nil {
+				return err
+			}
+			return runTakeover(cmd.Context(), id, args[1], username)
+		},
+	}
+	cmd.Flags().StringVar(&username, "username", defaultUser(),
+		"dev user on the box (defaults to the current macOS user)")
+	return cmd
+}
+
+// defaultUser mirrors the proposal's rule: the box's dev user defaults to
+// `whoami`, which is what mpd's own identity detection uses.
+func defaultUser() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return "skodak"
+}
+
+func runTakeover(ctx context.Context, id vmid.ID, ip, username string) error {
+	t := host.Target{User: username, Host: ip}
+	fmt.Printf("takeover %s at %s@%s  (class=%s, zone=%s)\n\n",
+		id.Name(), username, ip, id.Class(), id.Zone())
+
+	// --- Identity conformance. Key auth + hostname are two independent
+	//     confirmations that the box here is the one meant; refuse on any
+	//     mismatch. mpd need NOT be present — takeover installs it.
+	if !t.Reachable(ctx) {
+		return fmt.Errorf("cannot ssh to %s@%s with key auth — is the key authorized there?", username, ip)
+	}
+	pass("SSH key auth")
+
+	got, err := t.Line(ctx, "hostname")
+	if err != nil {
+		return err
+	}
+	if got != id.Name() {
+		return fmt.Errorf("hostname mismatch: box at %s calls itself %q, expected %q — refusing", ip, got, id.Name())
+	}
+	pass("hostname " + got)
+
+	if r, err := t.Run(ctx, "sudo -n true"); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("passwordless sudo not available for %s@%s", username, ip)
+	}
+	pass("passwordless sudo")
+
+	osID, err := t.Line(ctx, ". /etc/os-release && printf '%s %s' \"$ID\" \"$VERSION_CODENAME\"")
+	if err != nil {
+		return err
+	}
+	if osID != "debian trixie" {
+		return fmt.Errorf("OS mismatch: %q, expected \"debian trixie\"", osID)
+	}
+	pass("Debian Trixie")
+
+	// --- Per-VM CA generated on the Mac. Root key stays here; the
+	//     intermediate is name-constrained to this box's zone.
+	if err := ca.LoadOrGenerateRoot(); err != nil {
+		return fmt.Errorf("root CA: %w", err)
+	}
+	if err := ca.LoadOrGenerateVM(id); err != nil {
+		return fmt.Errorf("per-VM CA: %w", err)
+	}
+	pass("per-VM CA generated (" + id.Zone() + " only)")
+
+	// --- Provision. Install mpd from source, push the CA in, build, set
+	//     up the platform. 30-networking is deliberately skipped: a
+	//     general VM already sits at the hostname/IP you gave it, and
+	//     pinning a canonical address would move it off them. All the
+	//     bootstrap steps are idempotent, so a re-run resumes cleanly.
+	if err := step(ctx, t, "10-passwordless-sudo",
+		"bash <(wget -qO- "+bootstrapBaseURL+"/10-passwordless-sudo.sh)"); err != nil {
+		return err
+	}
+	if err := step(ctx, t, "20-git-clone (clone mpd → /opt/mpd)",
+		"bash <(wget -qO- "+bootstrapBaseURL+"/20-git-clone.sh)"); err != nil {
+		return err
+	}
+
+	// The CA push needs /var/lib/mpd, which 20-git-clone creates.
+	const caDir = "/var/lib/mpd/conf/caroot"
+	for _, p := range []struct{ local, remote, mode string }{
+		{ca.RootCertPath(), caDir + "/rootCA.pem", "0644"},
+		{ca.VMCertPath(id), caDir + "/vmCA.pem", "0644"},
+		{ca.VMKeyPath(id), caDir + "/vmCA-key.pem", "0600"},
+	} {
+		if err := t.Install(ctx, p.local, p.remote, p.mode); err != nil {
+			return fmt.Errorf("push CA: %w", err)
+		}
+	}
+	pass("per-VM CA pushed → " + caDir)
+
+	if err := step(ctx, t, "40-install-software",
+		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {
+		return err
+	}
+	if err := step(ctx, t, "50-build (compile /opt/mpd/bin/mpd)",
+		"bash /opt/mpd/bootstrap/50-build.sh"); err != nil {
+		return err
+	}
+
+	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
+	// own IP off the interface — there is no platform.env to write.
+	if err := step(ctx, t, "mpd --vm-setup", "/opt/mpd/bin/mpd --vm-setup"); err != nil {
+		return err
+	}
+
+	// --- Record the adopted box (host-side).
+	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: username}); err != nil {
+		return fmt.Errorf("registry: %w", err)
+	}
+	pass("registry " + paths.VMEnv(id))
+	if err := sshconfig.Write(id, ip, username); err != nil {
+		return fmt.Errorf("ssh config: %w", err)
+	}
+	pass("~/.ssh/config block  (ssh " + id.Name() + ")")
+
+	fmt.Printf("\n✓ %s adopted.\n", id.Name())
+	return nil
+}
+
+// step runs one streamed bootstrap command, printing a heading and
+// failing on a non-zero remote exit.
+func step(ctx context.Context, t host.Target, title, remote string) error {
+	fmt.Printf("\n▶ %s\n", title)
+	code, err := t.Stream(ctx, remote)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("%s failed (exit %d)", title, code)
+	}
+	return nil
+}
+
+func pass(msg string) { fmt.Printf("  ✓ %s\n", msg) }

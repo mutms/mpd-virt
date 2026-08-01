@@ -1,0 +1,94 @@
+// Package exec is mpd-virt's single gateway for running external
+// processes, mirroring the sibling mpd's internal/exec constraint: no
+// other package imports os/exec.
+//
+// Unlike mpd — which pins absolute paths because it runs privileged
+// operations inside the VM — mpd-virt runs on the developer's Mac and
+// resolves allow-listed commands with the normal PATH. macOS tool
+// locations vary (Homebrew, /usr/bin, /usr/local/bin) and nothing here
+// runs privileged on the host, so an allow-list by name is the right
+// guard: a command not on the list cannot be run at all.
+package exec
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	osexec "os/exec"
+	"strings"
+)
+
+// allowed is the set of command names mpd-virt may run. Widening it is a
+// deliberate act — it grows what the host tool can execute.
+var allowed = map[string]bool{
+	"ssh":       true,
+	"scp":       true,
+	"ping":      true,
+	"container": true,
+}
+
+// Cmd describes one external command.
+type Cmd struct {
+	// Name is a bare command name; it must be on the allow-list.
+	Name string
+	Args []string
+}
+
+// Result is the outcome of a captured command.
+type Result struct {
+	Code   int
+	Stdout string
+	Stderr string
+}
+
+// Failed reports whether the command exited non-zero.
+func (r Result) Failed() bool { return r.Code != 0 }
+
+// Run executes cmd, streaming stdout and stderr live to this process's
+// own os.Stdout / os.Stderr. Same error contract as Capture: a non-zero
+// exit is not an error, only a failure to start (or a disallowed name).
+// Used for the long, verbose bootstrap steps a caller wants to watch.
+func Run(ctx context.Context, cmd Cmd) (int, error) {
+	if !allowed[cmd.Name] {
+		return -1, fmt.Errorf("command %q is not allow-listed in internal/exec", cmd.Name)
+	}
+	c := osexec.CommandContext(ctx, cmd.Name, cmd.Args...)
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		var ee *osexec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode(), nil
+		}
+		return -1, err
+	}
+	return 0, nil
+}
+
+// Capture runs cmd and captures stdout and stderr separately, with
+// trailing newlines trimmed. A non-zero exit is NOT an error: err is
+// non-nil only when the command is not allow-listed or could not start.
+func Capture(ctx context.Context, cmd Cmd) (Result, error) {
+	if !allowed[cmd.Name] {
+		return Result{Code: -1}, fmt.Errorf("command %q is not allow-listed in internal/exec", cmd.Name)
+	}
+	c := osexec.CommandContext(ctx, cmd.Name, cmd.Args...)
+	var stdout, stderr bytes.Buffer
+	c.Stdout, c.Stderr = &stdout, &stderr
+
+	err := c.Run()
+	res := Result{
+		Stdout: strings.TrimRight(stdout.String(), "\n"),
+		Stderr: strings.TrimRight(stderr.String(), "\n"),
+	}
+	if err != nil {
+		var ee *osexec.ExitError
+		if errors.As(err, &ee) {
+			res.Code = ee.ExitCode()
+			return res, nil
+		}
+		return res, err
+	}
+	return res, nil
+}
