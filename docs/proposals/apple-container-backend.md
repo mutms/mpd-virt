@@ -96,14 +96,14 @@ Everything else still derives from the id `NNN`:
 | the class (which block `NNN` falls in) | general / native-container / proxmox |
 | `NNN` | zone `<NNN>.mpd.test`, in-container podman subnet `10.163.<NNN>.0/24` (gw `.1`), resolver file, registry dir |
 
-The **host-reachable IP** is the one exception: vmnet assigns it, so takeover
-**always takes it as an explicit argument** — `mpd-virt takeover <NNN> <IP>` for
-every class. You find the address with `container ls` / `container inspect
-mpd-<NNN>` and pass it; `mpd-virt` never auto-discovers the target. An explicit
-address keeps the adopt target unambiguous, which the security model (§9)
-depends on. The registry records it. For the container class, a lease that moved
-across a restart can be refreshed from `container inspect` on lifecycle verbs,
-but the address is never guessed at takeover time.
+The **host-reachable IP** is the one exception, and it is **resolved by class**:
+derived from the id for proxmox (`10.212.56.<NNN>`), looked up live for
+parallels (`prlctl`) and native containers (`container inspect mpd-<NNN>`), and
+supplied explicitly for generic adopted boxes. `mpd-virt takeover <NNN>` does the
+lookup for you; an explicit `<IP>` always overrides it and is required for the
+generic class. The registry records whichever address was used. For the leased
+classes (parallels, container) an IP that moved across a restart is re-read from
+the same source on lifecycle verbs.
 
 DNS ties it together: `<NNN>.mpd.test` and `mpd-<NNN>` resolve to the
 looked-up IP, so nothing user-facing depends on the vmnet octet.
@@ -112,23 +112,28 @@ looked-up IP, so nothing user-facing depends on the vmnet octet.
 
 Carve the id space by **how the Mac reaches the box**:
 
-| ids     | class                 | host reachability          |
-|---------|-----------------------|----------------------------|
-| 100-127 | free                  | —                          |
-| 128-159 | general VMs (adopted) | per-VM, IP supplied         |
-| 160-191 | native containers     | vmnet lease, IP read back  |
-| 192-223 | proxmox               | single gateway (warp)      |
-| 224-255 | free                  | —                          |
+| ids     | class             | host IP resolution              |
+|---------|-------------------|---------------------------------|
+| 001-064 | generic (adopted) | supplied to takeover            |
+| 065-127 | free              | —                               |
+| 128-159 | parallels         | prlctl lookup (dynamic DHCP)    |
+| 160-191 | native containers | container inspect (vmnet lease) |
+| 192-223 | proxmox           | derived `10.212.56.<NNN>`       |
+| 224-254 | free              | —                               |
 
-CIDR-aligned blocks of 32. General VMs take the lower block so existing
-hand-made VMs keep their ids. Native containers are the class with no installed
-base, free to assign. For native containers the id still fixes the *identity*
-(name, zone, internal subnet); only the host IP floats.
+The id is a zero-padded three-digit **identifier** (`mpd-001`, zone
+`001.mpd.test`), not a number — the raw value survives only as the third octet
+of the internal `10.163.<NNN>.0/24` subnet. Generic adopted boxes take the low
+block, where `mpd-001` reads as "demo 1". The backend blocks (parallels,
+container, proxmox) are CIDR-aligned 32s in the upper half. For every class the
+id fixes the *identity* (name, zone, internal subnet); only the host IP is not
+derivable from it the same way, which is why each class has its own rule above.
 
 The principle survives, narrowed: **everything is predictable from `NNN` before
-`mpd-virt` arrives — except the host IP, which the runtime alone decides and you
-supply to takeover.** Verification stays cheap: `mpd-virt` computes what the box
-must be (name, zone, conformant image) and checks it at the address you gave.
+`mpd-virt` arrives — and the host IP is resolved by class, derived where it can
+be and looked up where it can't.** Verification stays cheap: `mpd-virt` computes
+what the box must be (name, zone, conformant image) and checks it at the
+resolved address.
 
 ## 6. The base image
 
@@ -185,14 +190,16 @@ SSH key auth works, image matches), pushes the per-VM CA intermediate, writes
 the registry entry and the `~/.ssh/config` block, and runs `mpd --vm-setup`.
 **It refuses rather than remediates** (§9).
 
-Takeover always takes `<NNN> <IP>`. The class only changes what the supplied IP
-is checked against and what host-side setup is written:
+Takeover is `takeover <NNN> [IP]`. With no IP, `mpd-virt` resolves it by class;
+an explicit `<IP>` overrides. The class decides how the address is found and
+what host-side setup is written:
 
-| class | takeover | class fixes |
+| class | takeover | how the IP is found |
 |---|---|---|
-| native container | `takeover <NNN> <IP>` | IP is vmnet-assigned (find via `container ls`); no prefix constraint |
-| general VM | `takeover <NNN> <IP>` | IP is wherever the VM lives; per-VM route + resolver |
-| proxmox | `takeover <NNN> <IP>` | IP must be `10.212.56.<NNN>`; single gateway |
+| generic | `takeover <NNN> <IP>` | supplied — no discoverable address; per-VM route + resolver |
+| parallels | `takeover <NNN>` | `prlctl` lookup (dynamic DHCP); per-VM route + resolver |
+| native container | `takeover <NNN>` | `container inspect` (vmnet lease); no prefix constraint |
+| proxmox | `takeover <NNN>` | derived `10.212.56.<NNN>`; single gateway |
 
 ### Phase 2 — create
 
@@ -202,15 +209,16 @@ the adopt path against it. It needs no IP argument — having made the box, it
 asks the runtime (`container inspect mpd-160`) for the address. One command from
 nothing to a working box.
 
-`create` differs by class in exactly *how it gets the address* — the mirror of
-why takeover needs an explicit IP:
+`create` gets the address by the same per-class rule takeover's auto-resolution
+uses — having made the box, it applies the class's own rule:
 
 * **native container** — run, then **read** the vmnet-assigned IP from
   `container inspect` (the runtime chose it; it won't match `NNN`).
+* **parallels** — start the VM, then **look up** its DHCP lease via `prlctl`.
 * **proxmox** (when implemented) — create the VM via the Proxmox API and
   **assign** the static `10.212.56.<NNN>`, octet matching, because there we
   control the network and static pinning is correct.
-* **general** — no `create`; arbitrary hand-built VMs are adopt-only.
+* **generic** — no `create`; arbitrary hand-built boxes are adopt-only.
 
 ## 8. The Go binary
 

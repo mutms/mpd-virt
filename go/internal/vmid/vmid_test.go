@@ -8,18 +8,23 @@ func TestParse(t *testing.T) {
 		wantErr bool
 		class   Class
 	}{
-		{"135", false, General},
-		{"128", false, General},
-		{"159", false, General},
+		{"005", false, Generic}, // padded low id
+		{"5", false, Generic},   // unpadded input accepted, same id
+		{"1", false, Generic},
+		{"64", false, Generic},
+		{"135", false, Parallels},
+		{"128", false, Parallels},
+		{"159", false, Parallels},
 		{"160", false, Container},
 		{"191", false, Container},
 		{"200", false, Proxmox},
 		{"223", false, Proxmox},
-		{"127", true, ""}, // free block below
-		{"224", true, ""}, // free block above
-		{"42", true, ""},  // well below range
+		{"0", true, ""},   // zero is not a box
+		{"65", true, ""},  // reserved gap 065-127
+		{"127", true, ""}, // reserved gap
+		{"224", true, ""}, // reserved above
 		{"260", true, ""}, // above an octet
-		{"abc", true, ""}, // not a number
+		{"abc", true, ""}, // not digits
 		{"", true, ""},    // empty
 		{"12x", true, ""}, // trailing junk
 	}
@@ -57,5 +62,17 @@ func TestDerivations(t *testing.T) {
 	id, _ = Parse("128")
 	if got := id.Name(); got != "mpd-128" {
 		t.Errorf("Name() = %q, want mpd-128", got)
+	}
+
+	// Low id: unpadded input accepted, identity is always padded.
+	id, _ = Parse("5")
+	if got := id.Pad(); got != "005" {
+		t.Errorf("Pad() = %q, want 005", got)
+	}
+	if got := id.Name(); got != "mpd-005" {
+		t.Errorf("Name() = %q, want mpd-005", got)
+	}
+	if got := id.Zone(); got != "005.mpd.test" {
+		t.Errorf("Zone() = %q, want 005.mpd.test", got)
 	}
 }

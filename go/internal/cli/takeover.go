@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/user"
 
+	"github.com/mutms/mpd-virt-macos/go/internal/backend"
 	"github.com/mutms/mpd-virt-macos/go/internal/ca"
 	"github.com/mutms/mpd-virt-macos/go/internal/host"
 	"github.com/mutms/mpd-virt-macos/go/internal/paths"
@@ -29,20 +30,31 @@ const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/main/boots
 func takeoverCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
-		Use:   "takeover <NNN> <IP>",
-		Short: "Adopt a Debian box at <IP> as mpd-<NNN> (installs mpd from source)",
-		Long: "Takeover always takes an explicit IP: you name the address, and\n" +
+		Use:   "takeover <NNN> [IP]",
+		Short: "Adopt a Debian box as mpd-<NNN> (IP resolved by class if omitted)",
+		Long: "With no IP, mpd-virt resolves the box's address from its id's\n" +
+			"class — derived for Proxmox, looked up for Parallels (prlctl) and\n" +
+			"native containers (container inspect); a generic box (001-064) must\n" +
+			"be given its IP. An explicit <IP> always overrides. Either way\n" +
 			"mpd-virt verifies the box there really is mpd-<NNN> before touching\n" +
 			"it. The box need only be stock Debian Trixie with its identity set\n" +
 			"up (hostname, dev user, authorized key, passwordless sudo) — mpd is\n" +
 			"cloned from GitHub and built in place.",
-		Args: cobra.ExactArgs(2),
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
 			if err != nil {
 				return err
 			}
-			return runTakeover(cmd.Context(), id, args[1], username)
+			ip := ""
+			if len(args) == 2 {
+				ip = args[1]
+			} else if ip, err = backend.ResolveIP(cmd.Context(), id); err != nil {
+				return err
+			} else {
+				fmt.Printf("resolved %s → %s (%s)\n", id.Name(), ip, id.Class())
+			}
+			return runTakeover(cmd.Context(), id, ip, username)
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(),

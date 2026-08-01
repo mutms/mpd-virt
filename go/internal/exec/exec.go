@@ -26,7 +26,8 @@ var allowed = map[string]bool{
 	"ssh":       true,
 	"scp":       true,
 	"ping":      true,
-	"container": true,
+	"container": true, // native-container backend (IP lookup, later create/start)
+	"prlctl":    true, // Parallels backend (dynamic-DHCP IP lookup)
 }
 
 // Cmd describes one external command.
