@@ -42,7 +42,7 @@ func deleteCmd() *cobra.Command {
 			be := backend.Backend(e.Backend)
 
 			fmt.Printf("delete %s  (backend=%s, ip=%s)\n", id.Name(), e.Backend, e.IP)
-			if !assumeYes && !confirmName(id) {
+			if !assumeYes && !confirmWord(id.Name()) {
 				fmt.Println("aborted — nothing changed")
 				return nil
 			}
@@ -78,13 +78,14 @@ func deleteCmd() *cobra.Command {
 	return cmd
 }
 
-// confirmName makes the operator type the box name to confirm a destructive
-// delete. Anything else — including EOF on a non-interactive stdin — aborts.
-func confirmName(id vmid.ID) bool {
-	fmt.Printf("Type %s to confirm (anything else aborts): ", id.Name())
+// confirmWord makes the operator type an exact word (the box name for delete,
+// "uninstall" for uninstall) to confirm a destructive action. Anything else —
+// including EOF on a non-interactive stdin — aborts.
+func confirmWord(want string) bool {
+	fmt.Printf("Type %s to confirm (anything else aborts): ", want)
 	sc := bufio.NewScanner(os.Stdin)
 	if !sc.Scan() {
 		return false
 	}
-	return strings.TrimSpace(sc.Text()) == id.Name()
+	return strings.TrimSpace(sc.Text()) == want
 }
