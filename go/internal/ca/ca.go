@@ -39,7 +39,9 @@ const (
 	rootCommonName = "mpd Root CA"
 	rootValidDays  = 365 // macOS caps user-root lifetimes; annual rotation.
 	vmMaxDays      = 397 // leaf ceiling; nothing may outlive its issuer.
+	leafMaxDays    = 397 // LAN service leaf ceiling; matches the macOS 398-day cap.
 	keyBits        = 4096
+	leafKeyBits    = 2048 // leaves live on other machines; 2048 is plenty and cheaper.
 )
 
 // RootCertPath is the root CA's public cert, pushed to every box and
@@ -128,6 +130,83 @@ func LoadOrGenerateVM(id vmid.ID) error {
 		return err
 	}
 	return writeKeyPEM(VMKeyPath(id), key)
+}
+
+// IssueLeaf issues a server-auth leaf for sans (DNS names only), signed
+// directly by the root CA on this Mac and written to certPath/keyPath. The
+// first SAN becomes the CN. Used for LAN service hosts (forge.mpd.test, …):
+// the signing key already lives here, so a per-host intermediate would only
+// add a chain hop and another file to install without protecting anything.
+//
+// DNS SANs only, deliberately: the root name-constrains dNSName to mpd.test,
+// but under RFC 5280 an iPAddress SAN sits outside that constraint — so these
+// hosts are reached by name, never by a bare-IP cert. Nothing outlives its
+// issuer: the leaf is capped to whatever the root has left.
+func IssueLeaf(sans []string, certPath, keyPath string) error {
+	if len(sans) == 0 {
+		return fmt.Errorf("IssueLeaf: no SANs given")
+	}
+	if err := LoadOrGenerateRoot(); err != nil {
+		return err
+	}
+	rootCert, rootKey, err := loadRoot()
+	if err != nil {
+		return err
+	}
+	rootDaysLeft := int(time.Until(rootCert.NotAfter).Hours() / 24)
+	if rootDaysLeft <= 0 {
+		return fmt.Errorf("mpd root CA at %s has expired — regenerate and re-trust it before issuing certificates", RootCertPath())
+	}
+	days := min(leafMaxDays, rootDaysLeft)
+
+	key, err := rsa.GenerateKey(rand.Reader, leafKeyBits)
+	if err != nil {
+		return err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: sans[0]},
+		DNSNames:     sans,
+		NotBefore:    now.Add(-time.Hour), // tolerate clock skew
+		NotAfter:     now.AddDate(0, 0, days),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		// A leaf, not a CA — BasicConstraints present and CA:FALSE.
+		IsCA:                  false,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, rootCert, &key.PublicKey, rootKey)
+	if err != nil {
+		return err
+	}
+	if err := writePEM(certPath, "CERTIFICATE", der, 0o644); err != nil {
+		return err
+	}
+	return writeKeyPEM(keyPath, key)
+}
+
+// DaysUntilExpiry parses the certificate at path and returns whole days
+// until it expires — negative once past. Used to decide whether a leaf is
+// worth re-issuing.
+func DaysUntilExpiry(path string) (int, error) {
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return 0, fmt.Errorf("certificate at %s is not valid PEM", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return 0, err
+	}
+	return int(time.Until(cert.NotAfter).Hours() / 24), nil
 }
 
 // baseTemplate is the common shape of a CA certificate: a random serial,

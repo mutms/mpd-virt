@@ -22,6 +22,8 @@ func Root(version string) *cobra.Command {
 	root.AddCommand(deleteCmd())
 	root.AddCommand(listCmd())
 	root.AddCommand(updateCmd())
+	root.AddCommand(serverCmd())
+	root.AddCommand(caCmd())
 	root.AddCommand(uninstallCmd())
 	return root
 }

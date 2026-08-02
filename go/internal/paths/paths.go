@@ -27,6 +27,13 @@ func Conf() string { return filepath.Join(Root(), "conf") }
 // CARoot is ~/.mpd-virt/conf/caroot — the root CA keypair.
 func CARoot() string { return filepath.Join(Conf(), "caroot") }
 
+// Servers is ~/.mpd-virt/servers — LAN service registry (one dir per host).
+func Servers() string { return filepath.Join(Root(), "servers") }
+
+// LanHosts is ~/.mpd-virt/conf/lan-hosts — the rendered hosts(5) file that
+// `server sync` pushes into every VM so containers resolve LAN names too.
+func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }
+
 // VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
 func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.Pad()) }
 
