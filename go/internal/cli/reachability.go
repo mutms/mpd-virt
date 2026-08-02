@@ -39,8 +39,19 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	// vm-setup has already brought up wg0 (its key, interface, ip_forward). Add
 	// mpd-proxy as its peer and persist it with `wg-quick save`, then read the
 	// VM's public key. The VM's private key never leaves the box.
+	//
+	// The `ip route` is not redundant with the peer's allowed-ips: `wg set`
+	// records 10.163.0.1 in WireGuard's crypto routing (which peer to encrypt
+	// to) but never touches the kernel routing table — only `wg-quick up` does,
+	// and wg0 was already up before this peer existed. Without the route the VM
+	// decrypts our pings fine but sends replies to 10.163.0.1 out its LAN
+	// default gateway, where they die. `wg-quick save` writes the peer's
+	// allowed-ips into wg0.conf, so a reboot's `wg-quick up` re-adds this route
+	// on its own — the explicit add is only for immediate effect at adoption.
 	setPeer := fmt.Sprintf(
-		"sudo wg set wg0 peer %s allowed-ips 10.163.0.1/32 && sudo wg-quick save wg0",
+		"sudo wg set wg0 peer %s allowed-ips 10.163.0.1/32 && "+
+			"sudo ip route replace 10.163.0.1/32 dev wg0 && "+
+			"sudo wg-quick save wg0",
 		proxyPub)
 	if code, err := t.Stream(ctx, setPeer); err != nil {
 		return err
