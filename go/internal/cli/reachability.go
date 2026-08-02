@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/exec"
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
@@ -120,8 +122,9 @@ func startCmd() *cobra.Command {
 			// Re-resolve where the box is now rather than trusting the stored
 			// IP: a restarted container or a moved VM may have a new lease.
 			// ResolveIP falls back to the stored IP when the name does not
-			// resolve, so a box that has not moved still starts cleanly.
-			ip, err := backend.ResolveIP(cmd.Context(), id)
+			// resolve. When mpd-virt just powered the box on, wait for it to
+			// finish booting before giving up on resolving it.
+			ip, err := resolveReady(cmd.Context(), id, powerArgv(e, "start") != nil)
 			if err != nil {
 				return err
 			}
@@ -183,19 +186,99 @@ func stopCmd() *cobra.Command {
 }
 
 // powerOn brings the box up through its backend before reachability is wired.
-// Not yet implemented for any backend: mpd-virt does not own the hypervisor
-// today, so the box is assumed already running and this is a no-op. This is the
-// seam where the managed backends land — switch e.Backend: "parallels" →
-// `prlctl start`, "container" → `container start`, "proxmox" → `qm start` on
-// the host; "generic" stays a no-op (nothing to power).
-func powerOn(_ context.Context, _ registry.Entry) error {
+// mpd-virt controls power only for the backends whose CLI runs on this Mac:
+// Apple containers (`container start`) and Parallels VMs (`prlctl start`).
+// generic and proxmox boxes are assumed already running (nothing to do here —
+// proxmox lives on a remote host, generic is hand-managed). A start that fails
+// is not fatal: most often the box is already running, and the reachability
+// check that follows is the real test of whether it is up.
+func powerOn(ctx context.Context, e registry.Entry) error {
+	return power(ctx, e, "start", "running")
+}
+
+// powerOff stops the box through its backend after it is detached from the
+// overlay. Same backend rule as powerOn; a stop that fails (already stopped)
+// is not fatal.
+func powerOff(ctx context.Context, e registry.Entry) error {
+	return power(ctx, e, "stop", "stopped")
+}
+
+// power runs one backend power verb ("start"/"stop"). It is best-effort and
+// never fatal: whether the box actually came up is decided by the reachability
+// check that follows, not here. A non-zero exit usually means the box is
+// already in the target state; a launch error means the backend CLI is not on
+// this machine (mpd-virt may be driving a box powered elsewhere) — both are
+// reported and swallowed.
+func power(ctx context.Context, e registry.Entry, verb, already string) error {
+	argv := powerArgv(e, verb)
+	if argv == nil {
+		return nil // backend mpd-virt does not power
+	}
+	fmt.Printf("  ▶ %s\n", strings.Join(argv, " "))
+	r, err := exec.Capture(ctx, exec.Cmd{Name: argv[0], Args: argv[1:]})
+	if err != nil {
+		fmt.Printf("    … %s unavailable here (%v) — assuming the box is managed elsewhere\n", argv[0], err)
+		return nil
+	}
+	if r.Failed() {
+		fmt.Printf("    … %s (continuing — the box may already be %s)\n", shortErr(r), already)
+	}
 	return nil
 }
 
-// powerOff is powerOn's inverse — stop the box through its backend after
-// detaching it. A no-op for every backend today, for the same reason.
-func powerOff(_ context.Context, _ registry.Entry) error {
-	return nil
+// powerArgv is the backend's CLI invocation for a power verb, or nil for a
+// backend mpd-virt does not power. The Apple `container` and Parallels
+// `prlctl` CLIs both take the box name (mpd-<NNN>).
+func powerArgv(e registry.Entry, verb string) []string {
+	switch e.Backend {
+	case string(backend.Container):
+		return []string{"container", verb, e.ID.Name()}
+	case string(backend.Parallels):
+		return []string{"prlctl", verb, e.ID.Name()}
+	default:
+		return nil
+	}
+}
+
+// shortErr collapses a failed command's output to a single line for a warning.
+func shortErr(r exec.Result) string {
+	s := strings.TrimSpace(r.Stderr)
+	if s == "" {
+		s = strings.TrimSpace(r.Stdout)
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" {
+		return "non-zero exit"
+	}
+	return s
+}
+
+// resolveReady resolves the box's IP, waiting for it to become reachable when
+// mpd-virt just powered it on: a booting VM/container takes time to get an
+// address and open ssh. A box mpd-virt does not power is resolved once — it is
+// expected to be up already, and waiting on a down one would only stall.
+func resolveReady(ctx context.Context, id vmid.ID, powered bool) (string, error) {
+	attempts := 1
+	if powered {
+		attempts = 30 // ~90s at 3s spacing — generous for a cold VM boot
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if i == 1 {
+			fmt.Printf("  … waiting for %s to come up\n", id.Name())
+		}
+		if i > 0 {
+			time.Sleep(3 * time.Second)
+		}
+		ip, err := backend.ResolveIP(ctx, id)
+		if err == nil {
+			return ip, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
 }
 
 // verifyReachable confirms the overlay actually works after wiring it, by

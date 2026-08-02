@@ -26,6 +26,10 @@ var allowed = map[string]bool{
 	"ssh":  true,
 	"scp":  true,
 	"ping": true,
+	// Backend power control (start/stop): the native Apple container CLI and
+	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the box.
+	"container": true,
+	"prlctl":    true,
 }
 
 // Cmd describes one external command.
