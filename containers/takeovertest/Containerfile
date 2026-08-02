@@ -14,14 +14,25 @@
 # provisioned AFTER start with `container exec` (see README), so one image
 # serves every box and keys can be rotated without a rebuild.
 #
+# libpam-systemd + dbus-user-session are NOT decoration: a real Debian gets
+# them via systemd's Recommends, but --no-install-recommends drops them, and
+# without pam_systemd the per-user manager (user@<uid>) never gets a session or
+# XDG_RUNTIME_DIR and fails — so mpd's user services (the portal `mpd --web`,
+# `mpd --control`) never start and the box's root URL 502s. Installing them
+# makes this image behave like the stock-Debian VMs takeover targets are. (The
+# base is non-slim debian:trixie, matching mpd's "basic Trixie install"
+# contract — an OCI base ships no systemd regardless, so the session stack is
+# still installed explicitly below.)
+#
 #   container build -t takeovertest containers/takeovertest
 #   container run -d --name mpd-128 --cap-add ALL takeovertest
 #   container exec mpd-128 systemctl is-system-running   # running/degraded = systemd up
-FROM debian:trixie-slim
+FROM debian:trixie
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        systemd systemd-sysv systemd-resolved dbus \
+        systemd systemd-sysv systemd-resolved libpam-systemd \
+        dbus dbus-user-session \
         openssh-server sudo wget git ca-certificates iproute2 iputils-ping \
     && rm -rf /var/lib/apt/lists/* \
     && systemctl enable ssh systemd-resolved \
