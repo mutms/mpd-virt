@@ -210,3 +210,16 @@ make install      # produces ./bin/mpd-virt
 ```
 
 Requires Xcode command-line tools.
+
+## Acknowledgments
+
+Part of the [mpd](https://github.com/mutms/mpd) project. mpd and its related
+tools are my first fully AI-driven project — the code and docs are largely
+written by [Claude Code](https://claude.com/claude-code) (Anthropic) under my
+direction (design and review stay human).
+
+## License
+
+Copyright (C) 2026 Petr Skoda. [GPL-3.0](LICENSE) or later.
+
+Moodle is a registered trademark of [Moodle Pty Ltd](https://moodle.com).
