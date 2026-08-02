@@ -1,4 +1,4 @@
-module github.com/mutms/mpd-virt-macos/go
+module github.com/mutms/mpd-virt/go
 
 go 1.24
 

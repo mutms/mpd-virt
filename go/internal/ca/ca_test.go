@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 func TestGenerateAndConstrain(t *testing.T) {

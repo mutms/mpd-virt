@@ -1,4 +1,4 @@
-# Proposal: UTM backend for `mpd-virt-macos`
+# Proposal: UTM backend for `mpd-virt`
 
 **Priority:** high. Parallels Desktop Pro requires a paid license
 (~$99/yr); UTM is free, runs natively on Apple Silicon via Apple's
@@ -21,7 +21,7 @@ no longer needs separate plumbing thanks to `bootstrap/`.
 
 ## Goals
 
-1. **A second backend in `mpd-virt-macos`** — selectable at build time
+1. **A second backend in `mpd-virt`** — selectable at build time
    (`#if MPD_VIRT_BACKEND_UTM` or a SwiftPM target product), so each
    compiled binary still contains exactly one backend.
 2. **Same `mpd-virt` verb surface** — `create`, `start`, `stop`,
@@ -114,7 +114,7 @@ same way the Linux/Windows backends already do, and skip dynamic
 lease lookups entirely. The IP becomes the canonical identifier
 the Mac side uses for SSH + WG endpoint configuration.
 
-## What changes in mpd-virt-macos
+## What changes in mpd-virt
 
 - **New backend module:** `mpd-virt/Backend/UTM/UTMBackend.swift`
   (and supporting files), conforming to whatever protocol the

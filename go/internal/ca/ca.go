@@ -31,8 +31,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/paths"
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/paths"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 const (

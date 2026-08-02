@@ -1,4 +1,4 @@
-# mpd-virt-macos
+# mpd-virt
 
 macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd).
 Creates and manages `mpd` VMs on the user's Mac. The binary is called

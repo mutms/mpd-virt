@@ -4,7 +4,7 @@ Designs for work we'd like done but haven't committed to a timeline for.
 Each proposal is precise enough that a contributor (human or AI) can
 implement it end-to-end without needing to re-derive the design.
 
-These describe the `mpd-virt-macos` binary's architecture; the
+These describe the `mpd-virt` binary's architecture; the
 in-VM `mpd` binary's proposals (if any) live in
 [the main mpd repo](https://github.com/mutms/mpd).
 

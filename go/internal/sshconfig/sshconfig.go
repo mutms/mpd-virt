@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).

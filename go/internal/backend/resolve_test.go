@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 func mustID(t *testing.T, s string) vmid.ID {

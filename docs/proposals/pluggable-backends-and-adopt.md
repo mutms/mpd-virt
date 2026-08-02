@@ -1,6 +1,6 @@
 # Proposal: pluggable backends + `adopt` as the shared core
 
-A small architectural reframing for `mpd-virt-macos` that lets every
+A small architectural reframing for `mpd-virt` that lets every
 hypervisor backend (Parallels today, UTM next, libvirt/Hyper-V later)
 share one Mac-side implementation, and that turns
 [`sandbox-takeover-and-ca-refresh.md`](sandbox-takeover-and-ca-refresh.md)

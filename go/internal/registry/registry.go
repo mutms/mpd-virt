@@ -13,8 +13,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/paths"
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/paths"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 // Entry is one box's registry record. Name and Class derive from ID; the

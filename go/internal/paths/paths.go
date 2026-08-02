@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 // Root is ~/.mpd-virt (or $MPD_VIRT_ROOT) — everything mpd-virt owns on

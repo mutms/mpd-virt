@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/exec"
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/exec"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 // proxmoxSubnet is the /24 that Proxmox mpd VMs sit on behind warp; the id is

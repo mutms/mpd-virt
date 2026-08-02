@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/cli"
+	"github.com/mutms/mpd-virt/go/internal/cli"
 )
 
 // version is stamped at build time via -ldflags.

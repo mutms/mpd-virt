@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os/user"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/backend"
-	"github.com/mutms/mpd-virt-macos/go/internal/ca"
-	"github.com/mutms/mpd-virt-macos/go/internal/host"
-	"github.com/mutms/mpd-virt-macos/go/internal/paths"
-	"github.com/mutms/mpd-virt-macos/go/internal/registry"
-	"github.com/mutms/mpd-virt-macos/go/internal/sshconfig"
-	"github.com/mutms/mpd-virt-macos/go/internal/vmid"
+	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/ca"
+	"github.com/mutms/mpd-virt/go/internal/host"
+	"github.com/mutms/mpd-virt/go/internal/paths"
+	"github.com/mutms/mpd-virt/go/internal/registry"
+	"github.com/mutms/mpd-virt/go/internal/sshconfig"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
 

@@ -12,7 +12,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/mutms/mpd-virt-macos/go/internal/exec"
+	"github.com/mutms/mpd-virt/go/internal/exec"
 )
 
 // Target identifies a box: a user at an address.
