@@ -7,6 +7,7 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
+	"github.com/mutms/mpd-virt/go/internal/sshconfig"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
@@ -83,8 +84,13 @@ func syncCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
 		Use:   "sync <NNN>",
-		Short: "(Re)register an adopted box's WireGuard peer + DNS with mpd-proxy",
-		Args:  cobra.ExactArgs(1),
+		Short: "Re-apply a box's registry entry: refresh ssh-config + WireGuard peer/DNS",
+		Long: "Re-applies everything the box's registry entry (~/.mpd-virt/<NNN>/env)\n" +
+			"implies, so editing that file is enough: after a box moves to a new IP\n" +
+			"or backend, update MPD_VM_IP there and run sync to re-point the\n" +
+			"~/.ssh/config block and the mpd-proxy WireGuard endpoint. Also the\n" +
+			"command to run after restarting mpd-proxy.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
 			if err != nil {
@@ -97,6 +103,12 @@ func syncCmd() *cobra.Command {
 			user := username
 			if user == "" {
 				user = e.User
+			}
+			// Re-apply the direct-ssh block from the (possibly edited) registry
+			// IP too, not just the WireGuard endpoint — the IP lives in both
+			// places, and editing the env file should propagate to both.
+			if err := sshconfig.Write(id, e.IP, user); err != nil {
+				return fmt.Errorf("ssh config: %w", err)
 			}
 			return setupReachability(cmd.Context(), host.Target{User: user, Host: e.IP}, id, e.IP)
 		},
