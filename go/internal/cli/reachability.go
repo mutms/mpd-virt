@@ -36,30 +36,19 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	octet := int(id)
 	fmt.Printf("\n▶ WireGuard reachability (via mpd-proxy)\n")
 
-	// Bring up wg0 on the VM: install wireguard, generate the VM's key if it
-	// has none, write a config authorizing mpd-proxy, enable at boot, (re)start.
-	// The VM's private key is read on the VM and never leaves it.
-	script := fmt.Sprintf(`set -e
-sudo apt-get install -y wireguard-tools >/dev/null
-umask 077
-sudo install -d -m 700 /etc/wireguard
-[ -f /etc/wireguard/mpd.key ] || wg genkey | sudo tee /etc/wireguard/mpd.key >/dev/null
-sudo chmod 600 /etc/wireguard/mpd.key
-printf '[Interface]\nAddress = 10.163.0.%d/32\nListenPort = %d\nPrivateKey = %%s\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 10.163.0.1/32\n' "$(sudo cat /etc/wireguard/mpd.key)" | sudo tee /etc/wireguard/wg0.conf >/dev/null
-sudo chmod 600 /etc/wireguard/wg0.conf
-sudo systemctl enable wg-quick@wg0 >/dev/null 2>&1 || true
-sudo systemctl restart wg-quick@wg0
-`, octet, wgListenPort, proxyPub)
-	if err := t.WriteRemote(ctx, script, "/tmp/mpd-wg-setup.sh", "0700"); err != nil {
-		return fmt.Errorf("push WG setup: %w", err)
-	}
-	if code, err := t.Stream(ctx, "bash /tmp/mpd-wg-setup.sh"); err != nil {
+	// vm-setup has already brought up wg0 (its key, interface, ip_forward). Add
+	// mpd-proxy as its peer and persist it with `wg-quick save`, then read the
+	// VM's public key. The VM's private key never leaves the box.
+	setPeer := fmt.Sprintf(
+		"sudo wg set wg0 peer %s allowed-ips 10.163.0.1/32 && sudo wg-quick save wg0",
+		proxyPub)
+	if code, err := t.Stream(ctx, setPeer); err != nil {
 		return err
 	} else if code != 0 {
-		return fmt.Errorf("WG endpoint setup failed (exit %d)", code)
+		return fmt.Errorf("adding mpd-proxy as wg0 peer failed — is wg0 up? (run `mpd --vm-setup`)")
 	}
 
-	vmPub, err := t.Line(ctx, "sudo cat /etc/wireguard/mpd.key | wg pubkey")
+	vmPub, err := t.Line(ctx, "sudo wg show wg0 public-key")
 	if err != nil {
 		return err
 	}
