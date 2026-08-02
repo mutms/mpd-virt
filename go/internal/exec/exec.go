@@ -23,11 +23,9 @@ import (
 // allowed is the set of command names mpd-virt may run. Widening it is a
 // deliberate act — it grows what the host tool can execute.
 var allowed = map[string]bool{
-	"ssh":       true,
-	"scp":       true,
-	"ping":      true,
-	"container": true, // native-container backend (IP lookup, later create/start)
-	"prlctl":    true, // Parallels backend (dynamic-DHCP IP lookup)
+	"ssh":  true,
+	"scp":  true,
+	"ping": true,
 }
 
 // Cmd describes one external command.

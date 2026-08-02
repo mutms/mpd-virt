@@ -28,21 +28,31 @@ const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/main/boots
 // the box at the given IP really is mpd-<NNN> — then it refuses to touch
 // the wrong one, rather than remediating it.
 func takeoverCmd() *cobra.Command {
-	var username string
+	var username, backendFlag string
 	cmd := &cobra.Command{
 		Use:   "takeover <NNN> [IP]",
-		Short: "Adopt a Debian box as mpd-<NNN> (IP resolved by class if omitted)",
-		Long: "With no IP, mpd-virt resolves the box's address from its id's\n" +
-			"class — derived for Proxmox, looked up for Parallels (prlctl) and\n" +
-			"native containers (container inspect); a generic box (001-064) must\n" +
-			"be given its IP. An explicit <IP> always overrides. Either way\n" +
-			"mpd-virt verifies the box there really is mpd-<NNN> before touching\n" +
-			"it. The box need only be stock Debian Trixie with its identity set\n" +
-			"up (hostname, dev user, authorized key, passwordless sudo) — mpd is\n" +
-			"cloned from GitHub and built in place.",
+		Short: "Adopt a Debian box as mpd-<NNN> (IP resolved by name if omitted)",
+		Long: "With no IP, mpd-virt finds the box by name: it resolves mpd-<NNN>\n" +
+			"through the system resolver (how Parallels and Apple containers\n" +
+			"register a box, and how a box running mDNS advertises itself), and\n" +
+			"failing that falls back to the last address on file — which covers\n" +
+			"Proxmox and any re-takeover. An explicit <IP> always overrides, and\n" +
+			"is required for the first takeover of a box that neither resolves nor\n" +
+			"is on file. Either way mpd-virt verifies the box there really is\n" +
+			"mpd-<NNN> by its hostname before touching it. The box need only be\n" +
+			"stock Debian Trixie with its identity set up (hostname, dev user,\n" +
+			"authorized key, passwordless sudo) — mpd is cloned from GitHub and\n" +
+			"built in place.\n\n" +
+			"--backend (required) records which platform the box runs on\n" +
+			"(generic, parallels, container, proxmox) for later lifecycle\n" +
+			"commands; it does not affect how the box is reached.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
+			if err != nil {
+				return err
+			}
+			be, err := backend.Parse(backendFlag)
 			if err != nil {
 				return err
 			}
@@ -52,13 +62,16 @@ func takeoverCmd() *cobra.Command {
 			} else if ip, err = backend.ResolveIP(cmd.Context(), id); err != nil {
 				return err
 			} else {
-				fmt.Printf("resolved %s → %s (%s)\n", id.Name(), ip, id.Class())
+				fmt.Printf("resolved %s → %s\n", id.Name(), ip)
 			}
-			return runTakeover(cmd.Context(), id, ip, username)
+			return runTakeover(cmd.Context(), id, ip, username, be)
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(),
 		"dev user on the box (defaults to the current macOS user)")
+	cmd.Flags().StringVar(&backendFlag, "backend", "",
+		"platform the box runs on ("+backend.List()+") — required")
+	_ = cmd.MarkFlagRequired("backend")
 	return cmd
 }
 
@@ -71,10 +84,10 @@ func defaultUser() string {
 	return "skodak"
 }
 
-func runTakeover(ctx context.Context, id vmid.ID, ip, username string) error {
+func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backend.Backend) error {
 	t := host.Target{User: username, Host: ip}
-	fmt.Printf("takeover %s at %s@%s  (class=%s, zone=%s)\n\n",
-		id.Name(), username, ip, id.Class(), id.Zone())
+	fmt.Printf("takeover %s at %s@%s  (backend=%s, zone=%s)\n\n",
+		id.Name(), username, ip, be, id.Zone())
 
 	// --- Identity conformance. Key auth + hostname are two independent
 	//     confirmations that the box here is the one meant; refuse on any
@@ -174,7 +187,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string) error {
 	}
 
 	// --- Record the adopted box (host-side).
-	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: username}); err != nil {
+	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: username, Backend: string(be)}); err != nil {
 		return fmt.Errorf("registry: %w", err)
 	}
 	pass("registry " + paths.VMEnv(id))

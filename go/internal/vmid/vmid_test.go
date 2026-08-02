@@ -6,27 +6,23 @@ func TestParse(t *testing.T) {
 	cases := []struct {
 		in      string
 		wantErr bool
-		class   Class
 	}{
-		{"005", false, Generic}, // padded low id
-		{"5", false, Generic},   // unpadded input accepted, same id
-		{"1", false, Generic},
-		{"64", false, Generic},
-		{"135", false, Parallels},
-		{"128", false, Parallels},
-		{"159", false, Parallels},
-		{"160", false, Container},
-		{"191", false, Container},
-		{"200", false, Proxmox},
-		{"223", false, Proxmox},
-		{"0", true, ""},   // zero is not a box
-		{"65", true, ""},  // reserved gap 065-127
-		{"127", true, ""}, // reserved gap
-		{"224", true, ""}, // reserved above
-		{"260", true, ""}, // above an octet
-		{"abc", true, ""}, // not digits
-		{"", true, ""},    // empty
-		{"12x", true, ""}, // trailing junk
+		{"005", false}, // padded low id
+		{"5", false},   // unpadded input accepted, same id
+		{"1", false},   // bottom of the octet range
+		{"64", false},
+		{"127", false}, // no reserved gaps anymore — any 1-254 is a box
+		{"135", false},
+		{"200", false},
+		{"254", false}, // top of the octet range
+		{"0", true},    // network address, not a box
+		{"255", true},  // broadcast, not a box
+		{"256", true},  // above an octet
+		{"260", true},
+		{"-1", true},  // negative
+		{"abc", true}, // not digits
+		{"", true},    // empty
+		{"12x", true}, // trailing junk
 	}
 	for _, c := range cases {
 		id, err := Parse(c.in)
@@ -38,10 +34,6 @@ func TestParse(t *testing.T) {
 		}
 		if err != nil {
 			t.Errorf("Parse(%q): unexpected error: %v", c.in, err)
-			continue
-		}
-		if id.Class() != c.class {
-			t.Errorf("Parse(%q).Class() = %q, want %q", c.in, id.Class(), c.class)
 		}
 	}
 }

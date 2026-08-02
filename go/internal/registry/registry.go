@@ -2,9 +2,9 @@
 // about: one shell-style KEY=VALUE file per box at ~/.mpd-virt/<NNN>/env.
 //
 // Ported from Registry.swift, simplified for the container/general world:
-// the Parallels-only fields (uuid, disk, ram) are gone, and "backend"
-// becomes the class — which is derivable from the id, so it is written
-// for readability but the id remains authoritative.
+// the Parallels-only fields (uuid, disk, ram) are gone. The backend (which
+// platform the box runs on) is recorded here because it is no longer
+// derivable from the id — it is supplied explicitly at takeover.
 package registry
 
 import (
@@ -17,12 +17,13 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// Entry is one box's registry record. Name and Class derive from ID; the
-// non-derivable facts are IP and User.
+// Entry is one box's registry record. Name derives from ID; the
+// non-derivable facts are IP, User, and Backend.
 type Entry struct {
-	ID   vmid.ID
-	IP   string
-	User string
+	ID      vmid.ID
+	IP      string
+	User    string
+	Backend string
 }
 
 // Save writes (or overwrites) the env file for a box, creating the
@@ -36,10 +37,10 @@ func Save(e Entry) error {
 # Source of truth for takeover. Edit at your own risk.
 MPD_VM_OCTET=%s
 MPD_VM_NAME=%s
-MPD_VM_CLASS=%s
+MPD_VM_BACKEND=%s
 MPD_VM_IP=%s
 MPD_VM_USER=%s
-`, e.ID.Name(), e.ID.Pad(), e.ID.Name(), e.ID.Class(), e.IP, e.User)
+`, e.ID.Name(), e.ID.Pad(), e.ID.Name(), e.Backend, e.IP, e.User)
 	return os.WriteFile(paths.VMEnv(e.ID), []byte(body), 0o644)
 }
 
@@ -82,7 +83,10 @@ func Load(id vmid.ID) (Entry, error) {
 	if ip == "" || user == "" {
 		return Entry{}, fmt.Errorf("registry entry for %s is missing MPD_VM_IP or MPD_VM_USER", id.Name())
 	}
-	return Entry{ID: id, IP: ip, User: user}, nil
+	// Backend is metadata for lifecycle commands, not needed to reach the box,
+	// so it is optional: an entry written before backends were recorded still
+	// loads.
+	return Entry{ID: id, IP: ip, User: user, Backend: kv["MPD_VM_BACKEND"]}, nil
 }
 
 // Remove deletes a box's <NNN>/ dir entirely. It does not touch

@@ -1,16 +1,17 @@
 // Package vmid derives everything predictable about a box from its id NNN:
-// the hostname mpd-<NNN>, the class (which reachability block it falls in),
-// and the DNS zone.
+// the hostname mpd-<NNN> and the DNS zone <NNN>.mpd.test.
 //
-// The host IP is deliberately NOT here. How a box's IP is found depends on
-// its class: derived from the id for Proxmox, looked up for Parallels
-// (prlctl) and native containers (`container inspect`), or supplied to
-// takeover for generic adopted boxes. See internal/backend.
-//
-// The id is an identifier, not a number — its canonical form is the
-// zero-padded three-digit string (mpd-001, 001.mpd.test). The raw integer
-// value survives only because it doubles as the third octet of the box's
+// The id is a plain identifier over 001-254, not a class marker. Reachability
+// and IP resolution are uniform now, so the id carries no backend meaning —
+// which platform a box runs on is an explicit --backend value (see
+// internal/backend), not something read off the id's range. Its canonical
+// form is the zero-padded three-digit string (mpd-001, 001.mpd.test); the raw
+// integer survives only because it doubles as the third octet of the box's
 // internal 10.163.<NNN>.0/24 subnet.
+//
+// The host IP is deliberately NOT here either — it is found by name
+// (resolving mpd-<NNN>) with the last known address as a fallback, or given
+// to takeover explicitly. See internal/backend.
 package vmid
 
 import (
@@ -18,40 +19,22 @@ import (
 	"strconv"
 )
 
-// ID is a validated box id in the managed range.
+// ID is a validated box id: the third octet of 10.163.<NNN>.0/24, so 1-254.
 type ID int
 
-// Class is how the Mac reaches a box, which the id's block decides.
-type Class string
-
-const (
-	// Generic — 001-064: manually registered / adopted boxes (demos like
-	// mpd-001). IP is supplied to takeover; there is nothing to look up.
-	Generic Class = "generic"
-	// Parallels — 128-159: Parallels VMs. IP is dynamic (DHCP), looked up
-	// via prlctl.
-	Parallels Class = "parallels"
-	// Container — 160-191: native Apple / WSL containers. IP leased by
-	// vmnet, read via `container inspect`.
-	Container Class = "container"
-	// Proxmox — 192-223: Proxmox VMs. IP derived from the id (10.212.56.<NNN>).
-	Proxmox Class = "proxmox"
-)
-
-// Parse validates an id string and returns it. It must fall in a managed
-// class block (001-064 generic, 128-159 parallels, 160-191 container,
-// 192-223 proxmox); the gaps (065-127, 224-254) are reserved. Unpadded
-// input is accepted ("5" == "005"); the canonical form is always padded.
+// Parse validates an id string and returns it. The id is the box's subnet
+// octet, so it must be 1-254 (0 is the network address, 255 the broadcast).
+// Unpadded input is accepted ("5" == "005"); the canonical form is always
+// padded.
 func Parse(s string) (ID, error) {
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		return 0, fmt.Errorf("id %q must be digits (e.g. 001, 130)", s)
 	}
-	id := ID(n)
-	if _, ok := id.class(); !ok {
-		return 0, fmt.Errorf("id %d is not in a managed block (001-064, 128-159, 160-191, 192-223)", n)
+	if n < 1 || n > 254 {
+		return 0, fmt.Errorf("id %d out of range — a box id is 001-254 (the third octet of 10.163.<NNN>.0/24)", n)
 	}
-	return id, nil
+	return ID(n), nil
 }
 
 // Pad is the id as a zero-padded three-digit string ("135", "042") — the
@@ -65,24 +48,3 @@ func (id ID) Name() string { return "mpd-" + id.Pad() }
 // Zone is the box's DNS zone, <NNN>.mpd.test — zero-padded, matching the
 // sibling mpd's net.Zone(). (For ids >= 100 padded and unpadded coincide.)
 func (id ID) Zone() string { return id.Pad() + ".mpd.test" }
-
-// Class returns the reachability class of the id.
-func (id ID) Class() Class {
-	c, _ := id.class()
-	return c
-}
-
-func (id ID) class() (Class, bool) {
-	switch n := int(id); {
-	case n >= 1 && n <= 64:
-		return Generic, true
-	case n >= 128 && n <= 159:
-		return Parallels, true
-	case n >= 160 && n <= 191:
-		return Container, true
-	case n >= 192 && n <= 223:
-		return Proxmox, true
-	default:
-		return "", false
-	}
-}

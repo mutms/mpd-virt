@@ -1,9 +1,11 @@
 package backend
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
@@ -16,89 +18,128 @@ func mustID(t *testing.T, s string) vmid.ID {
 	return id
 }
 
-// Proxmox is the one class whose address is derived from the id, so it
-// resolves with no hypervisor round-trip — the branch worth pinning.
-func TestResolveIPProxmoxDerived(t *testing.T) {
-	for _, tc := range []struct{ id, want string }{
-		{"192", "10.212.56.192"},
-		{"200", "10.212.56.200"},
-		{"223", "10.212.56.223"},
-	} {
-		got, err := ResolveIP(t.Context(), mustID(t, tc.id))
-		if err != nil {
-			t.Fatalf("ResolveIP(%s): %v", tc.id, err)
-		}
-		if got != tc.want {
-			t.Errorf("ResolveIP(%s) = %q, want %q", tc.id, got, tc.want)
-		}
+// stub replaces the two effects ResolveIP has on the world for one test: what
+// a name resolves to (dns), and which addresses answer on ssh (live). Both are
+// restored on cleanup.
+func stub(t *testing.T, dns []string, live ...string) {
+	t.Helper()
+	liveSet := map[string]bool{}
+	for _, ip := range live {
+		liveSet[ip] = true
+	}
+	origResolve, origReach := resolveHost, sshReachable
+	resolveHost = func(context.Context, string) []string { return dns }
+	sshReachable = func(_ context.Context, ip string) bool { return liveSet[ip] }
+	t.Cleanup(func() { resolveHost, sshReachable = origResolve, origReach })
+}
+
+// isolateRegistry points the registry at an empty temp root, so a test starts
+// with no boxes on file and cannot touch the developer's real ~/.mpd-virt.
+func isolateRegistry(t *testing.T) {
+	t.Helper()
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+}
+
+func seedLastIP(t *testing.T, id vmid.ID, ip string) {
+	t.Helper()
+	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: "skodak"}); err != nil {
+		t.Fatalf("seed registry: %v", err)
 	}
 }
 
-// inspectFixture is real `container inspect mpd-181` output (trimmed): the
-// live address is under status.networks[].ipv4Address in CIDR form, while
-// configuration.networks has no address — so the parser must read status and
-// strip the mask.
-const inspectFixture = `[
-  {
-    "configuration" : {
-      "id" : "mpd-181",
-      "networks" : [ { "network" : "default", "options" : { "hostname" : "mpd-181" } } ]
-    },
-    "id" : "mpd-181",
-    "status" : {
-      "networks" : [
-        {
-          "hostname" : "mpd-181",
-          "ipv4Address" : "192.168.64.26/24",
-          "ipv4Gateway" : "192.168.64.1",
-          "macAddress" : "fe:82:96:82:1b:fd",
-          "network" : "default"
-        }
-      ],
-      "state" : "running"
-    }
-  }
-]`
-
-func TestParseContainerIP(t *testing.T) {
-	got, err := parseContainerIP(inspectFixture)
+// A name that resolves to a live box wins immediately — no registry needed.
+func TestResolveIPName(t *testing.T) {
+	isolateRegistry(t)
+	stub(t, []string{"192.168.1.143"}, "192.168.1.143")
+	got, err := ResolveIP(context.Background(), mustID(t, "139"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "192.168.64.26" {
-		t.Errorf("parseContainerIP = %q, want 192.168.64.26 (from status.networks, mask stripped)", got)
+	if got != "192.168.1.143" {
+		t.Errorf("ResolveIP = %q, want 192.168.1.143 (resolved by name)", got)
 	}
 }
 
-// prlctlFixture is real `prlctl list mpd-130 -f --json` output: the address is
-// the bare "ip_configured" string (no CIDR mask).
-const prlctlFixture = `[
-    {
-        "uuid": "bb586bcf-703d-47f9-b902-b60d54504c2a",
-        "status": "running",
-        "ip_configured": "10.211.55.130",
-        "name": "mpd-130"
-    }
-]`
-
-func TestParseParallelsIP(t *testing.T) {
-	got, err := parseParallelsIP(prlctlFixture)
+// A name that resolves but does not answer ssh (a stale record) is skipped for
+// the last IP on file — the Proxmox / re-takeover path.
+func TestResolveIPFallsBackToLastIP(t *testing.T) {
+	isolateRegistry(t)
+	id := mustID(t, "139")
+	seedLastIP(t, id, "192.168.1.143")
+	stub(t, []string{"10.9.9.9"}, "192.168.1.143") // dns record dead, registry IP live
+	got, err := ResolveIP(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "10.211.55.130" {
-		t.Errorf("parseParallelsIP = %q, want 10.211.55.130", got)
+	if got != "192.168.1.143" {
+		t.Errorf("ResolveIP = %q, want the last IP 192.168.1.143", got)
 	}
 }
 
-// A generic box has no discoverable address; resolution must fail with a
-// message that tells the user to pass one, not silently guess.
-func TestResolveIPGenericHasNoAddress(t *testing.T) {
-	_, err := ResolveIP(t.Context(), mustID(t, "005"))
+// Among several resolved addresses, the one answering ssh is chosen.
+func TestResolveIPPicksLiveAddress(t *testing.T) {
+	isolateRegistry(t)
+	stub(t, []string{"10.0.0.5", "192.168.1.143"}, "192.168.1.143")
+	got, err := ResolveIP(context.Background(), mustID(t, "139"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "192.168.1.143" {
+		t.Errorf("ResolveIP = %q, want 192.168.1.143 (the live one)", got)
+	}
+}
+
+// No name and nothing on file: fail telling the user to pass the IP.
+func TestResolveIPNoCandidates(t *testing.T) {
+	isolateRegistry(t)
+	stub(t, nil) // nothing resolves, nothing live
+	_, err := ResolveIP(context.Background(), mustID(t, "005"))
 	if err == nil {
-		t.Fatal("ResolveIP(005): want an error for a generic box, got nil")
+		t.Fatal("want an error when nothing resolves and no IP is on file")
 	}
 	if !strings.Contains(err.Error(), "takeover 005 <IP>") {
-		t.Errorf("error should tell the user to pass an explicit IP, got: %v", err)
+		t.Errorf("error should tell the user to pass an IP, got: %v", err)
+	}
+}
+
+// Candidates exist but none answer ssh: the error names them and still points
+// to the explicit-IP escape hatch.
+func TestResolveIPAllDead(t *testing.T) {
+	isolateRegistry(t)
+	id := mustID(t, "139")
+	seedLastIP(t, id, "192.168.1.99")
+	stub(t, []string{"10.0.0.5"}) // both a dns record and a registry IP, neither live
+	_, err := ResolveIP(context.Background(), id)
+	if err == nil {
+		t.Fatal("want an error when no candidate answers ssh")
+	}
+	for _, want := range []string{"10.0.0.5", "192.168.1.99", "takeover 139 <IP>"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err.Error(), want)
+		}
+	}
+}
+
+// The same IP arriving from both DNS and the registry is probed once, not
+// twice — the dedup keeps the candidate list honest.
+func TestResolveIPDedupes(t *testing.T) {
+	isolateRegistry(t)
+	id := mustID(t, "139")
+	seedLastIP(t, id, "192.168.1.143")
+	probes := 0
+	origResolve, origReach := resolveHost, sshReachable
+	resolveHost = func(context.Context, string) []string { return []string{"192.168.1.143"} }
+	sshReachable = func(context.Context, string) bool { probes++; return true }
+	t.Cleanup(func() { resolveHost, sshReachable = origResolve, origReach })
+
+	got, err := ResolveIP(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "192.168.1.143" {
+		t.Errorf("ResolveIP = %q, want 192.168.1.143", got)
+	}
+	if probes != 1 {
+		t.Errorf("a deduped IP should be probed once, got %d probes", probes)
 	}
 }
