@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/paths"
@@ -98,4 +99,34 @@ func Remove(id vmid.ID) error {
 		return nil
 	}
 	return err
+}
+
+// List returns every adopted box's entry, sorted by id. It scans ~/.mpd-virt
+// for <NNN>/env files; anything that is not a valid id directory (conf/, …) or
+// lacks a loadable env is skipped. An absent root is an empty list, not an error.
+func List() ([]Entry, error) {
+	dirents, err := os.ReadDir(paths.Root())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []Entry
+	for _, d := range dirents {
+		if !d.IsDir() {
+			continue
+		}
+		id, err := vmid.Parse(d.Name())
+		if err != nil {
+			continue // not an <NNN> box dir (e.g. conf/)
+		}
+		e, err := Load(id)
+		if err != nil {
+			continue // no or incomplete env
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
