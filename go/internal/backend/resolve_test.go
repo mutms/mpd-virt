@@ -34,6 +34,63 @@ func TestResolveIPProxmoxDerived(t *testing.T) {
 	}
 }
 
+// inspectFixture is real `container inspect mpd-181` output (trimmed): the
+// live address is under status.networks[].ipv4Address in CIDR form, while
+// configuration.networks has no address — so the parser must read status and
+// strip the mask.
+const inspectFixture = `[
+  {
+    "configuration" : {
+      "id" : "mpd-181",
+      "networks" : [ { "network" : "default", "options" : { "hostname" : "mpd-181" } } ]
+    },
+    "id" : "mpd-181",
+    "status" : {
+      "networks" : [
+        {
+          "hostname" : "mpd-181",
+          "ipv4Address" : "192.168.64.26/24",
+          "ipv4Gateway" : "192.168.64.1",
+          "macAddress" : "fe:82:96:82:1b:fd",
+          "network" : "default"
+        }
+      ],
+      "state" : "running"
+    }
+  }
+]`
+
+func TestParseContainerIP(t *testing.T) {
+	got, err := parseContainerIP(inspectFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "192.168.64.26" {
+		t.Errorf("parseContainerIP = %q, want 192.168.64.26 (from status.networks, mask stripped)", got)
+	}
+}
+
+// prlctlFixture is real `prlctl list mpd-130 -f --json` output: the address is
+// the bare "ip_configured" string (no CIDR mask).
+const prlctlFixture = `[
+    {
+        "uuid": "bb586bcf-703d-47f9-b902-b60d54504c2a",
+        "status": "running",
+        "ip_configured": "10.211.55.130",
+        "name": "mpd-130"
+    }
+]`
+
+func TestParseParallelsIP(t *testing.T) {
+	got, err := parseParallelsIP(prlctlFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "10.211.55.130" {
+		t.Errorf("parseParallelsIP = %q, want 10.211.55.130", got)
+	}
+}
+
 // A generic box has no discoverable address; resolution must fail with a
 // message that tells the user to pass one, not silently guess.
 func TestResolveIPGenericHasNoAddress(t *testing.T) {

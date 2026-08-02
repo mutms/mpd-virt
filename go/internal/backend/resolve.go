@@ -40,10 +40,6 @@ func ResolveIP(ctx context.Context, id vmid.ID) (string, error) {
 
 // containerIP reads a native container's vmnet-leased address from
 // `container inspect`. The lease changes across restarts, so it is read live.
-//
-// Apple's `container inspect <name>` returns a JSON array of objects, each
-// carrying a networks list whose address is CIDR form ("192.168.64.24/24").
-// (Field names confirmed against the live tool on the Mac host.)
 func containerIP(ctx context.Context, name string) (string, error) {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"inspect", name}})
 	if err != nil {
@@ -52,30 +48,41 @@ func containerIP(ctx context.Context, name string) (string, error) {
 	if res.Failed() {
 		return "", fmt.Errorf("`container inspect %s` failed: %s", name, oneLine(res.Stderr))
 	}
-	var boxes []struct {
-		Networks []struct {
-			Address string `json:"address"`
-		} `json:"networks"`
+	ip, err := parseContainerIP(res.Stdout)
+	if err != nil {
+		return "", fmt.Errorf("%w (from `container inspect %s`)", err, name)
 	}
-	if err := json.Unmarshal([]byte(res.Stdout), &boxes); err != nil {
-		return "", fmt.Errorf("parsing `container inspect %s`: %w", name, err)
+	return ip, nil
+}
+
+// parseContainerIP pulls the running vmnet address out of `container inspect`
+// JSON — an array of objects whose live address is at
+// status.networks[].ipv4Address in CIDR form ("192.168.64.26/24").
+// configuration.networks carries no address, so the running status is the
+// only source.
+func parseContainerIP(stdout string) (string, error) {
+	var boxes []struct {
+		Status struct {
+			Networks []struct {
+				IPv4Address string `json:"ipv4Address"`
+			} `json:"networks"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &boxes); err != nil {
+		return "", fmt.Errorf("parsing container inspect JSON: %w", err)
 	}
 	for _, b := range boxes {
-		for _, n := range b.Networks {
-			if ip := stripMask(n.Address); ip != "" {
+		for _, n := range b.Status.Networks {
+			if ip := stripMask(n.IPv4Address); ip != "" {
 				return ip, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("no address in `container inspect %s` — is it running?", name)
+	return "", fmt.Errorf("no ipv4Address in inspect output — is the container running?")
 }
 
-// parallelsIP reads the DHCP address Parallels handed a VM. Parallels VMs use
+// parallelsIP reads the address Parallels handed a VM. Parallels mpd VMs use
 // dynamic leases, so the address is looked up via prlctl rather than derived.
-//
-// `prlctl list <name> -f --json` returns a JSON array; the guest-reported
-// address is the "ip_configured" field. (Confirmed against the live tool on
-// the Mac host.)
 func parallelsIP(ctx context.Context, name string) (string, error) {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "prlctl", Args: []string{"list", name, "-f", "--json"}})
 	if err != nil {
@@ -84,11 +91,23 @@ func parallelsIP(ctx context.Context, name string) (string, error) {
 	if res.Failed() {
 		return "", fmt.Errorf("`prlctl list %s` failed: %s", name, oneLine(res.Stderr))
 	}
+	ip, err := parseParallelsIP(res.Stdout)
+	if err != nil {
+		return "", fmt.Errorf("%w (from `prlctl list %s`)", err, name)
+	}
+	return ip, nil
+}
+
+// parseParallelsIP pulls the guest-reported address out of
+// `prlctl list <name> -f --json` — an array of objects whose "ip_configured"
+// field holds the bare IP ("10.211.55.130"), or "-" when Parallels does not
+// yet know a lease.
+func parseParallelsIP(stdout string) (string, error) {
 	var vms []struct {
 		IPConfigured string `json:"ip_configured"`
 	}
-	if err := json.Unmarshal([]byte(res.Stdout), &vms); err != nil {
-		return "", fmt.Errorf("parsing `prlctl list %s --json`: %w", name, err)
+	if err := json.Unmarshal([]byte(stdout), &vms); err != nil {
+		return "", fmt.Errorf("parsing prlctl JSON: %w", err)
 	}
 	for _, vm := range vms {
 		for _, field := range strings.Fields(strings.ReplaceAll(vm.IPConfigured, ",", " ")) {
@@ -97,7 +116,7 @@ func parallelsIP(ctx context.Context, name string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("`prlctl list %s` reported no address — is the VM running with guest tools?", name)
+	return "", fmt.Errorf("prlctl reported no address — is the VM running with guest tools?")
 }
 
 // stripMask drops a "/24"-style suffix, returning the bare IP.
