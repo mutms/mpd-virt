@@ -137,7 +137,7 @@ resolved address.
 
 ## 6. The base image
 
-The [`containers/takeovertest`](../../containers/takeovertest) recipe — Debian
+The [`containers/apple`](../../containers/apple) recipe — Debian
 Trixie, `vminitd`, sshd as the entrypoint, `skodak` + passwordless sudo + the
 authorized key, **no systemd** — is the **base for mpd native containers on
 macOS**. The real mpd image is this base plus the runtime stack.

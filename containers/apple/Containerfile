@@ -1,6 +1,9 @@
-# Takeover-test container: a Debian Trixie box that boots systemd as PID 1
-# under plain `container run`. Needs `--cap-add ALL` (systemd needs SYS_ADMIN
-# to mount cgroups; without it, it exits silently). Hostname comes from --name.
+# mpd-virt-container-apple — the Apple-container base image mpd-virt adopts as an mpd box.
+# A Debian Trixie box that boots systemd as PID 1 under plain `container run`.
+# Needs `--cap-add ALL` (systemd needs SYS_ADMIN to mount cgroups; without it
+# it exits silently). Hostname comes from --name. Build it once with
+# `container build -t mpd-virt-container-apple .`; `mpd-virt create --backend=container` (and
+# manual takeover) run and provision boxes from it.
 #
 # NOT libnss-resolve here: on a prepped VM prep converts eth0 to networkd, so
 # systemd-resolved learns a default upstream from DHCP and nss `resolve` can
@@ -24,8 +27,8 @@
 # contract — an OCI base ships no systemd regardless, so the session stack is
 # still installed explicitly below.)
 #
-#   container build -t takeovertest containers/takeovertest
-#   container run -d --name mpd-128 --cap-add ALL takeovertest
+#   container build -t mpd-virt-container-apple containers/apple
+#   container run -d --name mpd-128 --cap-add ALL mpd-virt-container-apple
 #   container exec mpd-128 systemctl is-system-running   # running/degraded = systemd up
 FROM debian:trixie
 

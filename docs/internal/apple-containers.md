@@ -5,7 +5,7 @@ Empirical findings from a hands-on session on **2026-08-01**.
 > **Decision (2026-08-01): mpd's macOS native-container backend uses
 > `container run`, NOT `container machine`.** `container machine` is not used
 > for anything. The isolated `container run` box — the `mpd-128` box built from
-> [`containers/takeovertest`](../../containers/takeovertest) — is the **base for
+> [`containers/apple`](../../containers/apple) — is the **base for
 > mpd native containers on macOS**. This supersedes the machine-mode direction
 > in the [backend proposal](../proposals/apple-container-backend.md), which
 > predates these findings.
@@ -21,7 +21,7 @@ VirtioFS, forces a DHCP IP, logs you in as the host UID), which is why it is
 rejected outright.
 
 All commands below were run over SSH into a `container run` box built from
-[`containers/takeovertest`](../../containers/takeovertest) (Debian Trixie,
+[`containers/apple`](../../containers/apple) (Debian Trixie,
 `vminitd` as PID 1, sshd as the entrypoint — no systemd).
 
 ## Environment
