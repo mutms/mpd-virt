@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
@@ -78,18 +79,23 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	return nil
 }
 
-// syncCmd re-runs reachability for an already-adopted box — the command you run
-// after (re)starting mpd-proxy to re-register a VM's peer + DNS.
+// syncCmd re-points everything at wherever the box is now: it re-resolves the
+// box by name (catching a restarted container's new lease), updates the
+// registry and ssh-config if it moved, and re-registers the mpd-proxy peer +
+// DNS. The command you run after a box restarts/moves, after editing its env
+// file, or after restarting mpd-proxy.
 func syncCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
 		Use:   "sync <NNN>",
-		Short: "Re-apply a box's registry entry: refresh ssh-config + WireGuard peer/DNS",
-		Long: "Re-applies everything the box's registry entry (~/.mpd-virt/<NNN>/env)\n" +
-			"implies, so editing that file is enough: after a box moves to a new IP\n" +
-			"or backend, update MPD_VM_IP there and run sync to re-point the\n" +
-			"~/.ssh/config block and the mpd-proxy WireGuard endpoint. Also the\n" +
-			"command to run after restarting mpd-proxy.",
+		Short: "Re-point a box: re-resolve its IP, refresh ssh-config + WireGuard peer/DNS",
+		Long: "Re-points everything at wherever the box is now. sync re-resolves\n" +
+			"mpd-<NNN> by name (picking up a restarted container's new lease),\n" +
+			"falling back to the IP stored in ~/.mpd-virt/<NNN>/env; if it moved\n" +
+			"it updates the registry, rewrites the ~/.ssh/config block, and\n" +
+			"re-registers the mpd-proxy WireGuard endpoint + DNS. Run it after a\n" +
+			"box restarts or moves, after editing its env file, or after\n" +
+			"restarting mpd-proxy.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
@@ -104,13 +110,26 @@ func syncCmd() *cobra.Command {
 			if user == "" {
 				user = e.User
 			}
-			// Re-apply the direct-ssh block from the (possibly edited) registry
-			// IP too, not just the WireGuard endpoint — the IP lives in both
-			// places, and editing the env file should propagate to both.
-			if err := sshconfig.Write(id, e.IP, user); err != nil {
+			// Re-resolve where the box is now rather than trusting the stored
+			// IP: a restarted container or a moved VM may have a new lease.
+			// ResolveIP falls back to the stored IP when the name does not
+			// resolve, so a box that has not moved still syncs.
+			ip, err := backend.ResolveIP(cmd.Context(), id)
+			if err != nil {
+				return err
+			}
+			if ip != e.IP {
+				fmt.Printf("  %s is at %s now (was %s) — updating registry\n", id.Name(), ip, e.IP)
+				if err := registry.Save(registry.Entry{ID: id, IP: ip, User: user, Backend: e.Backend}); err != nil {
+					return fmt.Errorf("registry: %w", err)
+				}
+			}
+			// The IP lives in two host-side places; keep the direct-ssh block in
+			// step with the endpoint mpd-proxy is about to get.
+			if err := sshconfig.Write(id, ip, user); err != nil {
 				return fmt.Errorf("ssh config: %w", err)
 			}
-			return setupReachability(cmd.Context(), host.Target{User: user, Host: e.IP}, id, e.IP)
+			return setupReachability(cmd.Context(), host.Target{User: user, Host: ip}, id, ip)
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "dev user on the box (defaults to the registry entry)")
