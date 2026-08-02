@@ -14,7 +14,8 @@ import (
 // CreateOpts carries what Create needs beyond the id and backend.
 type CreateOpts struct {
 	Image  string // base image to run (container backend), e.g. mpd-virt-container-apple
-	Memory string // container memory, e.g. "10g"
+	Memory string // memory: container "10g", or a VM RAM like "8g" (utm)
+	Disk   string // VM disk size, e.g. "80g" (utm); ignored by the container backend
 	User   string // dev account to seed
 	PubKey string // the public key to authorize, one line ("ssh-ed25519 …")
 }
@@ -28,6 +29,8 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 	switch be {
 	case Container:
 		return containerCreate(ctx, out, id, opts)
+	case UTM:
+		return utmCreate(ctx, out, id, opts)
 	case Parallels, Proxmox:
 		return "", fmt.Errorf("create is not implemented for the %s backend yet (needs a template clone + cloud-init) — create the box yourself, then `mpd-virt takeover`", be)
 	default:

@@ -16,11 +16,12 @@ const (
 	Generic   Backend = "generic"   // adopted / manually managed box (demos, LAN)
 	Parallels Backend = "parallels" // Parallels VM
 	Container Backend = "container" // native Apple / WSL container
+	UTM       Backend = "utm"       // UTM Desktop VM (macOS, osascript-driven)
 	Proxmox   Backend = "proxmox"   // Proxmox VM behind warp
 )
 
 // backends is the closed set of valid values, in help/order.
-var backends = []Backend{Generic, Parallels, Container, Proxmox}
+var backends = []Backend{Generic, Parallels, Container, UTM, Proxmox}
 
 // Parse validates a --backend value against the known set.
 func Parse(s string) (Backend, error) {

@@ -60,6 +60,13 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 		add(containerIP(ctx, id.Name()), "container")
 	case Parallels:
 		add(parallelsIP(ctx, id.Name()), "prlctl")
+	case UTM:
+		// UTM exposes no clean guest-IP query, so the box is pinned to its
+		// canonical vmnet address; trust it only when the VM actually exists,
+		// and let the ssh probe below confirm it is up.
+		if utmVMExists(ctx, id.Name()) {
+			add(utmCanonicalIP(id), "utm")
+		}
 	}
 	for _, ip := range resolveHost(ctx, id.Name()) {
 		add(ip, "dns")

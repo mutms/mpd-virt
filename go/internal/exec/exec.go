@@ -30,6 +30,13 @@ var allowed = map[string]bool{
 	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the box.
 	"container": true,
 	"prlctl":    true,
+	// UTM backend: osascript drives UTM Desktop (no utmctl in the App Store
+	// build); curl/tar fetch + unpack the Debian cloud image; hdiutil builds
+	// the cidata seed ISO. All macOS built-ins.
+	"osascript": true,
+	"curl":      true,
+	"tar":       true,
+	"hdiutil":   true,
 }
 
 // Cmd describes one external command.

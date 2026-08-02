@@ -49,7 +49,7 @@ func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 }
 
 // managed reports whether mpd-virt can power a backend from this Mac.
-func managed(be Backend) bool { return be == Container || be == Parallels }
+func managed(be Backend) bool { return be == Container || be == Parallels || be == UTM }
 
 func powerOn(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 	power(ctx, out, id, be, "start", "running")
@@ -67,6 +67,11 @@ func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 // (mpd-virt may be driving a box powered elsewhere) — both are reported to out
 // and swallowed. generic/proxmox have no local power and are skipped.
 func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb, already string) {
+	// UTM is driven through osascript, not a single-verb CLI.
+	if be == UTM {
+		utmPower(ctx, out, id, verb)
+		return
+	}
 	argv := powerArgv(id, be, verb)
 	if argv == nil {
 		return

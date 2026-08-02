@@ -34,6 +34,14 @@ func Servers() string { return filepath.Join(Root(), "servers") }
 // `server sync` pushes into every VM so containers resolve LAN names too.
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }
 
+// CloudImages is ~/.mpd-virt/conf/cloud-images — the cached cloud-image
+// archive(s) the UTM (and future cloud-init) backends materialize VMs from.
+func CloudImages() string { return filepath.Join(Conf(), "cloud-images") }
+
+// UTMStaging is ~/.mpd-virt/conf/utm-staging/<name> — where a UTM VM's disk
+// + cidata seed are built before UTM imports them into its own bundle.
+func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging", name) }
+
 // VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
 func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.Pad()) }
 

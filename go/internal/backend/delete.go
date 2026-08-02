@@ -33,6 +33,8 @@ func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 		} else if r.Failed() {
 			return fmt.Errorf("`prlctl delete %s` failed: %s", name, shortErr(r))
 		}
+	case UTM:
+		return utmDelete(ctx, out, id)
 	case Proxmox:
 		return fmt.Errorf("delete is not wired for the proxmox backend yet (remote qm) — destroy the VM on the Proxmox host")
 	}
