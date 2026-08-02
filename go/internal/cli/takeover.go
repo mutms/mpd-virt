@@ -59,8 +59,9 @@ func takeoverCmd() *cobra.Command {
 			ip := ""
 			if len(args) == 2 {
 				ip = args[1]
-			} else if ip, err = backend.ResolveIP(cmd.Context(), id); err != nil {
-				return err
+			} else if ip, err = backend.Start(cmd.Context(), cmd.OutOrStdout(), id, be); err != nil {
+				return fmt.Errorf("%w\n    or pass the IP explicitly: mpd-virt takeover %s <IP> --backend %s",
+					err, id.Pad(), be)
 			} else {
 				fmt.Printf("resolved %s → %s\n", id.Name(), ip)
 			}
