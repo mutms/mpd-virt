@@ -4,10 +4,6 @@ macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd).
 Creates and manages `mpd` VMs on the user's Mac. The binary is called
 `mpd-virt`.
 
-It replaces the bash scripts that previously lived under `setup/macos/`
-in the mpd repo. (It began as a Swift port of those scripts and was then
-rewritten in Go — the Go sources under `go/` are the implementation.)
-
 **Hypervisor backends.** Three compiled in:
 
 - **`parallels`** — Parallels Desktop Pro (`prlctl`). Initial scope: `clone` from an `mpd-template-<suffix>` template + lifecycle (`start`/`stop`/`delete`). Gains `create` later.
@@ -201,8 +197,8 @@ flow, not here.
 `~/.mpd/` is **not** created on the host — that path is exclusively the
 in-VM runtime state directory inside each mpd VM.
 
-Full design rationale: see
-[`docs/proposals/macos-host-state.md`](docs/proposals/macos-host-state.md).
+Host-side trust model and rationale: see
+[`docs/proposals/threat-model-and-ca-backup.md`](docs/proposals/threat-model-and-ca-backup.md).
 
 ## Build
 

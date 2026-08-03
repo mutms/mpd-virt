@@ -19,8 +19,8 @@ import (
 // AppleScript dictionary); the App Store build ships no `utmctl`, so
 // AppleScript is the only surface that works for everyone. `create`
 // materializes a fresh Debian VM from the cloud .raw + a cidata seed
-// (cloudinit.go); start/stop/delete are thin osascript wrappers. Ported
-// from UTM.swift, adapted to the Go backend model (no UUID — the registry
+// (cloudinit.go); start/stop/delete are thin osascript wrappers.
+// Adapted to the Go backend model (no UUID — the registry
 // and `list` don't use it; a pinned vmnet IP instead of a guest-IP query).
 //
 // Networking: UTM's `mode:shared` uses macOS vmnet, fixed at

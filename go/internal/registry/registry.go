@@ -1,7 +1,7 @@
 // Package registry is the source of truth for which boxes mpd-virt knows
 // about: one shell-style KEY=VALUE file per box at ~/.mpd-virt/<NNN>/env.
 //
-// Ported from Registry.swift, simplified for the container/general world:
+// Simplified for the container/general world:
 // the Parallels-only fields (uuid, disk, ram) are gone. The backend (which
 // platform the box runs on) is recorded here because it is no longer
 // derivable from the id — it is supplied explicitly at takeover.

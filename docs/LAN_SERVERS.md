@@ -214,4 +214,4 @@ already installed on the server; do that there.
   rebuilding VMs: these certificates are installed on machines that
   cannot be rebuilt from a script. Whether that directory should be
   backed up is still open — see
-  `docs/proposals/macos-host-state.md`.
+  `docs/proposals/threat-model-and-ca-backup.md`.

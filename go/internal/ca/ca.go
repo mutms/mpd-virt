@@ -13,7 +13,7 @@
 // The root's private key NEVER leaves the Mac. Each box instead gets its
 // own intermediate under ~/.mpd-virt/<NNN>/ca/, signed by the root and
 // constrained to that box's zone alone — so a compromised box can forge
-// *.<NNN>.mpd.test and nothing else. Ported from CA.swift, but using
+// *.<NNN>.mpd.test and nothing else. This implementation uses
 // crypto/x509 rather than shelling to openssl: name constraints are
 // first-class here, so there is no temp conf file and nothing to parse
 // back out of openssl's text output.

@@ -1,6 +1,5 @@
 // Package paths holds the host-side filesystem locations mpd-virt owns
-// under ~/.mpd-virt/. Ported from MpdVirt.swift's path section.
-//
+// under ~/.mpd-virt/.//
 // MPD_VIRT_ROOT overrides the root, which keeps tests (and dry-runs) out
 // of the developer's real ~/.mpd-virt.
 package paths

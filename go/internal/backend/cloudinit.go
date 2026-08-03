@@ -13,8 +13,8 @@ import (
 )
 
 // Cloud-init image cache + NoCloud seed-ISO generation, shared by backends
-// that materialize a Debian VM from a cloud image (UTM today). Ported from
-// CloudInit.swift. Only the ~200 MB .tar.xz is cached (a slow link can't
+// that materialize a Debian VM from a cloud image (UTM today).
+// Only the ~200 MB .tar.xz is cached (a slow link can't
 // spare a 3 GB raw download); the raw disk inside is re-extracted per create
 // — cheap on Apple Silicon, and a stray multi-GB raw on disk is more
 // annoying than re-running tar. Everything shells to macOS built-ins —
@@ -183,8 +183,8 @@ func cidataMetaData(localHostname string) string {
 
 // cidataUserData is the #cloud-config: create only the dev user (no
 // `debian` default) with passwordless sudo and key-only auth, grow the
-// rootfs to fill the disk we extended, and start sshd. Mirrors
-// CloudInit.swift's user-data so the box comes up takeover-ready.
+// rootfs to fill the disk we extended, and start sshd, so the box comes
+// up takeover-ready.
 func cidataUserData(username, sshPubKey, localHostname string) string {
 	return fmt.Sprintf(`#cloud-config
 hostname: %s

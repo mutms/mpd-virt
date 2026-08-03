@@ -23,7 +23,7 @@ const expiryWarningDays = 30
 // but get a name under mpd.test. There is deliberately no `deploy` verb and
 // no notion of what software a server runs — where a certificate goes and
 // what to restart afterwards is each machine's own runbook, not a second
-// staler copy here. Ported from ServerAdmin.swift.
+// staler copy here.
 func serverCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
@@ -34,7 +34,7 @@ func serverCmd() *cobra.Command {
 			"TLS certificates (signed by the root CA on this Mac), and publishes\n" +
 			"their names into every VM so containers reach them by name over\n" +
 			"verified TLS. Run with no subcommand to list.",
-		// Default subcommand: `mpd-virt server` lists, matching the Swift.
+		// Default subcommand: `mpd-virt server` lists.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return serverList(false)
 		},
@@ -202,8 +202,8 @@ func serverCertCmd() *cobra.Command {
 			if err := ca.IssueLeaf(sans, certPath, server.KeyPath(name)); err != nil {
 				return err
 			}
-			// Record the SAN list so a re-issue can reproduce it (DNS:… form,
-			// matching the Swift artifact).
+			// Record the SAN list so a re-issue can reproduce it (the
+			// on-disk DNS:… form).
 			var sig []string
 			for _, s := range sans {
 				sig = append(sig, "DNS:"+s)

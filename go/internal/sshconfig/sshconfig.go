@@ -1,6 +1,5 @@
 // Package sshconfig maintains one managed block per box in ~/.ssh/config,
-// so `ssh mpd-<NNN>` reaches the box at its current address. Ported from
-// SSHConfig.swift.
+// so `ssh mpd-<NNN>` reaches the box at its current address.
 //
 // The block sits between name-stamped markers so several boxes coexist in
 // one config and each can be found and stripped cleanly:
@@ -13,9 +12,9 @@
 //
 // MPD_VIRT_SSH_CONFIG overrides the file, keeping tests off the real one.
 //
-// NOTE: the runtime aliases (mpd-<NNN>-php/node/util with ProxyJump) from
-// the Swift version are not ported yet — they need internal/net. Only the
-// box's own Host block is written here.
+// NOTE: the runtime aliases (mpd-<NNN>-php/node/util with ProxyJump) are
+// not implemented yet — they need internal/net. Only the box's own Host
+// block is written here.
 package sshconfig
 
 import (

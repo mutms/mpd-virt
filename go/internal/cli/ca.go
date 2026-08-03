@@ -11,12 +11,12 @@ import (
 // caCmd inspects and exports the mpd root CA. Its one job today is `export`
 // — writing the root's public certificate somewhere it can be installed in
 // a LAN host's trust store, so that host trusts the leaves `server cert`
-// issues. Ported from the Swift `ca` verb.
+// issues.
 func caCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ca",
 		Short: "Inspect and export the mpd root CA",
-		// Default subcommand: `mpd-virt ca` exports, matching the Swift.
+		// Default subcommand: `mpd-virt ca` exports.
 		RunE: func(cmd *cobra.Command, args []string) error { return caExport("") },
 	}
 	cmd.AddCommand(caExportCmd())
