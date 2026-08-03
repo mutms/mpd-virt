@@ -12,14 +12,11 @@ Creates and manages `mpd` VMs on the user's Mac. The binary is called
 
 Pick a default with `mpd-virt backend set-default <name>` (persists to `~/.mpd-virt/conf/backend.env`), or pass `--backend=<name>` on every invocation.
 
-## Sibling repos (planned)
+## Other platforms
 
-- `mpd-virt-linux` — Linux host (libvirt/KVM and possibly others).
-- `mpd-virt-windows` — Windows host (Hyper-V and possibly others).
-
-Each per-OS repo is its own self-contained Go project with its own
-`mpd-virt` binary. No source sharing between repos; small repos, simple
-builds. Hypervisor variety lives *inside* each repo as plugins.
+mpd-virt is macOS-only for now. Support for Linux and Windows hosts may be
+added later — in this same codebase, keyed on the platform (`GOOS`) rather
+than split into separate per-OS repos.
 
 ## Verbs
 
