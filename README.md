@@ -4,8 +4,9 @@ macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd).
 Creates and manages `mpd` VMs on the user's Mac. The binary is called
 `mpd-virt`.
 
-This is the Swift replacement for the bash scripts that previously lived
-under `setup/macos/` in the mpd repo.
+It replaces the bash scripts that previously lived under `setup/macos/`
+in the mpd repo. (It began as a Swift port of those scripts and was then
+rewritten in Go — the Go sources under `go/` are the implementation.)
 
 **Hypervisor backends.** Three compiled in:
 
@@ -20,7 +21,7 @@ Pick a default with `mpd-virt backend set-default <name>` (persists to `~/.mpd-v
 - `mpd-virt-linux` — Linux host (libvirt/KVM and possibly others).
 - `mpd-virt-windows` — Windows host (Hyper-V and possibly others).
 
-Each per-OS repo is its own self-contained Swift project with its own
+Each per-OS repo is its own self-contained Go project with its own
 `mpd-virt` binary. No source sharing between repos; small repos, simple
 builds. Hypervisor variety lives *inside* each repo as plugins.
 
@@ -209,7 +210,8 @@ Full design rationale: see
 make install      # produces ./bin/mpd-virt
 ```
 
-Requires Xcode command-line tools.
+Requires the Go toolchain (Go 1.24 or newer) — mpd-virt is a single Go
+binary built from `go/`. No Xcode or Swift.
 
 ## Acknowledgments
 

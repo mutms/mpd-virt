@@ -1,8 +1,5 @@
 # mpd-virt is a single Go binary, built from go/ into bin/mpd-virt and
 # installed to $(HOME)/.local/bin/mpd-virt.
-#
-# The Swift sources under mpd-virt/ are kept for reference during the Go
-# rewrite; they are no longer built — Package.swift is gone.
 GO_DIR := $(CURDIR)/go
 
 PREFIX ?= $(HOME)/.local
