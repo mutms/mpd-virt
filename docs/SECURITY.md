@@ -16,8 +16,34 @@ the Mac.
 
 This is the host-side half of the boundary only. The VM-side reachability
 boundary is documented where it is implemented (the mpd repo's
-`docs/SECURITY.md` and mpd-proxy). The certificate chain itself — why there
-are two CAs and what each may sign — is in this repo's `README.md`.
+`docs/SECURITY.md` and mpd-proxy).
+
+## Why two CAs
+
+The root's private key never leaves the Mac. Each VM instead gets its own
+intermediate, name-constrained to that VM's zone alone
+(`permitted;DNS:<NNN>.mpd.test`, `pathlen:0`), which the in-VM `mpd` uses to
+sign its service and project certificates:
+
+```
+mpd Root CA                        key: this Mac, and only this Mac
+└── mpd VM 200 CA                  key: pushed to VM 200
+      permitted;DNS:200.mpd.test
+      └── 200.mpd.test, moodle.200.mpd.test, …   signed inside the VM
+```
+
+So a compromised VM can forge names in its own zone and nowhere else — not
+another VM's zone, and not names issued directly under `mpd.test`. The root's
+own `permitted;DNS:mpd.test` constraint means trusting it can vouch for no
+domain outside `*.mpd.test`, which is what makes System-Keychain trust safe.
+The VM CA lives under `~/.mpd-virt/<NNN>/` rather than `conf/` because that
+is its lifetime: `delete` takes it with the VM, and a re-created VM at the
+same id gets a fresh one. Its validity is capped by whatever the root has
+left, since nothing may outlive its issuer.
+
+LAN machines that are not VMs — `forge.mpd.test`, `runner.mpd.test`, … — get
+leaves signed directly by the root on the Mac; see
+[`LAN_SERVERS.md`](LAN_SERVERS.md).
 
 ## Backing up the CA
 
