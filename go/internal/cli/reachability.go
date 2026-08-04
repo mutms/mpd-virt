@@ -117,7 +117,7 @@ func startCmd() *cobra.Command {
 		Use:   "start <NNN>",
 		Short: "Bring an adopted box into service: resolve its IP, wire reachability, verify",
 		Long: "Brings an already-adopted box into service and points the Mac at\n" +
-			"it: powers the box on through its backend (container/parallels;\n" +
+			"it: powers the box on through its backend (container/parallels/utm;\n" +
 			"generic and proxmox are assumed already running), finds the IP it\n" +
 			"came up on, updates the registry and ~/.ssh/config if it moved,\n" +
 			"registers the mpd-proxy WireGuard endpoint + DNS, and verifies\n" +
@@ -176,7 +176,7 @@ func stopCmd() *cobra.Command {
 		Short: "Take an adopted box out of service: detach it from the WireGuard overlay",
 		Long: "Detaches the box from the overlay — removes its mpd-proxy peer, so\n" +
 			"the Mac stops routing to its 10.163.<NNN>.x network — and powers the\n" +
-			"box off through its backend (container/parallels; a no-op for\n" +
+			"box off through its backend (container/parallels/utm; a no-op for\n" +
 			"generic/proxmox, which keep running so `start` re-attaches them).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

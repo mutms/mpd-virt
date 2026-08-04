@@ -44,7 +44,7 @@ func takeoverCmd() *cobra.Command {
 			"authorized key, passwordless sudo) — mpd is cloned from GitHub and\n" +
 			"built in place.\n\n" +
 			"--backend (required) records which platform the box runs on\n" +
-			"(generic, parallels, container, proxmox) for later lifecycle\n" +
+			"(" + backend.List() + ") for later lifecycle\n" +
 			"commands; it does not affect how the box is reached.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -146,10 +146,8 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	pass("per-VM CA generated (" + id.Zone() + " only)")
 
 	// --- Provision. Install mpd from source, push the CA in, build, set
-	//     up the platform. 30-networking is deliberately skipped: a
-	//     general VM already sits at the hostname/IP you gave it, and
-	//     pinning a canonical address would move it off them. All the
-	//     bootstrap steps are idempotent, so a re-run resumes cleanly.
+	//     up the platform. All the bootstrap steps are idempotent, so a
+	//     re-run resumes cleanly.
 	if err := step(ctx, t, "10-passwordless-sudo",
 		"bash <(wget -qO- "+bootstrapBaseURL+"/10-passwordless-sudo.sh)"); err != nil {
 		return err

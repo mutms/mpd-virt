@@ -151,15 +151,16 @@ path. `server list` reports which entries are missing.
 ### VMs and containers — automatic
 
 ```sh
-mpd-virt server sync --all      # or: mpd-virt server sync 126
+mpd-virt server sync            # or one VM: mpd-virt server sync 126
 ```
 
 This writes `~/.mpd-virt/conf/lan-hosts`, scp's it to
 `/var/lib/mpd/conf/lan-hosts` on each running VM, and runs
 `mpd --vm-setup`, which republishes it through dnsmasq as
-`<stateDir>/dns/lan.hosts`. `mpd-virt setup` does the same thing, so a
-freshly provisioned VM knows the LAN names without a separate step. VMs
-that are down are reported and skipped; the next `setup` picks them up.
+`<stateDir>/dns/lan.hosts`. `server sync` is the only thing that ever
+pushes lan-hosts — VMs that are down are reported and skipped, so re-run
+it once they are back up (a freshly adopted VM likewise knows nothing
+until the next sync).
 
 Containers inherit this for free — they resolve through the VM's dnsmasq
 at the bridge gateway and have no `/etc/hosts` of their own. That is the
@@ -197,7 +198,7 @@ ssh mpd-126 'podman run --rm --network mpd-internal alpine \
 
 ```sh
 mpd-virt server delete forge
-mpd-virt server sync --all      # retract the name inside the VMs
+mpd-virt server sync            # retract the name inside the VMs
 ```
 
 `delete` deletes the certificate and key along with the registry entry —
@@ -213,8 +214,7 @@ already installed on the server; do that there.
   a re-trust everywhere; the annual rotation is when to do it.
 - **No revocation.** No CRL, no OCSP. Certificates expire; to retire one
   early, remove it from the server.
-- **`~/.mpd-virt/conf/` is not backed up.** Losing it now costs more than
-  rebuilding VMs: these certificates are installed on machines that
-  cannot be rebuilt from a script. Whether that directory should be
-  backed up is still open — see
-  `docs/proposals/threat-model-and-ca-backup.md`.
+- **Back up `~/.mpd-virt/conf/`.** Losing it costs more than rebuilding
+  VMs: these certificates are installed on machines that cannot be
+  rebuilt from a script. Time Machine catches it by default when
+  enabled — see `SECURITY.md`.

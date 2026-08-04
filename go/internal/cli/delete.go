@@ -25,8 +25,9 @@ func deleteCmd() *cobra.Command {
 		Long: "Destroys the box's container/VM through its backend (unless\n" +
 			"--keep-vm) and wipes the host-side bookkeeping: detaches it from the\n" +
 			"mpd-proxy overlay, strips its ~/.ssh/config block, and removes its\n" +
-			"registry entry. Leaves the CA under ~/.mpd-virt/conf/ (uninstall's\n" +
-			"job), so re-adopting the same id reuses the trust material.\n\n" +
+			"registry entry. Leaves the root CA under ~/.mpd-virt/conf/\n" +
+			"(uninstall's job), so re-adopting the same id reuses the same trust\n" +
+			"anchor — with a freshly generated per-VM CA.\n\n" +
 			"Requires typing the box name (mpd-<NNN>) to confirm, or --yes to\n" +
 			"skip the prompt.",
 		Args: cobra.ExactArgs(1),
@@ -67,7 +68,7 @@ func deleteCmd() *cobra.Command {
 			if err := registry.Remove(id); err != nil {
 				return fmt.Errorf("registry: %w", err)
 			}
-			pass("registry entry removed (CA kept for re-adoption)")
+			pass("registry entry removed (per-VM CA removed with it; the root CA survives)")
 
 			fmt.Printf("\n✓ %s deleted.\n", id.Name())
 			return nil

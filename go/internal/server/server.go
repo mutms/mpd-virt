@@ -6,7 +6,8 @@
 // root CA on this Mac), and renders the hosts file that `server sync`
 // pushes into every VM so containers can reach them by name over verified
 // TLS. What to install where belongs in each machine's own runbook, not
-// here.//
+// here.
+//
 // Layout mirrors the per-VM registry — one directory per host, the same
 // KEY=VALUE env file, the same "dir exists + env inside" definition of
 // known:

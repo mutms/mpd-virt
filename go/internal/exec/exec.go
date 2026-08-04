@@ -23,9 +23,8 @@ import (
 // allowed is the set of command names mpd-virt may run. Widening it is a
 // deliberate act — it grows what the host tool can execute.
 var allowed = map[string]bool{
-	"ssh":  true,
-	"scp":  true,
-	"ping": true,
+	"ssh": true,
+	"scp": true,
 	// Backend power control (start/stop): the native Apple container CLI and
 	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the box.
 	"container": true,

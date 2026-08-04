@@ -244,9 +244,9 @@ func serverSyncCmd() *cobra.Command {
 }
 
 // serverSync pushes the rendered hosts file into VMs and has each republish
-// it via `mpd --vm-setup`. A VM that is down is reported, not fatal: the
-// records are static LAN facts and the next setup/update on that VM picks
-// them up.
+// it via `mpd --vm-setup`. Nothing else ever pushes lan-hosts, so a VM that
+// is down is reported, not fatal: the records are static LAN facts and a
+// re-run of `server sync` picks them up.
 func serverSync(ctx context.Context, only *vmid.ID) error {
 	path, err := server.WriteHostsFile()
 	if err != nil {
@@ -281,7 +281,7 @@ func serverSync(ctx context.Context, only *vmid.ID) error {
 		fmt.Printf("\n▶ %s\n", b.ID.Name())
 		t := host.Target{User: b.User, Host: b.IP}
 		if !t.Reachable(ctx) {
-			fmt.Printf("  ⚠ not reachable at %s — skipped (next `mpd-virt update` will push it)\n", b.IP)
+			fmt.Printf("  ⚠ not reachable at %s — skipped (re-run `mpd-virt server sync` once it is up)\n", b.IP)
 			continue
 		}
 		if err := t.Install(ctx, path, server.RemoteLanHostsPath, "0644"); err != nil {

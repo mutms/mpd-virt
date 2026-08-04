@@ -31,20 +31,26 @@ vmnet address, and mpd-virt owns its hostname and accounts.
    image serves every box and keys rotate without a rebuild.
 3. **The vmnet-assigned IP** — whatever the runtime leased; read from
    `container inspect` (the name does not resolve host-side), never chosen by
-   the guest.
+   the guest. vmnet only delivers to the address it leased, so a guest-side
+   pin strands the box.
 
 ## Running & provisioning a box
 
-`mpd-virt create --backend=container` is the intended path: it runs the image,
-provisions the account + sudo + your key via `container exec`, reads the IP from
-`container inspect`, and adopts the box — no manual steps.
+`mpd-virt create <NNN> --backend=container` is the path: it runs the image,
+provisions the account + sudo + your key via `container exec`, reads the IP
+from `container inspect`, and adopts the box — no manual steps. The image must
+exist first (build it as above — `create` neither builds nor pulls it).
 
-Until that lands, `setup-container.sh` does it by hand from this directory —
-build, boot with 10G of memory, wait for systemd, then create the dev user +
-passwordless sudo + the SSH key — and prints the IP:
+### Manual fallback (debugging only)
+
+`setup-container.sh` does the same steps by hand from this directory — build,
+boot `mpd-181` with 10G of memory, wait for systemd, then create the dev user +
+passwordless sudo + an SSH key — and prints the IP. It is a hardcoded personal
+spike (`mpd-181`, `DEVUSER=skodak`, a throwaway `testkey`), useful for poking
+at the image, not a supported path:
 
 ```bash
 ./setup-container.sh
-# then, from the dev VM:
-mpd-virt takeover 141 <ip>
+# then, if you really want to adopt that box:
+mpd-virt takeover 181 <ip>
 ```

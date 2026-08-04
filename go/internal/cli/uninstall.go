@@ -28,7 +28,7 @@ func uninstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Remove mpd-virt from this Mac: stop boxes (keep them) + wipe host state (keep the root CA)",
-		Long: "Stops every adopted box through its backend (container/parallels;\n" +
+		Long: "Stops every adopted box through its backend (container/parallels/utm;\n" +
 			"generic/proxmox are left running) WITHOUT deleting any — they stay\n" +
 			"re-takeover-able. Then wipes mpd-virt's host state under ~/.mpd-virt/\n" +
 			"and every ~/.ssh/config managed block. No VM data is touched, so this\n" +

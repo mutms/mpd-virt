@@ -15,9 +15,13 @@ export GOTOOLCHAIN = local
 
 .PHONY: build install uninstall clean test vet fmt fmt-check tidy lint-shell fmt-shell
 
+# Stamped into `mpd-virt --version`; "dev" outside a git checkout, the
+# commit hash before any tag exists.
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 build:
 	@mkdir -p bin
-	cd $(GO_DIR) && go build -o $(CURDIR)/bin/mpd-virt ./cmd/mpd-virt
+	cd $(GO_DIR) && go build -ldflags "-X main.version=$(VERSION)" -o $(CURDIR)/bin/mpd-virt ./cmd/mpd-virt
 	@echo "Native binary: bin/mpd-virt"
 
 install: build
@@ -48,9 +52,8 @@ fmt-check:
 tidy:
 	cd $(GO_DIR) && go mod tidy
 
-# Shell scripts this repo ships: the installer, container entrypoints, and
-# the takeover conformance script once it lands. Identified by content,
-# since some are extensionless.
+# Shell scripts this repo ships: the installer and container entrypoints.
+# Identified by content, since some are extensionless.
 SHELL_FILES = $$(find scripts containers -type f -exec file --mime-type {} + 2>/dev/null | grep x-shellscript | cut -d: -f1)
 
 lint-shell:

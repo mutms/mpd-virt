@@ -31,7 +31,6 @@ import (
 const (
 	utmAppPath        = "/Applications/UTM.app"
 	utmSubnet         = "192.168.64"
-	utmDefaultMemMiB  = 8 * 1024
 	utmDefaultDiskGiB = 80
 	utmDefaultCPUs    = 4
 )
@@ -49,13 +48,15 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	}
 	name := id.Name()
 	if utmVMExists(ctx, name) {
-		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or `mpd-virt delete %s --backend utm` first", name, id.Pad())
+		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or remove it first: `mpd-virt delete %s` if it is adopted, else delete it in UTM", name, id.Pad())
 	}
 	canonIP := utmCanonicalIP(id)
 
+	// The CLI's --memory default is the single source of truth; a value that
+	// does not parse is an error, not a silent fallback.
 	memMiB := parseSizeMiB(opts.Memory)
 	if memMiB == 0 {
-		memMiB = utmDefaultMemMiB
+		return "", fmt.Errorf("cannot parse --memory %q (use e.g. 10g or 10240m)", opts.Memory)
 	}
 	diskGiB := parseSizeGiB(opts.Disk)
 	if diskGiB == 0 {
@@ -336,7 +337,7 @@ func waitVMStopped(ctx context.Context, name string, timeout time.Duration) erro
 // --- size parsing -----------------------------------------------------------
 
 // parseSizeMiB turns "8g"/"8192m"/"8192" into MiB; 0 for empty/unparseable
-// (the caller applies its default).
+// (the caller decides — utmCreate rejects it).
 func parseSizeMiB(s string) int {
 	s = strings.ToLower(strings.TrimSpace(s))
 	switch {

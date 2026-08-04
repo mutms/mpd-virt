@@ -21,10 +21,11 @@ type CreateOpts struct {
 }
 
 // Create provisions a fresh box for the id through its backend and returns the
-// IP it came up on, ready for takeover. Only the container backend is wired: it
-// runs the base image, waits for systemd, seeds the dev account + sudo + key,
-// and reads the leased IP. Parallels/Proxmox need a template clone + cloud-init
-// (not yet). A generic box is adopted, not created.
+// IP it came up on, ready for takeover. Container runs the base image, waits
+// for systemd, seeds the dev account + sudo + key, and reads the leased IP;
+// utm materializes a fresh VM from the Debian cloud image (utm.go). Parallels/
+// Proxmox need a template clone + cloud-init (not yet). A generic box is
+// adopted, not created.
 func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts CreateOpts) (string, error) {
 	switch be {
 	case Container:
