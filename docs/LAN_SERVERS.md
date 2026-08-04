@@ -125,16 +125,19 @@ root and nothing else. `server cert` is for machines that listen.
 
 | Where | `126.mpd.test` | `forge.mpd.test` |
 |---|---|---|
-| The Mac | VM 126's dnsmasq, via `/etc/resolver/126.mpd.test` | `/etc/hosts` |
+| The Mac | VM 126's dnsmasq, via mpd-proxy (`/etc/resolver/mpd.test`) | `/etc/hosts` |
 | Inside a VM | its own dnsmasq | its own dnsmasq |
 | Inside a container | the VM's dnsmasq | the VM's dnsmasq |
 
 ### The Mac — by hand, deliberately
 
-`/etc/resolver/` holds one file per VM zone, so `forge.mpd.test` matches
-none of them and the lookup goes to the system resolver, which asks the
-internet about a reserved TLD and gets nothing. `/etc/hosts` is consulted
-first, which is why hand-editing it works.
+The Mac has a single `/etc/resolver/mpd.test` that hands every
+`*.mpd.test` name to mpd-proxy, which forwards each VM's zone to that VM's
+dnsmasq through the tunnel. `forge.mpd.test` would match it too — but
+`/etc/hosts` is consulted *before* the resolver, so a hand-added
+`forge.mpd.test` line short-circuits there and never reaches mpd-proxy.
+That is the split: VM zones resolve dynamically via mpd-proxy, LAN servers
+statically via `/etc/hosts`.
 
 ```sh
 mpd-virt server list --etc-hosts | sudo tee -a /etc/hosts

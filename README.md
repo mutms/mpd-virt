@@ -1,161 +1,116 @@
 # mpd-virt
 
-macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd).
-Creates and manages `mpd` VMs on the user's Mac. The binary is called
-`mpd-virt`.
+macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd). Adopts and
+manages `mpd` development VMs from your Mac. The binary is `mpd-virt`.
 
-**Hypervisor backends.** Three compiled in:
+An mpd VM is a Debian Trixie box running the in-VM
+[`mpd`](https://github.com/mutms/mpd) platform. `mpd-virt` bootstraps it over
+SSH, installs `mpd`, issues its certificates, and wires up host-side
+reachability — then stays out of the way.
 
-- **`parallels`** — Parallels Desktop Pro (`prlctl`). Initial scope: `clone` from an `mpd-template-<suffix>` template + lifecycle (`start`/`stop`/`delete`). Gains `create` later.
-- **`utm`** — UTM (`utmctl` + AppleScript). Initial scope: `create` from a cloud-init seed ISO + lifecycle. Gains `clone` later.
-- **`general`** — no hypervisor. Adopts any reachable Debian Trixie VM by IP. Only `setup` (and bookkeeping for `delete`/`list`/`show`/`doctor`) is meaningful here.
+## Backends
 
-Pick a default with `mpd-virt backend set-default <name>` (persists to `~/.mpd-virt/conf/backend.env`), or pass `--backend=<name>` on every invocation.
+`--backend=<name>` is required on every verb; there is deliberately no default
+backend.
+
+| Backend | Host | What it does |
+|---|---|---|
+| `generic` | anywhere | Adopt an **already-running** Debian box by IP — Proxmox, a cloud VM, bare metal. No power control (it stays up). The path for anything not on the laptop. |
+| `parallels` | macOS laptop | Parallels Desktop Pro (`prlctl`): power on/off + find the box's current DHCP IP. |
+| `container` | macOS laptop | Native Apple `container`: power on/off + read the vmnet lease. |
+| `utm` | Apple-Silicon laptop | UTM (osascript): `create` from a cloud-init image + power. |
+
+There is no dedicated Proxmox backend: a Proxmox-hosted VM is just an always-on
+Debian box you created however you like (mpd-virt does not automate the
+cloud-init — doing it by hand is good for understanding the basics) and adopt
+with `--backend=generic`.
+
+## Reachability: two tiers
+
+The container subnet `10.163.<NNN>.0/24` inside each VM is **sealed**: an in-VM
+nftables firewall drops inbound routing into it, and the WireGuard peer is scoped
+to the gateway `.1` alone. So the only things a VM exposes on its network are
+`ssh` (tcp/22) and WireGuard (udp/51820), both cryptographically authenticated —
+which is what makes it safe to run a VM anywhere reachable by IP. Everything you
+use (the portal, adminer, project URLs) is served by caddy on the VM's gateway
+`10.163.<NNN>.1`. Two ways to reach it, and mpd-virt sets up both:
+
+- **Simple — SOCKS over SSH (start here).** `ssh -N mpd-<NNN>-socks` opens a
+  SOCKS5 proxy on `127.0.0.1:1080`; point a dedicated browser at it (with remote
+  DNS) and `*.mpd.test` resolves and serves through the VM. No `sudo`, no extra
+  daemon, one VM at a time. The recommended starting point for a new developer.
+- **Advanced — WireGuard overlay
+  ([mpd-proxy](https://github.com/mutms/mpd-proxy)).** A small privileged helper
+  running one WireGuard tunnel + split DNS, so every `*.mpd.test` name resolves
+  transparently for **every app** and **several VMs at once**. `sudo mpd-proxy
+  up` once; the daily driver when you run VMs regularly.
+
+Either way, trusting the mpd root CA makes `*.mpd.test` HTTPS work — in the
+System Keychain (transparent, every app) or imported into that dedicated browser
+(no `sudo`). `start`/`takeover` check Keychain trust and print the SOCKS
+instructions whenever mpd-proxy isn't running.
 
 ## Other platforms
 
-mpd-virt is macOS-only for now. Support for Linux and Windows hosts may be
-added later — in this same codebase, keyed on the platform (`GOOS`) rather
-than split into separate per-OS repos.
+macOS-only for now. Linux/Windows host support may be added later in this same
+codebase, keyed on `GOOS` — not separate per-OS repos.
 
 ## Verbs
 
-The 3-digit octet `NNN` is the canonical key for every VM — and it keys the addressing too: name `mpd-<NNN>`, static IP `10.211.55.<NNN>`, registry dir `~/.mpd-virt/<NNN>/`, container subnet `10.163.<NNN>.0/24`, DNS zone `<NNN>.mpd.test`. Because each VM owns a distinct subnet and a distinct zone, **several VMs are reachable from this Mac at once**: one static route and one `/etc/resolver/<NNN>.mpd.test` per VM, none of which conflict (macOS `resolver(5)` matches longest suffix). Note the bare `mpd.test` apex does not resolve — with two VMs up it could only mean one of them.
+`NNN` is the VM's id: a plain zero-padded identifier `001`–`254`. It keys the
+name `mpd-<NNN>`, the registry dir `~/.mpd-virt/<NNN>/`, the container subnet
+`10.163.<NNN>.0/24`, the overlay gateway `10.163.<NNN>.1`, and the DNS zone
+`<NNN>.mpd.test`. The box's own address is found by name (or given with `--ip`),
+not a fixed value. Several VMs are reachable at once — the bare `mpd.test` apex
+deliberately does not resolve.
 
 | Verb | Args | Role |
 |---|---|---|
-| `create <NNN>` | `--backend= --username= --vm-disk= --vm-ram= --yes` | User-friendly. Materialize a new VM (UTM cloud-init → eventually Parallels too) → `setup` → interactive `diag`. |
-| `clone <NNN>` | `--backend= --template=mpd-template-<suffix> --username= --vm-disk= --vm-ram= --yes` | User-friendly. Duplicate an existing VM (Parallels `prlctl clone` → eventually UTM too) → `setup` → interactive `diag`. |
-| `setup <NNN>` | `--ip= --backend= --username= --debug` | **VM side only.** Set up host↔VM SSH, run the in-VM bootstrap pipeline, install `mpd`. Non-interactive — for advanced/scripted use. Finishes with `diag --non-interactive`. |
-| `diag <NNN>` | `--non-interactive` | **macOS side.** Mandatory phase: registry → backend → ping → hostname check → SSH alias. Optional phase: DNS / routing check + CA trust suggestion (always reported; interactive mode also pauses to apply fixes and re-test). |
-| `update <NNN>` | — | Pull latest mpd source on the VM, rebuild the `mpd` binary, re-run `mpd --vm-setup`. Just runs `bash /opt/mpd/bootstrap/99-update.sh` over SSH — the update flow itself is mpd's contract, not mpd-virt's. |
-| `delete <NNN>` | `--keep-vm --yes` | Remove VM and registry entry. `--keep-vm` keeps the hypervisor VM (re-add with `setup`). |
-| `start <NNN>` | — | Hypervisor start. General: hard error. |
-| `stop <NNN>` | `--kill` | Hypervisor suspend (or hard-stop with `--kill`). General: hard error. |
-| `list` | `--json` | List registered VMs. Default verb. |
-| `uninstall` | `--force --yes` | Per-machine cleanup: CA from System Keychain, `~/.mpd-virt/conf/`, every `/etc/resolver/<NNN>.mpd.test` and every `10.163.x.0/24` route (plus the pre-per-VM-zone leftovers). |
-| `backend list` | — | Compiled-in backends + capabilities + default. |
-| `backend set-default` | `<name>` | Persist default backend to `~/.mpd-virt/conf/backend.env`. |
+| `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted (parallels/container); pass it for `generic`. |
+| `create <NNN>` | `--backend=<utm\|container> --disk= --username=` | Provision a new local VM from a cloud-init image, then take it over. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `takeover --backend=generic`. |
+| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container; a no-op for generic), find its current IP, update the registry + ssh-config, register the mpd-proxy overlay, verify. |
+| `stop <NNN>` | `--kill` | Detach from the overlay and power the box off (a no-op for generic). |
+| `update <NNN>` | — | Pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
+| `delete <NNN>` | `--keep-vm --yes` | Remove the VM and its registry entry (keeps the root CA). `--keep-vm` leaves the hypervisor VM in place. |
+| `list` (`ls`) | `--json` | Registered VMs, with a live `:22` reachability probe. Default verb. |
+| `server …` | `add / list / delete / cert / sync` | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md). |
+| `ca [export]` | `--path=` | Print the root CA's public certificate (to install in another host's trust store). |
+| `uninstall` | `--yes` | Stop every box (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary). |
 
-### Building a Parallels template (for `clone`)
+## ssh-config
 
-`mpd-virt clone` duplicates an existing Parallels VM and runs the
-bootstrap pipeline against the copy. Build the template once, clone
-from it as many times as you want.
+`takeover`/`start` write one managed block per VM into `~/.ssh/config`:
 
-Build the template:
+- `mpd-<NNN>` — the box itself.
+- `mpd-<NNN>-php` / `-node` / `-util` — the runtime containers, via `ProxyJump`
+  through the box (the container IPs are sealed, so the jump rides the box's
+  sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use these directly.
+- `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS backup above.
 
-1. **Configure Parallels Desktop Pro Shared network** to use
-   `10.211.55.1–99` as its DHCP range (Preferences → Network → Shared
-   → "Provide IP addresses via DHCP" → upper bound 99). mpd VMs take
-   static IPs from `.100+`, so they never collide with DHCP guests.
-2. **Install Debian Trixie (13)** in a new Parallels VM: Debian desktop
-   environment, GNOME, SSH server, standard system utilities.
-3. **Install Parallels Tools** (Actions → Install Parallels Tools, or
-   `sudo bash /media/cdrom/installer/install-cli.sh -i` from a guest
-   terminal if the GUI path doesn't run).
-4. **Name the VM** `mpd-template-<suffix>` (e.g. `mpd-template-trixie`).
-   The bootstrap's hostname gate also accepts `mpd-sandbox-<suffix>`.
-5. **Disable in-guest automatic updates:**
-
-   ```
-   sudo systemctl mask packagekit packagekit-offline-update
-   sudo systemctl disable --now unattended-upgrades
-   ```
-
-   Why, and what mpd does about it when you skip it, is documented once
-   in mpd itself — [`setup/README.md` §"Prepare the guest"](https://github.com/mutms/mpd/blob/main/setup/README.md#prepare-the-guest-disable-in-guest-automatic-updates).
-   It applies to every guest you keep and re-clone, not just Parallels
-   templates.
-6. **Convert to Template** in Parallels: File → Convert to Template
-   (optional — full clones from a regular VM work too).
-
-The bootstrap pipeline (`mpd-virt setup` runs it automatically after
-`clone`) handles the rest — converting NetworkManager → systemd-networkd,
-pinning the static IP, installing the runtime stack, building `mpd`,
-and running `mpd --vm-setup`. No "sandbox take-over" step is needed.
-
-Then run two mpd-virt-specific commands **from your Mac terminal**,
-against the template VM, before the first clone:
-
-1. **Authorize your SSH key on the VM** (one-time; you'll be prompted
-   for the VM user's password):
-
-   ```
-   ssh-copy-id -i ~/.ssh/id_ed25519.pub USER@VM_IP
-   ```
-
-   Adjust the key path if you use a non-default identity. After this,
-   `ssh USER@VM_IP` should work without a password.
-
-2. **Enable passwordless sudo** for the dev user:
-
-   ```
-   ssh -t USER@VM_IP 'bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)'
-   ```
-
-   The `-t` flag forces a remote PTY so the root password prompt uses
-   noecho — your password will NOT echo to the screen.
-
-If you skip either, `mpd-virt setup` will pause and print the exact
-command for you to run in another window before continuing — the
-template path just front-loads both.
-
-Then clone with:
-
-```
-mpd-virt clone 150 --template=mpd-template-trixie --username=USER --backend=parallels
-```
-
-### Setup vs diag — division of labor
-
-- **`setup`** owns the VM. It establishes SSH, runs the bootstrap chain
-  on the VM (10–50), pushes the CA to `/var/lib/mpd/conf/`,
-  runs `mpd --vm-setup` inside the VM, and registers the VM in
-  `~/.mpd-virt/<NNN>/`. It is non-interactive end-to-end — every input
-  comes from the CLI or the registry.
-- **`diag`** owns the Mac. It verifies the VM is healthy (mandatory
-  phase), then reports DNS / routing / CA trust status (optional
-  phase, always printed). With `--non-interactive` (used by `setup`)
-  the optional phase only *prints* the suggested fix commands — the
-  workflow doesn't stop. Interactive mode (used by `create` / `clone`)
-  additionally pauses to let the dev apply each fix and re-tests.
-
-### Setup dispatch
-
-`setup` decides between **fix-known** mode (registry entry exists →
-reuse stored backend/IP/user) and **first-time adoption** (no entry →
-asks the backend via `locate(octet, ipHint:)`). Parallels can locate a
-manually-created `mpd-<NNN>` by name; General falls back to whatever
-`--ip` you pass; UTM is currently the same as General.
+All ride plain SSH to the box, so they work even when mpd-proxy is down.
 
 ## Registry
 
-The registry is the set of `~/.mpd-virt/<NNN>/env` files, one per known
-VM. Each file is shell-style key=value:
+One `~/.mpd-virt/<NNN>/env` file per adopted VM, shell-style:
 
 ```
-MPD_VM_OCTET=155
-MPD_VM_NAME=mpd-155
-MPD_VM_BACKEND=parallels        # parallels | utm | general
-MPD_VM_IP=10.211.55.155
+MPD_VM_OCTET=141
+MPD_VM_NAME=mpd-141
+MPD_VM_BACKEND=generic        # generic | parallels | container | utm
+MPD_VM_IP=192.168.1.146
 MPD_VM_USER=skodak
-MPD_VM_UUID={abc12345-…}         # omitted for general
-MPD_VM_DISK=80G                  # diagnostic (when create/clone set it)
-MPD_VM_RAM=8G                    # diagnostic
 ```
 
 ## State / secrets layout (on the Mac)
 
 ```
 ~/.mpd-virt/                       ← everything mpd-virt owns
-├── conf/                          ← identity (survives every `delete`)
-│   ├── caroot/
-│   │   ├── rootCA.pem             ← trust anchor; pushed to VMs, trusted in the Keychain
-│   │   ├── rootCA-key.pem         ← 0600. NEVER leaves this Mac
-│   │   └── rootCA.srl             ← serial counter
-│   ├── service/
-│   └── backend.env                ← MPD_VIRT_DEFAULT_BACKEND=<name>
+├── conf/
+│   └── caroot/                    ← the root CA — SURVIVES `delete` and `uninstall`
+│       ├── rootCA.pem             ← trust anchor; pushed to VMs, trusted in the Keychain
+│       ├── rootCA-key.pem         ← 0600. NEVER leaves this Mac
+│       └── rootCA.srl             ← serial counter
+├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)
 └── <NNN>/                         ← per-VM, removed by `delete`
     ├── env                        ← registry entry (see Registry above)
     └── ca/
@@ -163,10 +118,14 @@ MPD_VM_RAM=8G                    # diagnostic
         └── vmCA-key.pem           ← 0600. Pushed to the VM — see below
 ```
 
-**Why two CAs.** The root's private key never leaves this Mac. Each VM
-instead gets its own intermediate, name-constrained to that VM's zone
-alone (`permitted;DNS:<NNN>.mpd.test`, `pathlen:0`), which the in-VM
-`mpd` uses to sign its service and project certificates:
+Keeping the root CA across `delete` and `uninstall` is deliberate: a re-adopt
+reuses the same trust anchor, so you never have to re-trust a fresh-fingerprint
+CA. Delete `caroot/` by hand only when you truly want a new one.
+
+**Why two CAs.** The root's private key never leaves this Mac. Each VM instead
+gets its own intermediate, name-constrained to that VM's zone alone
+(`permitted;DNS:<NNN>.mpd.test`, `pathlen:0`), which the in-VM `mpd` uses to sign
+its service and project certificates:
 
 ```
 mpd Root CA                        key: this Mac, and only this Mac
@@ -175,23 +134,21 @@ mpd Root CA                        key: this Mac, and only this Mac
       └── 200.mpd.test, moodle.200.mpd.test, …   signed inside the VM
 ```
 
-So a compromised VM can forge names in its own zone and nowhere else —
-not another VM's zone, and not names issued directly under `mpd.test`.
-The VM CA lives under `<NNN>/` rather than `conf/` because that is its
-lifetime: `delete` takes it with the VM, and a re-created VM at the same
-octet gets a fresh one. Its validity is capped by whatever the root has
-left, since nothing may outlive its issuer.
+So a compromised VM can forge names in its own zone and nowhere else — not
+another VM's zone, and not names issued directly under `mpd.test`. The root's own
+`permitted;DNS:mpd.test` constraint means trusting it can vouch for no domain
+outside `*.mpd.test`, which is what makes System-Keychain trust safe. The VM CA
+lives under `<NNN>/` rather than `conf/` because that is its lifetime: `delete`
+takes it with the VM, and a re-created VM at the same id gets a fresh one. Its
+validity is capped by whatever the root has left, since nothing may outlive its
+issuer.
 
-LAN machines that are not VMs — `proxmox.mpd.test`, `forge.mpd.test`,
-`runner.mpd.test` — live under `~/.mpd-virt/servers/<name>/` and get
-leaves signed directly by the root here on the Mac. See
-[`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md).
+LAN machines that are not VMs — `forge.mpd.test`, `runner.mpd.test`, … — live
+under `~/.mpd-virt/servers/<name>/` and get leaves signed directly by the root
+here on the Mac. See [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md).
 
-Octet range for managed VMs: `100–254` (Parallels Shared DHCP owns 1–99).
-The sandbox VM uses ID `000` and lives in the main mpd repo's sandbox
-flow, not here.
-
-`~/.mpd/` is **not** created on the host — that path is exclusively the
+The sandbox VM uses id `000` and lives in the main mpd repo's sandbox flow, not
+here. `~/.mpd/` is **not** created on the host — that path is exclusively the
 in-VM runtime state directory inside each mpd VM.
 
 Host-side trust model and rationale: see
@@ -203,8 +160,8 @@ Host-side trust model and rationale: see
 make install      # produces ./bin/mpd-virt
 ```
 
-Requires the Go toolchain (Go 1.24 or newer) — mpd-virt is a single Go
-binary built from `go/`. No Xcode or Swift.
+Requires the Go toolchain (Go 1.24 or newer) — mpd-virt is a single Go binary
+built from `go/`. No Xcode or Swift.
 
 ## Acknowledgments
 

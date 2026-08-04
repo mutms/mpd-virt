@@ -15,11 +15,6 @@ binary; the in-VM `mpd` binary's proposals live in
 
 ## Not-yet-built backends and features
 
-- [`proxmox-backend-and-warp-dns.md`](proxmox-backend-and-warp-dns.md) —
-  Proxmox by **manual creation plus takeover**: a thin backend case that
-  derives the address from the octet. Includes the pool-scoped API-token
-  permissions model (the `SDN.Use` trap, privilege-separated tokens) and
-  `debian-13-genericcloud` bootstrap-fit notes. Proxmox is unbuilt.
 - [`sandbox-takeover-and-ca-refresh.md`](sandbox-takeover-and-ca-refresh.md) —
   **CA rotation** is the unbuilt half: a shared `mpd-virt refresh-trust <vm>`
   primitive + a new in-VM `mpd --vm-refresh-trust` verb (re-import trust,
@@ -42,8 +37,9 @@ binary; the in-VM `mpd` binary's proposals live in
 
 - [`ssh-runtime-aliases.md`](ssh-runtime-aliases.md) — `mpd-<NNN>-php/node/util`
   SSH aliases via `ProxyJump` for IDE remote-dev (PHPStorm Gateway / VSCode
-  Remote-SSH), plus the matched in-VM runtime-hostname alignment. Explicitly
-  stubbed in `internal/sshconfig/sshconfig.go`. *(Salvaged from `mpd-virt.md`.)*
+  Remote-SSH). **Now implemented** in `internal/sshconfig/sshconfig.go` (plus a
+  `mpd-<NNN>-socks` backup alias); kept only for the in-VM runtime-hostname
+  alignment notes, and prunable once those land. *(Salvaged from `mpd-virt.md`.)*
 - [`threat-model-and-ca-backup.md`](threat-model-and-ca-backup.md) — the
   host-side threat model ("Mac is trust origin, VM disposable") and the open
   `export-identity`/`import-identity` CA-backup question. *(Salvaged from
