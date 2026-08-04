@@ -152,6 +152,7 @@ func startCmd() *cobra.Command {
 				return err
 			}
 			verifyReachable(cmd.Context(), id)
+			checkCATrust(cmd.Context(), id)
 			return nil
 		},
 	}

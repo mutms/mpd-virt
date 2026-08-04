@@ -202,6 +202,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	if err := setupReachability(ctx, t, id, ip); err != nil {
 		fmt.Printf("  ⚠ WireGuard setup incomplete: %v\n    Re-run once fixed: mpd-virt start %s\n", err, id.Pad())
 	}
+	checkCATrust(ctx, id)
 
 	fmt.Printf("\n✓ %s adopted.\n", id.Name())
 	return nil

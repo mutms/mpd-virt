@@ -37,6 +37,11 @@ var allowed = map[string]bool{
 	"curl":      true,
 	"tar":       true,
 	"hdiutil":   true,
+	// Read-only System Keychain checks: is the mpd root CA trusted, and is a
+	// stale one present. A macOS built-in; mpd-virt only reads, never installs
+	// trust (that stays an explicit `sudo security add-trusted-cert` the user
+	// runs — see internal/cli/catrust.go).
+	"security": true,
 }
 
 // Cmd describes one external command.

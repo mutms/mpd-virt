@@ -22,13 +22,16 @@ package ca
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mutms/mpd-virt/go/internal/paths"
@@ -36,7 +39,7 @@ import (
 )
 
 const (
-	rootCommonName = "mpd Root CA"
+	RootCommonName = "mpd Root CA"
 	rootValidDays  = 365 // macOS caps user-root lifetimes; annual rotation.
 	vmMaxDays      = 397 // leaf ceiling; nothing may outlive its issuer.
 	leafMaxDays    = 397 // LAN service leaf ceiling; matches the macOS 398-day cap.
@@ -47,7 +50,24 @@ const (
 // RootCertPath is the root CA's public cert, pushed to every box and
 // trusted in the System Keychain.
 func RootCertPath() string { return filepath.Join(paths.CARoot(), "rootCA.pem") }
-func rootKeyPath() string  { return filepath.Join(paths.CARoot(), "rootCA-key.pem") }
+
+// RootFingerprintSHA1 is the SHA-1 of the root CA's DER as uppercase hex with
+// no separators — the exact form `security find-certificate -Z` prints, so the
+// two can be compared to tell the live root apart from a stale "mpd Root CA"
+// left in the Keychain by an earlier, regenerated root.
+func RootFingerprintSHA1() (string, error) {
+	pemBytes, err := os.ReadFile(RootCertPath())
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", fmt.Errorf("root CA cert at %s is not valid PEM", RootCertPath())
+	}
+	sum := sha1.Sum(block.Bytes)
+	return strings.ToUpper(hex.EncodeToString(sum[:])), nil
+}
+func rootKeyPath() string { return filepath.Join(paths.CARoot(), "rootCA-key.pem") }
 
 func vmCADir(id vmid.ID) string    { return filepath.Join(paths.VMDir(id), "ca") }
 func VMCertPath(id vmid.ID) string { return filepath.Join(vmCADir(id), "vmCA.pem") }
@@ -63,11 +83,11 @@ func LoadOrGenerateRoot() error {
 	if err != nil {
 		return err
 	}
-	tmpl, err := baseTemplate(rootCommonName, rootValidDays)
+	tmpl, err := baseTemplate(RootCommonName, rootValidDays)
 	if err != nil {
 		return err
 	}
-	tmpl.Subject.CommonName = rootCommonName
+	tmpl.Subject.CommonName = RootCommonName
 	// Unconstrained pathlen: the root must be able to sign the per-VM
 	// intermediates. name-constrained to the whole mpd.test tree.
 	tmpl.PermittedDNSDomainsCritical = true
