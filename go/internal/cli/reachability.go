@@ -32,8 +32,9 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	pc := proxy.New(proxy.DefaultSocket)
 	proxyPub, err := pc.Pubkey()
 	if err != nil {
-		fmt.Printf("  … mpd-proxy not reachable — skipping WireGuard.\n"+
+		fmt.Printf("  … mpd-proxy not detected — skipping WireGuard overlay.\n"+
 			"    Start it (`sudo mpd-proxy up`), then: mpd-virt start %s\n", id.Pad())
+		printSocksFallback(id)
 		return nil
 	}
 
@@ -79,6 +80,21 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	}
 	pass("mpd-proxy peer " + vm.Endpoint + " → " + vm.AllowedIPs[0] + " (DNS via " + vm.Resolver + ")")
 	return nil
+}
+
+// printSocksFallback tells the user how to reach the box without mpd-proxy: the
+// SOCKS-over-plain-SSH backup baked into the box's managed ssh-config block. The
+// box's direct IP is reachable independently of the overlay, so this path works
+// whenever the overlay does not.
+func printSocksFallback(id vmid.ID) {
+	fmt.Printf(
+		"\n  Backup access while mpd-proxy is down (SOCKS over plain SSH):\n"+
+			"    1. ssh -N %s\n"+
+			"    2. Point a browser at SOCKS5 127.0.0.1:%d with remote DNS enabled —\n"+
+			"       Firefox: Settings → Network Settings → Manual proxy, SOCKS v5 host\n"+
+			"       127.0.0.1 port %d, and tick \"Proxy DNS when using SOCKS v5\".\n"+
+			"    The \"mpd Root CA\" in your Keychain makes https://*.mpd.test trust work.\n",
+		sshconfig.SocksAlias(id), sshconfig.SocksPort, sshconfig.SocksPort)
 }
 
 // startCmd brings an adopted box into service and points the Mac at it: power

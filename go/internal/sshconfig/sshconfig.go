@@ -2,28 +2,62 @@
 // so `ssh mpd-<NNN>` reaches the box at its current address.
 //
 // The block sits between name-stamped markers so several boxes coexist in
-// one config and each can be found and stripped cleanly:
+// one config and each can be found and stripped cleanly. One fence holds
+// every stanza for a box — the box itself, a ProxyJump alias per in-VM
+// runtime, and the `-socks` backup alias:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
 //	    HostName <ip>
 //	    ...
+//	Host mpd-<NNN>-php            # and -node, -util
+//	    HostName php.runtime.<NNN>.mpd.test
+//	    ProxyJump mpd-<NNN>
+//	    ...
+//	Host mpd-<NNN>-socks
+//	    HostName <ip>
+//	    DynamicForward 1080
+//	    ...
 //	# <<< mpd-<NNN> <<<
 //
-// MPD_VIRT_SSH_CONFIG overrides the file, keeping tests off the real one.
+// The runtime aliases (`-php`/`-node`/`-util`) reach the box's runtime
+// containers for IDE use: `ssh mpd-<NNN>-php` jumps through the box, whose
+// own dnsmasq resolves php.runtime.<NNN>.mpd.test. The `-socks` alias is the
+// browser fallback: `ssh -N mpd-<NNN>-socks` opens a SOCKS5 proxy on
+// 127.0.0.1:1080 tunnelled through the box, so a browser pointed at it (with
+// remote DNS) reaches *.mpd.test using the box's resolver.
 //
-// NOTE: the runtime aliases (mpd-<NNN>-php/node/util with ProxyJump) are
-// not implemented yet — they need internal/net. Only the box's own Host
-// block is written here.
+// Both paths ride plain SSH to the box's direct IP, so they work even when
+// the mpd-proxy WireGuard overlay is offline — that is the whole point of
+// keeping them here. The "mpd Root CA" already in the Keychain makes the TLS
+// trust work regardless of path.
+//
+// MPD_VIRT_SSH_CONFIG overrides the file, keeping tests off the real one.
 package sshconfig
 
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
+
+// SocksPort is the local SOCKS5 port the `-socks` alias forwards through the
+// box. Fixed (not per-VM) so a browser's proxy setting is configured once and
+// only the `ssh -N mpd-<NNN>-socks` target changes between boxes.
+const SocksPort = 1080
+
+// SocksAlias is the ssh Host name of a box's SOCKS backup alias.
+func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
+
+// runtimes are the in-VM runtime containers each box exposes over SSH. Each
+// gets a `mpd-<NNN>-<runtime>` alias that ProxyJumps through the box to
+// <runtime>.runtime.<zone>:22, which the box's own dnsmasq resolves — so the
+// aliases work over plain SSH even with the mpd-proxy overlay down. Matches the
+// sibling mpd's runtime names.
+var runtimes = []string{"php", "node", "util"}
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
 func Path() string {
@@ -40,17 +74,49 @@ func beginMarker(id vmid.ID) string {
 
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
-// render is the self-contained managed block for one box.
+// render is the self-contained managed block for one box: the box's own Host
+// stanza, a ProxyJump alias per runtime, and the `-socks` backup alias (see the
+// package doc). The base and `-socks` stanzas target the box's direct IP, and
+// the runtime aliases jump through it — all over plain SSH, independent of the
+// mpd-proxy overlay, which is exactly why they still work when it is down.
 func render(id vmid.ID, ip, user string) string {
-	return strings.Join([]string{
+	name := id.Name()
+	socksPort := strconv.Itoa(SocksPort)
+
+	lines := []string{
 		beginMarker(id),
-		"Host " + id.Name(),
+		"Host " + name,
 		"    HostName " + ip,
 		"    User " + user,
 		"    StrictHostKeyChecking no",
 		"    UserKnownHostsFile /dev/null",
+	}
+	for _, rt := range runtimes {
+		lines = append(lines,
+			"",
+			"Host "+name+"-"+rt,
+			"    HostName "+rt+".runtime."+id.Zone(),
+			"    User "+user,
+			"    ProxyJump "+name,
+			"    StrictHostKeyChecking no",
+			"    UserKnownHostsFile /dev/null",
+		)
+	}
+	lines = append(lines,
+		"",
+		"# Backup for when mpd-proxy is down: `ssh -N "+name+"-socks`",
+		"# opens a SOCKS5 proxy on 127.0.0.1:"+socksPort+" tunnelled through the box.",
+		"Host "+name+"-socks",
+		"    HostName "+ip,
+		"    User "+user,
+		"    StrictHostKeyChecking no",
+		"    UserKnownHostsFile /dev/null",
+		"    DynamicForward "+socksPort,
+		"    ServerAliveInterval 30",
+		"    ServerAliveCountMax 3",
 		endMarker(id),
-	}, "\n")
+	)
+	return strings.Join(lines, "\n")
 }
 
 // Write inserts (or replaces) the managed block for a box, creating ~/.ssh
