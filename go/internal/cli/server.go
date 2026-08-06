@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
@@ -243,13 +244,74 @@ func serverSyncCmd() *cobra.Command {
 	return cmd
 }
 
-// serverSync pushes the rendered hosts file into VMs and has each republish
-// it via `mpd --vm-setup`. Nothing else ever pushes lan-hosts, so a VM that
-// is down is reported, not fatal: the records are static LAN facts and a
-// re-run of `server sync` picks them up.
-func serverSync(ctx context.Context, only *vmid.ID) error {
+// pushLanHosts installs the rendered hosts file on one box and reports
+// whether the box's copy changed.
+//
+// The digest comparison is what makes this callable from the lifecycle
+// verbs: LAN records are static facts that almost never move, so the
+// common case must cost one cheap remote command and no republish. Only a
+// caller that got true back needs to make mpd re-read the file.
+//
+// The push itself is unconditional once the digests differ — including
+// when the remote file is missing, which is every freshly adopted box.
+func pushLanHosts(ctx context.Context, t host.Target) (bool, error) {
 	path, err := server.WriteHostsFile()
 	if err != nil {
+		return false, err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	want := fmt.Sprintf("%x", sha256.Sum256(body))
+	// `|| true` so a missing file is an empty digest rather than a remote
+	// error: absent and stale are the same case here, both "push it".
+	got, err := t.Line(ctx, "sha256sum "+server.RemoteLanHostsPath+" 2>/dev/null | cut -d' ' -f1 || true")
+	if err != nil {
+		return false, err
+	}
+	if got == want {
+		return false, nil
+	}
+	if err := t.Install(ctx, path, server.RemoteLanHostsPath, "0644"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// syncLanHosts pushes the hosts file to a box and, when it changed, has
+// mpd republish it through dnsmasq.
+//
+// `mpd --vm-setup` is the republish trigger because mpd reconciles the
+// LAN records as part of it; it also restarts wg0, which drops the
+// mpd-proxy peer, so a caller that wires reachability must call this
+// BEFORE doing so.
+func syncLanHosts(ctx context.Context, t host.Target) (bool, error) {
+	changed, err := pushLanHosts(ctx, t)
+	if err != nil || !changed {
+		return false, err
+	}
+	code, err := t.Stream(ctx, "/opt/mpd/bin/mpd --vm-setup >/dev/null")
+	if err != nil {
+		return true, err
+	}
+	if code != 0 {
+		return true, fmt.Errorf("mpd --vm-setup exited %d", code)
+	}
+	return true, nil
+}
+
+// serverSync pushes the rendered hosts file into VMs and has each republish
+// it via `mpd --vm-setup`. It is the way to publish a *changed* registry to
+// boxes that are already running; adoption and the lifecycle verbs
+// (`takeover`, `create`, `start`, `update`) push the current file on their
+// own, so a freshly adopted box is never blind to the LAN names.
+//
+// A VM that is down is reported, not fatal: the records are static LAN
+// facts, and the next `start` on that box picks them up even without a
+// re-run here.
+func serverSync(ctx context.Context, only *vmid.ID) error {
+	if _, err := server.WriteHostsFile(); err != nil {
 		return err
 	}
 	entries, err := server.LoadAll()
@@ -284,15 +346,13 @@ func serverSync(ctx context.Context, only *vmid.ID) error {
 			fmt.Printf("  ⚠ not reachable at %s — skipped (re-run `mpd-virt server sync` once it is up)\n", b.IP)
 			continue
 		}
-		if err := t.Install(ctx, path, server.RemoteLanHostsPath, "0644"); err != nil {
-			fmt.Printf("  ⚠ push failed: %v\n", err)
+		changed, err := syncLanHosts(ctx, t)
+		if err != nil {
+			fmt.Printf("  ⚠ publish failed: %v\n", err)
 			continue
 		}
-		if code, err := t.Stream(ctx, "/opt/mpd/bin/mpd --vm-setup >/dev/null"); err != nil {
-			fmt.Printf("  ⚠ vm-setup failed: %v\n", err)
-			continue
-		} else if code != 0 {
-			fmt.Printf("  ⚠ vm-setup exited %d\n", code)
+		if !changed {
+			pass("already current (" + server.RemoteLanHostsPath + ")")
 			continue
 		}
 		pass("published (" + server.RemoteLanHostsPath + ")")

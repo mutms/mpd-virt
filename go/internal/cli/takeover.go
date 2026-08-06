@@ -10,6 +10,7 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/registry"
+	"github.com/mutms/mpd-virt/go/internal/server"
 	"github.com/mutms/mpd-virt/go/internal/sshconfig"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
@@ -169,6 +170,15 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 		}
 	}
 	pass("per-VM CA pushed → " + caDir)
+
+	// LAN service names, same trip and the same precondition. Only the push
+	// is needed here: the `mpd --vm-setup` below publishes the file into
+	// dnsmasq as part of its DNS reconcile, so an adopted box answers for
+	// forge.mpd.test from the start rather than only after a `server sync`.
+	if _, err := pushLanHosts(ctx, t); err != nil {
+		return fmt.Errorf("push LAN hosts: %w", err)
+	}
+	pass("LAN service names pushed → " + server.RemoteLanHostsPath)
 
 	if err := step(ctx, t, "40-install-software",
 		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {

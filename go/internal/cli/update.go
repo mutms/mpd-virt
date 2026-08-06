@@ -40,6 +40,13 @@ func updateCmd() *cobra.Command {
 			}
 			t := host.Target{User: user, Host: e.IP}
 
+			// Refresh the LAN names before the update runs: 99-update.sh
+			// re-runs `mpd --vm-setup`, which republishes whatever file is
+			// on the box by then — so the push costs nothing extra here.
+			if _, err := pushLanHosts(cmd.Context(), t); err != nil {
+				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.Pad())
+			}
+
 			fmt.Printf("▶ update %s at %s — running /opt/mpd/bootstrap/99-update.sh\n", id.Name(), e.IP)
 			code, err := t.Stream(cmd.Context(), "bash /opt/mpd/bootstrap/99-update.sh")
 			if err != nil {

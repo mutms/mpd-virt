@@ -157,10 +157,17 @@ mpd-virt server sync            # or one VM: mpd-virt server sync 126
 This writes `~/.mpd-virt/conf/lan-hosts`, scp's it to
 `/var/lib/mpd/conf/lan-hosts` on each running VM, and runs
 `mpd --vm-setup`, which republishes it through dnsmasq as
-`<stateDir>/dns/lan.hosts`. `server sync` is the only thing that ever
-pushes lan-hosts — VMs that are down are reported and skipped, so re-run
-it once they are back up (a freshly adopted VM likewise knows nothing
-until the next sync).
+`<stateDir>/dns/lan.hosts`. VMs that are down are reported and skipped.
+
+`sync` is how you publish a *changed* registry to boxes that are already
+running. It is not the only path: `takeover` and `create` push the file
+before their first `mpd --vm-setup`, `update` pushes it before
+`99-update.sh` (which re-runs vm-setup), and `start` pushes it and
+republishes when it differs. So a freshly adopted VM answers for the LAN
+names from the start, and a VM that was down while you added a server
+picks them up on its next `start` — no separate sync to remember. Each of
+those compares a remote `sha256sum` first, so the usual unchanged case
+costs one remote command and republishes nothing.
 
 Containers inherit this for free — they resolve through the VM's dnsmasq
 at the bridge gateway and have no `/etc/hosts` of their own. That is the

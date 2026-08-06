@@ -57,9 +57,9 @@ side.
 
 | Verb | Args | Role |
 |---|---|---|
-| `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted (parallels/container); pass it for `generic`. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-takeover.sh` (run on the box; converts it to systemd-resolved) — takeover refuses otherwise. Boxes made by `create` come prepared already. |
+| `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted (parallels/container); pass it for `generic`. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-takeover.sh` (run on the box; converts it to systemd-resolved) — takeover refuses otherwise. Boxes made by `create` come prepared already. |
 | `create <NNN>` | `--backend=<utm\|container> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default `mpd-virt-container-apple`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `takeover`. |
-| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm; a no-op for generic/proxmox), find its current IP, update the registry + ssh-config, register the mpd-proxy overlay, verify. |
+| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm; a no-op for generic/proxmox), find its current IP, update the registry + ssh-config, refresh the LAN service names, register the mpd-proxy overlay, verify. |
 | `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic/proxmox). |
 | `update <NNN>` | `--username=` | Pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
 | `delete <NNN>` | `--keep-vm --yes` | Remove the VM and its registry entry (keeps the root CA). `--keep-vm` leaves the hypervisor VM in place. |
@@ -125,7 +125,7 @@ MPD_VM_USER=skodak
 │   ├── caroot/                    ← the root CA — SURVIVES `delete` and `uninstall`
 │   │   ├── rootCA.pem             ← trust anchor; pushed to VMs, trusted in the Keychain
 │   │   └── rootCA-key.pem         ← 0600. NEVER leaves this Mac
-│   ├── lan-hosts                  ← rendered hosts(5) file `server sync` pushes into VMs
+│   ├── lan-hosts                  ← rendered hosts(5) file pushed into VMs (takeover/create/start/update, `server sync`)
 │   ├── cloud-images/              ← cached Debian cloud-image archive (utm `create`)
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)

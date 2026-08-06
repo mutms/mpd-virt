@@ -156,7 +156,19 @@ func startCmd() *cobra.Command {
 			if err := sshconfig.Write(id, ip, user); err != nil {
 				return fmt.Errorf("ssh config: %w", err)
 			}
-			if err := setupReachability(cmd.Context(), host.Target{User: user, Host: ip}, id, ip); err != nil {
+			t := host.Target{User: user, Host: ip}
+			// LAN names, before reachability rather than after: a changed
+			// file republishes via `mpd --vm-setup`, which restarts wg0 and
+			// would drop the mpd-proxy peer added below. Unchanged — the
+			// usual case — this is one remote sha256sum and nothing else.
+			// Best-effort: a box that came up fine should not fail to start
+			// over a hosts file.
+			if changed, err := syncLanHosts(cmd.Context(), t); err != nil {
+				fmt.Printf("  ⚠ LAN hosts sync failed: %v\n    run `mpd-virt server sync %s`\n", err, id.Pad())
+			} else if changed {
+				pass("LAN service names republished")
+			}
+			if err := setupReachability(cmd.Context(), t, id, ip); err != nil {
 				return err
 			}
 			verifyReachable(cmd.Context(), id)
