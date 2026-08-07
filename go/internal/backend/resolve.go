@@ -71,6 +71,13 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 	for _, ip := range resolveHost(ctx, id.Name()) {
 		add(ip, "dns")
 	}
+	// mDNS needs the .local suffix spelled out: macOS does not append it
+	// to a bare single-label name. A prepared box advertises itself via
+	// avahi (the prep script and bootstrap set it up), so this is the
+	// discovery path for generic boxes never adopted before.
+	for _, ip := range resolveHost(ctx, id.Name()+".local") {
+		add(ip, "mdns")
+	}
 	if e, err := registry.Load(id); err == nil {
 		add(e.IP, "last")
 	}
@@ -167,24 +174,25 @@ func stripMask(addr string) string {
 }
 
 // systemLookup resolves a name through the system resolver (cgo getaddrinfo on
-// macOS: the resolver search list + mDNS/.local, as `ping` does). Only IPv4
-// answers are kept — the box's reachable address is v4 here, and mDNS can also
-// return an unusable link-local v6. Errors are swallowed: an unresolvable name
-// is the normal case for a box that does not advertise one, and locate falls
-// through to the registry.
+// macOS: the resolver search list, and mDNS when the name ends in .local —
+// callers must spell that suffix out, as `ping` must). The query is IPv4-only,
+// and not just because the box's reachable address is v4: mpd boxes run with
+// IPv6 disabled, so an A+AAAA lookup over mDNS stalls ~5s waiting for the AAAA
+// answer that never comes — past probeTimeout — while an A-only query returns
+// in milliseconds. Errors are swallowed: an unresolvable name is the normal
+// case for a box that does not advertise one, and locate falls through to the
+// registry.
 func systemLookup(ctx context.Context, name string) []string {
 	r := &net.Resolver{PreferGo: false}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	addrs, err := r.LookupHost(ctx, name)
+	ips, err := r.LookupIP(ctx, "ip4", name)
 	if err != nil {
 		return nil
 	}
 	var v4 []string
-	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
-			v4 = append(v4, a)
-		}
+	for _, ip := range ips {
+		v4 = append(v4, ip.String())
 	}
 	return v4
 }
