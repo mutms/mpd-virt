@@ -34,9 +34,10 @@ main mpd repo's sandbox flow, not here.
 
 ## Backends
 
-`--backend=<name>` is required on `takeover` and `create` — there is
-deliberately no default. Every other verb reads the backend recorded in the
-registry at adoption.
+`--backend=<name>` is required on `create` and on the first `takeover` of a
+box — there is deliberately no default. Once a box is registered, every verb
+(including a re-takeover) reads the backend recorded in the registry; passing
+`--backend` to a re-takeover changes the record.
 
 | Backend | Host | What it does |
 |---|---|---|

@@ -44,14 +44,25 @@ func takeoverCmd() *cobra.Command {
 			"stock Debian Trixie with its identity set up (hostname, dev user,\n" +
 			"authorized key, passwordless sudo) — mpd is cloned from GitHub and\n" +
 			"built in place.\n\n" +
-			"--backend (required) records which platform the box runs on\n" +
+			"--backend records which platform the box runs on\n" +
 			"(" + backend.List() + ") for later lifecycle\n" +
-			"commands; it does not affect how the box is reached.",
+			"commands; it does not affect how the box is reached. It is\n" +
+			"required only for the first takeover: a re-takeover of a\n" +
+			"registered box reads it from the registry (pass it to change it).",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
 			if err != nil {
 				return err
+			}
+			if backendFlag == "" {
+				e, err := registry.Load(id)
+				if err != nil {
+					return fmt.Errorf("--backend is required for the first takeover of %s (one of %s)",
+						id.Name(), backend.List())
+				}
+				backendFlag = e.Backend
+				fmt.Printf("backend %s (from the registry)\n", backendFlag)
 			}
 			be, err := backend.Parse(backendFlag)
 			if err != nil {
@@ -72,8 +83,7 @@ func takeoverCmd() *cobra.Command {
 	cmd.Flags().StringVar(&username, "username", defaultUser(),
 		"dev user on the box (defaults to the current macOS user)")
 	cmd.Flags().StringVar(&backendFlag, "backend", "",
-		"platform the box runs on ("+backend.List()+") — required")
-	_ = cmd.MarkFlagRequired("backend")
+		"platform the box runs on ("+backend.List()+") — required for the first takeover, read from the registry after")
 	return cmd
 }
 
