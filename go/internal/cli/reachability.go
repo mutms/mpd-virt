@@ -27,15 +27,17 @@ const wgListenPort = 51820
 //
 // If mpd-proxy is not running it is skipped with a hint rather than failing —
 // adoption is complete regardless, and `mpd-virt start <NNN>` finishes the job
-// once the proxy is up.
-func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string) error {
+// once the proxy is up. The bool reports whether the overlay was actually
+// wired, so callers skip the tunnel verification after a skip instead of
+// probing a route that cannot exist yet.
+func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string) (bool, error) {
 	pc := proxy.New(proxy.DefaultSocket)
 	proxyPub, err := pc.Pubkey()
 	if err != nil {
 		fmt.Printf("  … mpd-proxy not detected — skipping WireGuard overlay.\n"+
 			"    Start it (`sudo mpd-proxy up`), then: mpd-virt start %s\n", id.Pad())
-		printSocksFallback(id)
-		return nil
+		printSocksHint(id)
+		return false, nil
 	}
 
 	octet := int(id)
@@ -59,14 +61,14 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 			"sudo wg-quick save wg0",
 		proxyPub)
 	if code, err := t.Stream(ctx, setPeer); err != nil {
-		return err
+		return false, err
 	} else if code != 0 {
-		return fmt.Errorf("adding mpd-proxy as wg0 peer failed — is wg0 up? (run `mpd --vm-setup`)")
+		return false, fmt.Errorf("adding mpd-proxy as wg0 peer failed — is wg0 up? (run `mpd --vm-setup`)")
 	}
 
 	vmPub, err := t.Line(ctx, "sudo wg show wg0 public-key")
 	if err != nil {
-		return err
+		return false, err
 	}
 	vm := proxy.VM{
 		ID:        id.Pad(),
@@ -82,19 +84,19 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 		Resolver:   fmt.Sprintf("10.163.%d.1:53", octet),
 	}
 	if err := pc.Add(vm); err != nil {
-		return fmt.Errorf("register with mpd-proxy: %w", err)
+		return false, fmt.Errorf("register with mpd-proxy: %w", err)
 	}
 	pass("mpd-proxy peer " + vm.Endpoint + " → " + vm.AllowedIPs[0] + " (DNS via " + vm.Resolver + ")")
-	return nil
+	return true, nil
 }
 
-// printSocksFallback tells the user how to reach the box without mpd-proxy: the
-// SOCKS-over-plain-SSH backup baked into the box's managed ssh-config block. The
+// printSocksHint tells the user how to reach the box without mpd-proxy: the
+// SOCKS-over-plain-SSH tier baked into the box's managed ssh-config block. The
 // box's direct IP is reachable independently of the overlay, so this path works
 // whenever the overlay does not.
-func printSocksFallback(id vmid.ID) {
+func printSocksHint(id vmid.ID) {
 	fmt.Printf(
-		"\n  Backup access while mpd-proxy is down (SOCKS over plain SSH):\n"+
+		"\n  SOCKS over plain SSH:\n"+
 			"    1. ssh -N %s\n"+
 			"    2. Point a browser at SOCKS5 127.0.0.1:%d with remote DNS enabled —\n"+
 			"       Firefox: Settings → Network Settings → Manual proxy, SOCKS v5 host\n"+
@@ -166,10 +168,13 @@ func startCmd() *cobra.Command {
 			} else if changed {
 				pass("LAN service names republished")
 			}
-			if err := setupReachability(cmd.Context(), t, id, ip); err != nil {
+			wired, err := setupReachability(cmd.Context(), t, id, ip)
+			if err != nil {
 				return err
 			}
-			verifyReachable(cmd.Context(), id)
+			if wired {
+				verifyReachable(cmd.Context(), id)
+			}
 			checkCATrust(cmd.Context(), id)
 			return nil
 		},

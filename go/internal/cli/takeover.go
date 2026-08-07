@@ -207,7 +207,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 
 	// --- WireGuard reachability via mpd-proxy. Best-effort: adoption is done,
 	//     so a proxy hiccup is a warning with a re-run hint, not a failure.
-	if err := setupReachability(ctx, t, id, ip); err != nil {
+	if _, err := setupReachability(ctx, t, id, ip); err != nil {
 		fmt.Printf("  ⚠ WireGuard setup incomplete: %v\n    Re-run once fixed: mpd-virt start %s\n", err, id.Pad())
 	}
 	checkCATrust(ctx, id)

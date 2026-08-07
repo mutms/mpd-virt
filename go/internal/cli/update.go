@@ -60,10 +60,13 @@ func updateCmd() *cobra.Command {
 			// 99-update.sh re-runs mpd --vm-setup, which restarts wg0 and drops
 			// the mpd-proxy peer — re-wire reachability (as start does), then
 			// verify. Best-effort: a proxy hiccup is a warning, not a failure.
-			if err := setupReachability(cmd.Context(), t, id, e.IP); err != nil {
+			wired, err := setupReachability(cmd.Context(), t, id, e.IP)
+			if err != nil {
 				fmt.Printf("  ⚠ reachability re-wire failed: %v\n    run `mpd-virt start %s`\n", err, id.Pad())
 			}
-			verifyReachable(cmd.Context(), id)
+			if wired {
+				verifyReachable(cmd.Context(), id)
+			}
 			return nil
 		},
 	}

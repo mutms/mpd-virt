@@ -4,7 +4,7 @@
 // The block sits between name-stamped markers so several boxes coexist in
 // one config and each can be found and stripped cleanly. One fence holds
 // every stanza for a box — the box itself, a ProxyJump alias per in-VM
-// runtime, and the `-socks` backup alias:
+// runtime, and the `-socks` alias:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
@@ -23,7 +23,7 @@
 // The runtime aliases (`-php`/`-node`/`-util`) reach the box's runtime
 // containers for IDE use: `ssh mpd-<NNN>-php` jumps through the box, whose
 // own dnsmasq resolves php.runtime.<NNN>.mpd.test. The `-socks` alias is the
-// browser fallback: `ssh -N mpd-<NNN>-socks` opens a SOCKS5 proxy on
+// SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a SOCKS5 proxy on
 // 127.0.0.1:1080 tunnelled through the box, so a browser pointed at it (with
 // remote DNS) reaches *.mpd.test using the box's resolver.
 //
@@ -49,7 +49,7 @@ import (
 // only the `ssh -N mpd-<NNN>-socks` target changes between boxes.
 const SocksPort = 1080
 
-// SocksAlias is the ssh Host name of a box's SOCKS backup alias.
+// SocksAlias is the ssh Host name of a box's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 
 // runtimes are the in-VM runtime containers each box exposes over SSH. Each
@@ -75,7 +75,7 @@ func beginMarker(id vmid.ID) string {
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
 // render is the self-contained managed block for one box: the box's own Host
-// stanza, a ProxyJump alias per runtime, and the `-socks` backup alias (see the
+// stanza, a ProxyJump alias per runtime, and the `-socks` alias (see the
 // package doc). The base and `-socks` stanzas target the box's direct IP, and
 // the runtime aliases jump through it — all over plain SSH, independent of the
 // mpd-proxy overlay, which is exactly why they still work when it is down.
@@ -104,8 +104,6 @@ func render(id vmid.ID, ip, user string) string {
 	}
 	lines = append(lines,
 		"",
-		"# Backup for when mpd-proxy is down: `ssh -N "+name+"-socks`",
-		"# opens a SOCKS5 proxy on 127.0.0.1:"+socksPort+" tunnelled through the box.",
 		"Host "+name+"-socks",
 		"    HostName "+ip,
 		"    User "+user,
