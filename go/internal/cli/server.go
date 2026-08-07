@@ -342,8 +342,10 @@ func serverSync(ctx context.Context, only *vmid.ID) error {
 	for _, b := range boxes {
 		fmt.Printf("\n▶ %s\n", b.ID.Name())
 		t := host.Target{User: b.User, Host: b.IP}
-		if !t.Reachable(ctx) {
-			fmt.Printf("  ⚠ not reachable at %s — skipped (re-run `mpd-virt server sync` once it is up)\n", b.IP)
+		// The reason matters here too: a box skipped on every sync
+		// because its host key changed reads as "still booting" forever.
+		if err := t.CheckReachable(ctx); err != nil {
+			fmt.Printf("  ⚠ skipped: %v\n", err)
 			continue
 		}
 		changed, err := syncLanHosts(ctx, t)

@@ -104,8 +104,8 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	// --- Identity conformance. Key auth + hostname are two independent
 	//     confirmations that the box here is the one meant; refuse on any
 	//     mismatch. mpd need NOT be present — takeover installs it.
-	if !t.Reachable(ctx) {
-		return fmt.Errorf("cannot ssh to %s@%s with key auth — is the key authorized there?", username, ip)
+	if err := t.CheckReachable(ctx); err != nil {
+		return err
 	}
 	pass("SSH key auth")
 

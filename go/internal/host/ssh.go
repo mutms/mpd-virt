@@ -47,10 +47,70 @@ func (t Target) Stream(ctx context.Context, remote string) (int, error) {
 	return exec.Run(ctx, exec.Cmd{Name: "ssh", Args: t.sshArgs(remote)})
 }
 
-// Reachable reports whether key-auth ssh to the target succeeds.
+// Reachable reports whether key-auth ssh to the target succeeds. For poll
+// loops, where the only decision is whether to retry.
 func (t Target) Reachable(ctx context.Context) bool {
 	r, err := t.Run(ctx, "true")
 	return err == nil && r.Code == 0
+}
+
+// CheckReachable probes the same thing as Reachable but returns an error
+// naming the actual cause, for the paths where the next thing a human
+// does depends on which failure it was.
+//
+// Worth the classification because the failures are indistinguishable at
+// the exit code and their remedies are unrelated. A changed host key —
+// the routine consequence of rolling a snapshot back or rebuilding a box
+// on the same address — is refused by StrictHostKeyChecking=accept-new,
+// which accepts a host key on first contact but never a changed one. A
+// single "is the key authorized there?" sends the reader to
+// authorized_keys when the fix was one ssh-keygen away.
+//
+// The stale entry is named, never removed: what proves the box on this
+// address is the intended one is its host key, and takeover pushes CA
+// material to whatever answers. Key auth does not stand in for that — a
+// rogue endpoint can accept an authentication it never verified — so the
+// removal stays a decision a human makes with the fingerprints in view.
+func (t Target) CheckReachable(ctx context.Context) error {
+	r, err := t.Run(ctx, "true")
+	if err == nil && r.Code == 0 {
+		return nil
+	}
+	detail := r.Stderr
+	if err != nil && detail == "" {
+		detail = err.Error()
+	}
+	return t.classify(detail)
+}
+
+// classify turns ssh's stderr into the error CheckReachable returns. Split
+// out so the mapping can be tested against real ssh output without a box
+// to fail against.
+func (t Target) classify(detail string) error {
+	switch {
+	case strings.Contains(detail, "REMOTE HOST IDENTIFICATION HAS CHANGED"),
+		strings.Contains(detail, "Host key verification failed"):
+		return fmt.Errorf(`the host key of %s does not match the one in known_hosts.
+
+Expected when the box was rolled back to a snapshot or rebuilt on the
+same address. If you did neither, do not clear it — that is the warning
+working.
+
+    ssh-keygen -R %s
+
+then re-run this command.`, t.Host, t.Host)
+
+	case strings.Contains(detail, "Permission denied"):
+		return fmt.Errorf("%s refused key auth — is this Mac's public key in ~/.ssh/authorized_keys on the box?", t.addr())
+
+	case strings.Contains(detail, "Connection timed out"),
+		strings.Contains(detail, "No route to host"),
+		strings.Contains(detail, "Connection refused"),
+		strings.Contains(detail, "Name or service not known"):
+		return fmt.Errorf("no ssh answer from %s — is the box up, and is that its current address?", t.Host)
+	}
+	return fmt.Errorf("cannot ssh to %s: %s", t.addr(),
+		oneOf(strings.TrimSpace(detail), "ssh failed without output"))
 }
 
 // Install copies a local file into the box at remotePath with the given
