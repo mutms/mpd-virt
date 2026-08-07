@@ -70,13 +70,14 @@ side.
 
 ## Reachability: two tiers
 
-The container subnet `10.163.<NNN>.0/24` inside each VM is **sealed**: an in-VM
-nftables firewall drops inbound routing into it, and the WireGuard peer is scoped
-to the gateway `.1` alone. So the only things a VM exposes on its network are
-`ssh` (tcp/22) and WireGuard (udp/51820), both cryptographically authenticated —
-which is what makes it safe to run a VM anywhere reachable by IP. Everything you
-use (the portal, adminer, project URLs) is served by caddy on the VM's gateway
-`10.163.<NNN>.1`. Two ways to reach it, and mpd-virt sets up both:
+The container subnet `10.163.<NNN>.0/24` inside each VM is **sealed from the
+LAN**: an in-VM nftables firewall drops routing into it from everything except
+the VM's own bridge and `wg0`. So the only things a VM exposes on its network
+are `ssh` (tcp/22) and WireGuard (udp/51820), both cryptographically
+authenticated — which is what makes it safe to run a VM anywhere reachable by
+IP. The developer's Mac, though, reaches the *whole* subnet (project URLs are
+served at container IPs): the WireGuard peer routes `10.163.<NNN>.0/24`, and
+the SOCKS tier rides sshd on the VM. Two ways in, and mpd-virt sets up both:
 
 - **Simple — SOCKS over SSH (start here).** `ssh -N mpd-<NNN>-socks` opens a
   SOCKS5 proxy on `127.0.0.1:1080`; point a dedicated browser at it (with remote
@@ -99,8 +100,8 @@ instructions whenever mpd-proxy isn't running.
 
 - `mpd-<NNN>` — the box itself.
 - `mpd-<NNN>-php` / `-node` / `-util` — the runtime containers, via `ProxyJump`
-  through the box (the container IPs are sealed, so the jump rides the box's
-  sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use these directly.
+  through the box (works with or without the overlay, since the jump rides the
+  box's sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use these directly.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
 All ride plain SSH to the box, so they work even when mpd-proxy is down.

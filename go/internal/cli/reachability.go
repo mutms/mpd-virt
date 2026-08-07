@@ -72,15 +72,13 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 		ID:        id.Pad(),
 		PublicKey: vmPub,
 		Endpoint:  fmt.Sprintf("%s:%d", ip, wgListenPort),
-		// Route ONLY the box's gateway .1 over the tunnel — not the whole
-		// 10.163.<NNN>.0/24 container subnet. The Mac reaches everything it needs
-		// on .1: caddy (TLS frontdoor, reverse-proxies to containers) and dnsmasq.
-		// Container IPs (.6, …) stay unreachable by cryptokey routing — WireGuard
-		// drops any packet to/from them. Container access is deliberately indirect
-		// (caddy on .1 for HTTP, SSH ProxyJump through the box for shells), so
-		// nothing legitimate needs the /24. mpd's vm-setup adds a matching nft
-		// FORWARD drop on the box as defence in depth.
-		AllowedIPs: []string{fmt.Sprintf("10.163.%d.1/32", octet)},
+		// Route the whole 10.163.<NNN>.0/24 container subnet over the tunnel —
+		// that is the tunnel's entire purpose: the Mac browses project URLs
+		// served at runtime-container IPs, and reaches databases and service
+		// containers directly. DNS also lives on the gateway .1. The box-side
+		// nft rule (mpd vm-setup) exempts wg0 and seals the subnet only from
+		// the LAN/public interface.
+		AllowedIPs: []string{fmt.Sprintf("10.163.%d.0/24", octet)},
 		Resolver:   fmt.Sprintf("10.163.%d.1:53", octet),
 	}
 	if err := pc.Add(vm); err != nil {
