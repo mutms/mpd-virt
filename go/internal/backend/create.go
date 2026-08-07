@@ -72,6 +72,11 @@ func containerCreate(ctx context.Context, out io.Writer, id vmid.ID, opts Create
 		return "", err
 	}
 
+	fmt.Fprintf(out, "  … handing the runtime's DNS to systemd-resolved\n")
+	if err := seedResolver(ctx, out, name); err != nil {
+		return "", err
+	}
+
 	ip := containerIP(ctx, name)
 	if ip == "" {
 		return "", fmt.Errorf("%s is up but `container inspect` reported no IP", name)
@@ -141,6 +146,83 @@ func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 		}
 	}
 	return nil
+}
+
+// seedResolver hands systemd-resolved the upstream nameservers the
+// container runtime configured for the guest.
+//
+// A container guest's network is set up by the runtime, not by
+// systemd-networkd: it writes /etc/resolv.conf directly (the vmnet
+// gateway) and no link ever reports DNS to systemd-resolved. mpd's VM
+// then points resolved at its own dnsmasq for *.mpd.test, so the only
+// nameserver resolved publishes is dnsmasq's own address — which dnsmasq
+// discards as a local interface ("ignoring nameserver <ip> - local
+// interface"), leaving it with nothing to forward to. Names in the zone
+// still answer from the local hosts files, so nothing looks wrong until
+// the runtime's first apt-get cannot resolve deb.debian.org.
+//
+// This is the container equivalent of what mpd-prepare-takeover.sh does
+// for a VM by putting the link on systemd-networkd — which is not an
+// option here, since DHCP would fight the runtime for an address it
+// assigned itself.
+func seedResolver(ctx context.Context, out io.Writer, name string) error {
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
+		"exec", name, "cat", "/etc/resolv.conf",
+	}})
+	if err != nil {
+		return err
+	}
+	servers := nameservers(r.Stdout)
+	if len(servers) == 0 {
+		return fmt.Errorf("%s has no nameserver in /etc/resolv.conf — the container runtime configured no DNS, so the guest cannot install packages", name)
+	}
+
+	// A drop-in rather than an edit: mpd --vm-setup writes its own
+	// resolved drop-in for the .test domain, and the two must coexist.
+	// 00- sorts first so this is the base the zone config layers onto.
+	write := fmt.Sprintf(
+		"mkdir -p /etc/systemd/resolved.conf.d && printf '[Resolve]\\nDNS=%s\\n' > /etc/systemd/resolved.conf.d/00-upstream.conf",
+		strings.Join(servers, " "))
+	if r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
+		"exec", name, "sh", "-c", write,
+	}}); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("writing the resolver drop-in in %s failed: %s", name, shortErr(r))
+	}
+
+	// Applied only where resolved is actually running. On an image
+	// without it the drop-in is still correct and takes effect the
+	// moment the package arrives, so this is not a failure.
+	if r, _ := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
+		"exec", name, "systemctl", "is-active", "--quiet", "systemd-resolved",
+	}}); r.Code != 0 {
+		fmt.Fprintf(out, "    upstream DNS recorded (%s) — systemd-resolved is not running yet\n",
+			strings.Join(servers, " "))
+		return nil
+	}
+	if r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
+		"exec", name, "systemctl", "reload-or-restart", "systemd-resolved",
+	}}); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("reloading systemd-resolved in %s failed: %s", name, shortErr(r))
+	}
+	fmt.Fprintf(out, "    upstream DNS: %s\n", strings.Join(servers, " "))
+	return nil
+}
+
+// nameservers extracts the addresses from resolv.conf(5) content. Fields,
+// not a substring search: a commented-out line names a server too.
+func nameservers(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "nameserver" {
+			out = append(out, fields[1])
+		}
+	}
+	return out
 }
 
 // shellQuote single-quotes a value for safe use inside `sh -c`.
