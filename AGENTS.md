@@ -99,9 +99,9 @@ instructions whenever mpd-proxy isn't running.
 `takeover`/`start` write one managed block per VM into `~/.ssh/config`:
 
 - `mpd-<NNN>` — the box itself.
-- `mpd-<NNN>-php` / `-node` / `-util` — the runtime containers, via `ProxyJump`
+- `mpd-<NNN>-runtime` — the unified runtime container, via `ProxyJump`
   through the box (works with or without the overlay, since the jump rides the
-  box's sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use these directly.
+  box's sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use this directly.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
 All ride plain SSH to the box, so they work even when mpd-proxy is down.

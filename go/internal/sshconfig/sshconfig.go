@@ -3,15 +3,15 @@
 //
 // The block sits between name-stamped markers so several boxes coexist in
 // one config and each can be found and stripped cleanly. One fence holds
-// every stanza for a box — the box itself, a ProxyJump alias per in-VM
-// runtime, and the `-socks` alias:
+// every stanza for a box — the box itself, a ProxyJump alias for the
+// in-VM runtime container, and the `-socks` alias:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
 //	    HostName <ip>
 //	    ...
-//	Host mpd-<NNN>-php            # and -node, -util
-//	    HostName php.runtime.<NNN>.mpd.test
+//	Host mpd-<NNN>-runtime
+//	    HostName runtime.<NNN>.mpd.test
 //	    ProxyJump mpd-<NNN>
 //	    ...
 //	Host mpd-<NNN>-socks
@@ -20,9 +20,9 @@
 //	    ...
 //	# <<< mpd-<NNN> <<<
 //
-// The runtime aliases (`-php`/`-node`/`-util`) reach the box's runtime
-// containers for IDE use: `ssh mpd-<NNN>-php` jumps through the box, whose
-// own dnsmasq resolves php.runtime.<NNN>.mpd.test. The `-socks` alias is the
+// The `-runtime` alias reaches the box's unified runtime container for
+// IDE use: `ssh mpd-<NNN>-runtime` jumps through the box, whose own
+// dnsmasq resolves runtime.<NNN>.mpd.test. The `-socks` alias is the
 // SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a SOCKS5 proxy on
 // 127.0.0.1:1080 tunnelled through the box, so a browser pointed at it (with
 // remote DNS) reaches *.mpd.test using the box's resolver.
@@ -52,12 +52,12 @@ const SocksPort = 1080
 // SocksAlias is the ssh Host name of a box's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 
-// runtimes are the in-VM runtime containers each box exposes over SSH. Each
-// gets a `mpd-<NNN>-<runtime>` alias that ProxyJumps through the box to
-// <runtime>.runtime.<zone>:22, which the box's own dnsmasq resolves — so the
-// aliases work over plain SSH even with the mpd-proxy overlay down. Matches the
-// sibling mpd's runtime names.
-var runtimes = []string{"php", "node", "util"}
+// runtimeFQDNLabel is the unified runtime container's DNS label: the
+// alias `mpd-<NNN>-runtime` ProxyJumps through the box to
+// runtime.<zone>:22, which the box's own dnsmasq resolves — so it works
+// over plain SSH even with the mpd-proxy overlay down. Matches the
+// sibling mpd's runtime naming (net.RuntimeFQDN).
+const runtimeFQDNLabel = "runtime"
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
 func Path() string {
@@ -75,9 +75,9 @@ func beginMarker(id vmid.ID) string {
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
 // render is the self-contained managed block for one box: the box's own Host
-// stanza, a ProxyJump alias per runtime, and the `-socks` alias (see the
+// stanza, a ProxyJump alias for the runtime, and the `-socks` alias (see the
 // package doc). The base and `-socks` stanzas target the box's direct IP, and
-// the runtime aliases jump through it — all over plain SSH, independent of the
+// the runtime alias jumps through it — all over plain SSH, independent of the
 // mpd-proxy overlay, which is exactly why they still work when it is down.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
@@ -90,17 +90,13 @@ func render(id vmid.ID, ip, user string) string {
 		"    User " + user,
 		"    StrictHostKeyChecking no",
 		"    UserKnownHostsFile /dev/null",
-	}
-	for _, rt := range runtimes {
-		lines = append(lines,
-			"",
-			"Host "+name+"-"+rt,
-			"    HostName "+rt+".runtime."+id.Zone(),
-			"    User "+user,
-			"    ProxyJump "+name,
-			"    StrictHostKeyChecking no",
-			"    UserKnownHostsFile /dev/null",
-		)
+		"",
+		"Host " + name + "-runtime",
+		"    HostName " + runtimeFQDNLabel + "." + id.Zone(),
+		"    User " + user,
+		"    ProxyJump " + name,
+		"    StrictHostKeyChecking no",
+		"    UserKnownHostsFile /dev/null",
 	}
 	lines = append(lines,
 		"",
