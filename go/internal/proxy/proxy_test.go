@@ -38,7 +38,7 @@ func mockProxy(t *testing.T) string {
 					case "add", "remove":
 						resp = Response{OK: true}
 					case "list":
-						resp = Response{OK: true, VMs: []VM{{ID: "137", Endpoint: "192.168.1.141:51820"}}}
+						resp = Response{OK: true, VMs: []VM{{ID: "137", Endpoint: "10.1.1.141:51820"}}}
 					default:
 						resp = Response{Error: "unknown op " + req.Op}
 					}
@@ -58,7 +58,7 @@ func TestClientRoundTrips(t *testing.T) {
 		t.Fatalf("Pubkey() = %q, %v", pk, err)
 	}
 	if err := c.Add(VM{
-		ID: "137", PublicKey: "bW9ja2tleQ==", Endpoint: "192.168.1.141:51820",
+		ID: "137", PublicKey: "bW9ja2tleQ==", Endpoint: "10.1.1.141:51820",
 		AllowedIPs: []string{"10.163.137.0/24"}, Resolver: "10.163.137.1:53",
 	}); err != nil {
 		t.Fatalf("Add: %v", err)

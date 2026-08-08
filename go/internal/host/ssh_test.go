@@ -10,14 +10,14 @@ import (
 // classification keys off substrings ssh prints, so a paraphrase would
 // pin nothing.
 func TestClassify(t *testing.T) {
-	target := Target{User: "skodak", Host: "192.168.1.161"}
+	target := Target{User: "skodak", Host: "10.1.1.161"}
 
 	changedKey := `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
 It is also possible that a host key has just been changed.
-Host key for 192.168.1.161 has changed and you have requested strict checking.
+Host key for 10.1.1.161 has changed and you have requested strict checking.
 Host key verification failed.`
 
 	cases := []struct {
@@ -31,19 +31,19 @@ Host key verification failed.`
 			detail: changedKey,
 			// The command must be complete enough to paste, and the
 			// message must not send the reader to authorized_keys.
-			want:   []string{"ssh-keygen -R 192.168.1.161", "known_hosts", "snapshot"},
+			want:   []string{"ssh-keygen -R 10.1.1.161", "known_hosts", "snapshot"},
 			reject: []string{"authorized_keys"},
 		},
 		{
 			name:   "unauthorized key points at authorized_keys",
-			detail: "skodak@192.168.1.161: Permission denied (publickey,password).",
-			want:   []string{"authorized_keys", "skodak@192.168.1.161"},
+			detail: "skodak@10.1.1.161: Permission denied (publickey,password).",
+			want:   []string{"authorized_keys", "skodak@10.1.1.161"},
 			reject: []string{"ssh-keygen -R"},
 		},
 		{
 			name:   "no route reads as an unreachable box",
-			detail: "ssh: connect to host 192.168.1.161 port 22: No route to host",
-			want:   []string{"no ssh answer", "192.168.1.161"},
+			detail: "ssh: connect to host 10.1.1.161 port 22: No route to host",
+			want:   []string{"no ssh answer", "10.1.1.161"},
 			reject: []string{"ssh-keygen -R", "authorized_keys"},
 		},
 		{

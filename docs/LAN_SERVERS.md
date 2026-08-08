@@ -54,9 +54,9 @@ not sign it.
 Example — substitute your own names and addresses:
 
 ```sh
-mpd-virt server add kitchenbox --ip 192.168.1.99
-mpd-virt server add forge      --ip 192.168.1.100
-mpd-virt server add runner     --ip 192.168.1.101
+mpd-virt server add kitchenbox --ip 10.1.10.1
+mpd-virt server add forge      --ip 10.1.10.100
+mpd-virt server add runner     --ip 10.1.10.101
 mpd-virt server list
 ```
 
@@ -176,7 +176,7 @@ point of the exercise:
 ```sh
 ssh mpd-126 'podman run --rm --network mpd-internal alpine \
     getent hosts forge.mpd.test'
-# 192.168.1.100  forge.mpd.test
+# 10.1.10.100  forge.mpd.test
 ```
 
 The VM reaches the LAN directly — Parallels Shared and UTM Shared both route

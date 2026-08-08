@@ -36,7 +36,7 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	path := useTempConfig(t)
 	id := testID(t, 158)
 
-	if err := Write(id, "192.168.1.50", "dev"); err != nil {
+	if err := Write(id, "10.1.10.158", "dev"); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(path)
@@ -77,7 +77,7 @@ func TestWriteReplacesLegacyBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Write(id, "192.168.1.50", "dev"); err != nil {
+	if err := Write(id, "10.1.10.158", "dev"); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(path)
@@ -98,7 +98,7 @@ func TestStripKeepsForeignContent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(foreign), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Write(id, "192.168.1.50", "dev"); err != nil {
+	if err := Write(id, "10.1.10.158", "dev"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Strip(id); err != nil {

@@ -49,13 +49,13 @@ func seedLastIP(t *testing.T, id vmid.ID, ip string) {
 // The generic path: a name that resolves to a live box wins — no registry needed.
 func TestLocateName(t *testing.T) {
 	isolateRegistry(t)
-	stub(t, []string{"192.168.1.143"}, "192.168.1.143")
+	stub(t, []string{"10.1.1.143"}, "10.1.1.143")
 	got, err := locate(context.Background(), mustID(t, "139"), Generic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "192.168.1.143" {
-		t.Errorf("locate = %q, want 192.168.1.143 (resolved by name)", got)
+	if got != "10.1.1.143" {
+		t.Errorf("locate = %q, want 10.1.1.143 (resolved by name)", got)
 	}
 }
 
@@ -64,27 +64,27 @@ func TestLocateName(t *testing.T) {
 func TestLocateFallsBackToLastIP(t *testing.T) {
 	isolateRegistry(t)
 	id := mustID(t, "139")
-	seedLastIP(t, id, "192.168.1.143")
-	stub(t, []string{"10.9.9.9"}, "192.168.1.143") // dns record dead, registry IP live
+	seedLastIP(t, id, "10.1.1.143")
+	stub(t, []string{"10.9.9.9"}, "10.1.1.143") // dns record dead, registry IP live
 	got, err := locate(context.Background(), id, Generic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "192.168.1.143" {
-		t.Errorf("locate = %q, want the last IP 192.168.1.143", got)
+	if got != "10.1.1.143" {
+		t.Errorf("locate = %q, want the last IP 10.1.1.143", got)
 	}
 }
 
 // Among several resolved addresses, the one answering ssh is chosen.
 func TestLocatePicksLiveAddress(t *testing.T) {
 	isolateRegistry(t)
-	stub(t, []string{"10.0.0.5", "192.168.1.143"}, "192.168.1.143")
+	stub(t, []string{"10.0.0.5", "10.1.1.143"}, "10.1.1.143")
 	got, err := locate(context.Background(), mustID(t, "139"), Generic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "192.168.1.143" {
-		t.Errorf("locate = %q, want 192.168.1.143 (the live one)", got)
+	if got != "10.1.1.143" {
+		t.Errorf("locate = %q, want 10.1.1.143 (the live one)", got)
 	}
 }
 
@@ -105,13 +105,13 @@ func TestLocateNoCandidates(t *testing.T) {
 func TestLocateAllDead(t *testing.T) {
 	isolateRegistry(t)
 	id := mustID(t, "139")
-	seedLastIP(t, id, "192.168.1.99")
+	seedLastIP(t, id, "10.1.10.1")
 	stub(t, []string{"10.0.0.5"}) // a dns record and a registry IP, neither live
 	_, err := locate(context.Background(), id, Generic)
 	if err == nil {
 		t.Fatal("want an error when no candidate answers ssh")
 	}
-	for _, want := range []string{"10.0.0.5", "192.168.1.99"} {
+	for _, want := range []string{"10.0.0.5", "10.1.10.1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q should mention candidate %q", err.Error(), want)
 		}
@@ -122,10 +122,10 @@ func TestLocateAllDead(t *testing.T) {
 func TestLocateDedupes(t *testing.T) {
 	isolateRegistry(t)
 	id := mustID(t, "139")
-	seedLastIP(t, id, "192.168.1.143")
+	seedLastIP(t, id, "10.1.1.143")
 	probes := 0
 	origResolve, origReach := resolveHost, sshReachable
-	resolveHost = func(context.Context, string) []string { return []string{"192.168.1.143"} }
+	resolveHost = func(context.Context, string) []string { return []string{"10.1.1.143"} }
 	sshReachable = func(context.Context, string) bool { probes++; return true }
 	t.Cleanup(func() { resolveHost, sshReachable = origResolve, origReach })
 
@@ -133,8 +133,8 @@ func TestLocateDedupes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "192.168.1.143" {
-		t.Errorf("locate = %q, want 192.168.1.143", got)
+	if got != "10.1.1.143" {
+		t.Errorf("locate = %q, want 10.1.1.143", got)
 	}
 	if probes != 1 {
 		t.Errorf("a deduped IP should be probed once, got %d probes", probes)

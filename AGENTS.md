@@ -115,7 +115,7 @@ One `~/.mpd-virt/<NNN>/env` file per adopted VM, shell-style:
 MPD_VM_OCTET=141
 MPD_VM_NAME=mpd-141
 MPD_VM_BACKEND=generic        # generic | parallels | container | utm | proxmox
-MPD_VM_IP=192.168.1.146
+MPD_VM_IP=10.1.1.141
 MPD_VM_USER=skodak
 ```
 
