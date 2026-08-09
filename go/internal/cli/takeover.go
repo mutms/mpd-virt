@@ -190,6 +190,10 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	}
 	pass("LAN service names pushed → " + server.RemoteLanHostsPath)
 
+	// The developer's own assets, if they keep any. Best-effort: unlike the
+	// CA and the LAN names, nothing mpd-virt does depends on them.
+	syncAssets(ctx, t, id.Pad())
+
 	if err := step(ctx, t, "40-install-software",
 		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {
 		return err

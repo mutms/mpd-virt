@@ -143,6 +143,53 @@ func (t Target) Install(ctx context.Context, localPath, remotePath, mode string)
 	return nil
 }
 
+// MirrorTree replaces a root-owned directory on the box with a copy of a
+// local one. Unlike Install it is a *mirror*, not a merge: the remote copy
+// is removed first, so a file deleted on the Mac disappears from the box
+// and the two can never drift into a union of both histories.
+//
+// The destination is root-owned and read-only for the dev user — the Mac
+// is the source of truth, and nothing on the box should be editing it. So
+// the copy lands in a dev-user temp dir first (scp cannot write into
+// root-owned territory) and sudo installs it from there. `chmod -R go-w`
+// closes the hole a group/world-writable file from the Mac would open:
+// root-owned but dev-writable is worse than either.
+func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) error {
+	staging, err := t.Line(ctx, "mktemp -d")
+	if err != nil {
+		return err
+	}
+	if staging == "" {
+		return fmt.Errorf("mktemp -d returned nothing")
+	}
+	defer func() { _, _ = t.Run(ctx, "rm -rf "+staging) }()
+
+	staged := staging + "/" + path.Base(remotePath)
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "scp", Args: t.scpTreeArgs(localDir, staged)})
+	if err != nil {
+		return err
+	}
+	if r.Failed() {
+		return fmt.Errorf("scp -r %s: %s", localDir, oneOf(r.Stderr, r.Stdout))
+	}
+
+	// One remote shell so a half-installed tree is not left behind: the old
+	// copy goes away and the new one lands in the same invocation.
+	install := fmt.Sprintf(
+		"sudo install -d -o root -g root -m 0755 %[1]s && "+
+			"sudo rm -rf %[2]s && "+
+			"sudo cp -a %[3]s %[2]s && "+
+			"sudo chown -R root:root %[2]s && "+
+			"sudo chmod -R go-w %[2]s",
+		path.Dir(remotePath), remotePath, staged)
+	if r, err := t.Run(ctx, install); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("install %s: %s", remotePath, oneOf(r.Stderr, r.Stdout))
+	}
+	return nil
+}
+
 // WriteRemote writes content to a file on the box at remotePath with the
 // given octal mode, as the dev user (via a local temp file + Install).
 func (t Target) WriteRemote(ctx context.Context, content, remotePath, mode string) error {
@@ -170,6 +217,14 @@ func (t Target) scpArgs(localPath, dest string) []string {
 		"-o", "ConnectTimeout=6",
 		localPath, t.addr() + ":" + dest,
 	}
+}
+
+// scpTreeArgs are scpArgs for a directory: -r to recurse and -p to keep
+// the mode bits, which is what carries the execute bit on bin/ scripts.
+// dest must not exist — scp copies *into* an existing directory, which
+// would nest the tree one level deeper on every push.
+func (t Target) scpTreeArgs(localDir, dest string) []string {
+	return append([]string{"-r", "-p"}, t.scpArgs(localDir, dest)...)
 }
 
 func oneOf(a, b string) string {

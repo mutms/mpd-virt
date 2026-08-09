@@ -30,6 +30,12 @@ func CARoot() string { return filepath.Join(Conf(), "caroot") }
 // Servers is ~/.mpd-virt/servers — LAN service registry (one dir per host).
 func Servers() string { return filepath.Join(Root(), "servers") }
 
+// Assets is ~/.mpd-virt/assets — the developer's own scripts and files,
+// mirrored into every box at /opt/mpd-virt/assets. Optional: absent means
+// mpd-virt pushes nothing and leaves whatever a box already has. This Mac
+// is the source of truth; the in-VM copy is root-owned and read-only.
+func Assets() string { return filepath.Join(Root(), "assets") }
+
 // LanHosts is ~/.mpd-virt/conf/lan-hosts — the rendered hosts(5) file that
 // `server sync` pushes into every VM so containers resolve LAN names too.
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }

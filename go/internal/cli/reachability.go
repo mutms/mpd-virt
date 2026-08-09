@@ -168,6 +168,9 @@ func startCmd() *cobra.Command {
 			} else if changed {
 				pass("LAN service names republished")
 			}
+			// Re-mirrored on every start, so editing a script on the Mac and
+			// running `mpd-virt start <NNN>` is the whole update loop.
+			syncAssets(cmd.Context(), t, id.Pad())
 			wired, err := setupReachability(cmd.Context(), t, id, ip)
 			if err != nil {
 				return err
