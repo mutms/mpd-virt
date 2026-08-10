@@ -48,7 +48,7 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	got := string(body)
 
 	for _, want := range []string{
-		"Host mpd-158\n    HostName runtime.158.mpd.test\n",
+		"Host mpd-158\n    HostName runtime\n",
 		"    ProxyJump mpd-158-vm\n",
 		"Host mpd-158-vm\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
@@ -59,7 +59,7 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"-php", "-node", "-util", "runtime.runtime.",
+		"-php", "-node", "-util", "runtime.runtime.", "runtime.158.mpd.test",
 		"Host mpd-158\n    HostName 10.1.10.158\n", // the pre-swap meaning
 		"Host mpd-158-runtime\n",
 	} {

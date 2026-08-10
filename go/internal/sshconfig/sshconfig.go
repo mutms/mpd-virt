@@ -7,7 +7,7 @@
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
-//	    HostName runtime.<NNN>.mpd.test
+//	    HostName runtime
 //	    ProxyJump mpd-<NNN>-vm
 //	    ...
 //	Host mpd-<NNN>-vm
@@ -22,8 +22,8 @@
 // The bare name is the runtime because that is where the developer (and
 // their IDE, and their agent) actually works; the VM that manages the
 // containers is the occasional destination, so it takes the `-vm` suffix.
-// `ssh mpd-<NNN>` jumps through the box, whose own dnsmasq resolves
-// runtime.<NNN>.mpd.test.
+// `ssh mpd-<NNN>` jumps through the box, which resolves the bare
+// `runtime` via the search domain mpd gives systemd-resolved there.
 //
 // Note this is the host side only. Inside the VM, mpd writes its own
 // aliases for the runtime (`runtime`, `mpd-<NNN>-runtime`) — there the
@@ -63,12 +63,17 @@ func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 // name, which reaches the runtime container running on it.
 func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 
-// runtimeFQDNLabel is the unified runtime container's DNS label: the bare
-// alias `mpd-<NNN>` ProxyJumps through the box to runtime.<zone>:22,
-// which the box's own dnsmasq resolves — so it works over plain SSH even
-// with the mpd-proxy overlay down. Matches the sibling mpd's runtime
-// naming (net.RuntimeFQDN).
-const runtimeFQDNLabel = "runtime"
+// runtimeHostName is what the runtime stanza connects to. Deliberately
+// the bare `runtime`, not the FQDN: with ProxyJump the *box* resolves the
+// target, and mpd gives the box its own zone as a search domain, so
+// `runtime` qualifies to runtime.<zone> there. Works over plain SSH with
+// the mpd-proxy overlay down.
+//
+// The bare form is also the documentation: this block is what a developer
+// reads when wiring up an SSH app that has a jump-host field but no
+// config file (Terminus and friends) — jump = mpd-<NNN>-vm, host =
+// runtime is then a straight transcription rather than a translation.
+const runtimeHostName = "runtime"
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
 func Path() string {
@@ -98,7 +103,7 @@ func render(id vmid.ID, ip, user string) string {
 	lines := []string{
 		beginMarker(id),
 		"Host " + name,
-		"    HostName " + runtimeFQDNLabel + "." + id.Zone(),
+		"    HostName " + runtimeHostName,
 		"    User " + user,
 		"    ProxyJump " + VMAlias(id),
 		"    StrictHostKeyChecking no",

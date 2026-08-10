@@ -106,6 +106,14 @@ instructions whenever mpd-proxy isn't running.
 - `mpd-<NNN>-vm` — the box itself: `mpd`, podman, the assets tree.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
+The runtime stanza's `HostName` is the bare `runtime`, not the FQDN: with
+`ProxyJump` the *box* resolves the target, and mpd gives it its own zone
+as a search domain. That makes the block directly transcribable into an
+SSH app that offers a jump-host field but reads no config file (Terminus
+on an iPad, say) — **jump = `mpd-<NNN>-vm` at the box's address, host =
+`runtime`**. A box adopted before mpd wrote that search domain needs one
+`mpd-virt update <NNN>` first.
+
 Host side only. Inside the VM the bare `mpd-<NNN>` is that machine's own
 hostname, so mpd's in-VM aliases for the runtime stay `runtime` and
 `mpd-<NNN>-runtime` (see the sibling repo's `vm.EnsureSSHConfig`). The
