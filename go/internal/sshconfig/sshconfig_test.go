@@ -49,8 +49,8 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 
 	for _, want := range []string{
 		"Host mpd-158\n    HostName runtime\n",
-		"    ProxyJump mpd-158-vm\n",
-		"Host mpd-158-vm\n    HostName 10.1.10.158\n",
+		"    ProxyJump dev@10.1.10.158\n",
+		"Host mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
 	} {

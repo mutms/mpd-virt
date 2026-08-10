@@ -8,9 +8,9 @@
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
 //	    HostName runtime
-//	    ProxyJump mpd-<NNN>-vm
+//	    ProxyJump <user>@<ip>
 //	    ...
-//	Host mpd-<NNN>-vm
+//	Host mpd-<NNN>-vm <ip>
 //	    HostName <ip>
 //	    ...
 //	Host mpd-<NNN>-socks
@@ -71,8 +71,9 @@ func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 //
 // The bare form is also the documentation: this block is what a developer
 // reads when wiring up an SSH app that has a jump-host field but no
-// config file (Terminus and friends) — jump = mpd-<NNN>-vm, host =
-// runtime is then a straight transcription rather than a translation.
+// config file (Terminus and friends). Everything such an app needs is
+// then literal on the page — jump = <user>@<ip>, host = runtime — with
+// no alias to chase into another stanza.
 const runtimeHostName = "runtime"
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
@@ -105,11 +106,16 @@ func render(id vmid.ID, ip, user string) string {
 		"Host " + name,
 		"    HostName " + runtimeHostName,
 		"    User " + user,
-		"    ProxyJump " + VMAlias(id),
+		"    ProxyJump " + user + "@" + ip,
 		"    StrictHostKeyChecking no",
 		"    UserKnownHostsFile /dev/null",
 		"",
-		"Host " + VMAlias(id),
+		// Both names: the alias for typing, the address because ProxyJump
+		// above names it literally and ssh matches Host patterns against
+		// the string it was given. Without the second pattern the jump
+		// would fall back to real host-key checking while `ssh <alias>`
+		// did not — same box, two behaviours.
+		"Host " + VMAlias(id) + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
 		"    StrictHostKeyChecking no",
