@@ -174,7 +174,7 @@ at the bridge gateway and have no `/etc/hosts` of their own. That is the
 point of the exercise:
 
 ```sh
-ssh mpd-126 'podman run --rm --network mpd-internal alpine \
+ssh mpd-126-vm 'podman run --rm --network mpd-internal alpine \
     getent hosts forge.mpd.test'
 # 10.1.10.100  forge.mpd.test
 ```
@@ -197,7 +197,7 @@ openssl s_client -connect forge.mpd.test:443 -servername forge.mpd.test \
 curl -sS -o /dev/null -w '%{http_code}\n' https://forge.mpd.test/
 
 # A container inside a VM agrees:
-ssh mpd-126 'podman run --rm --network mpd-internal alpine \
+ssh mpd-126-vm 'podman run --rm --network mpd-internal alpine \
     getent hosts forge.mpd.test'
 ```
 

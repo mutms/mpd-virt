@@ -1,18 +1,17 @@
 // Package sshconfig maintains one managed block per box in ~/.ssh/config,
-// so `ssh mpd-<NNN>` reaches the box at its current address.
+// so `ssh mpd-<NNN>` reaches the runtime container the developer works in.
 //
 // The block sits between name-stamped markers so several boxes coexist in
 // one config and each can be found and stripped cleanly. One fence holds
-// every stanza for a box — the box itself, a ProxyJump alias for the
-// in-VM runtime container, and the `-socks` alias:
+// every stanza for a box — the runtime, the box itself, and the SOCKS tier:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
-//	    HostName <ip>
-//	    ...
-//	Host mpd-<NNN>-runtime
 //	    HostName runtime.<NNN>.mpd.test
-//	    ProxyJump mpd-<NNN>
+//	    ProxyJump mpd-<NNN>-vm
+//	    ...
+//	Host mpd-<NNN>-vm
+//	    HostName <ip>
 //	    ...
 //	Host mpd-<NNN>-socks
 //	    HostName <ip>
@@ -20,12 +19,20 @@
 //	    ...
 //	# <<< mpd-<NNN> <<<
 //
-// The `-runtime` alias reaches the box's unified runtime container for
-// IDE use: `ssh mpd-<NNN>-runtime` jumps through the box, whose own
-// dnsmasq resolves runtime.<NNN>.mpd.test. The `-socks` alias is the
-// SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a SOCKS5 proxy on
-// 127.0.0.1:1080 tunnelled through the box, so a browser pointed at it (with
-// remote DNS) reaches *.mpd.test using the box's resolver.
+// The bare name is the runtime because that is where the developer (and
+// their IDE, and their agent) actually works; the VM that manages the
+// containers is the occasional destination, so it takes the `-vm` suffix.
+// `ssh mpd-<NNN>` jumps through the box, whose own dnsmasq resolves
+// runtime.<NNN>.mpd.test.
+//
+// Note this is the host side only. Inside the VM, mpd writes its own
+// aliases for the runtime (`runtime`, `mpd-<NNN>-runtime`) — there the
+// bare `mpd-<NNN>` is the VM's own hostname and cannot mean the runtime.
+//
+// The `-socks` alias is the SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a
+// SOCKS5 proxy on 127.0.0.1:1080 tunnelled through the box, so a browser
+// pointed at it (with remote DNS) reaches *.mpd.test using the box's
+// resolver.
 //
 // Both paths ride plain SSH to the box's direct IP, so they work even when
 // the mpd-proxy WireGuard overlay is offline — that is the whole point of
@@ -52,11 +59,15 @@ const SocksPort = 1080
 // SocksAlias is the ssh Host name of a box's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 
-// runtimeFQDNLabel is the unified runtime container's DNS label: the
-// alias `mpd-<NNN>-runtime` ProxyJumps through the box to
-// runtime.<zone>:22, which the box's own dnsmasq resolves — so it works
-// over plain SSH even with the mpd-proxy overlay down. Matches the
-// sibling mpd's runtime naming (net.RuntimeFQDN).
+// VMAlias is the ssh Host name of the box itself, as opposed to the bare
+// name, which reaches the runtime container running on it.
+func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
+
+// runtimeFQDNLabel is the unified runtime container's DNS label: the bare
+// alias `mpd-<NNN>` ProxyJumps through the box to runtime.<zone>:22,
+// which the box's own dnsmasq resolves — so it works over plain SSH even
+// with the mpd-proxy overlay down. Matches the sibling mpd's runtime
+// naming (net.RuntimeFQDN).
 const runtimeFQDNLabel = "runtime"
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
@@ -74,11 +85,12 @@ func beginMarker(id vmid.ID) string {
 
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
-// render is the self-contained managed block for one box: the box's own Host
-// stanza, a ProxyJump alias for the runtime, and the `-socks` alias (see the
-// package doc). The base and `-socks` stanzas target the box's direct IP, and
-// the runtime alias jumps through it — all over plain SSH, independent of the
-// mpd-proxy overlay, which is exactly why they still work when it is down.
+// render is the self-contained managed block for one box: the bare alias
+// for the runtime container, the `-vm` alias for the box itself, and the
+// `-socks` alias (see the package doc). The `-vm` and `-socks` stanzas
+// target the box's direct IP, and the runtime alias jumps through it — all
+// over plain SSH, independent of the mpd-proxy overlay, which is exactly
+// why they still work when it is down.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)
@@ -86,15 +98,15 @@ func render(id vmid.ID, ip, user string) string {
 	lines := []string{
 		beginMarker(id),
 		"Host " + name,
-		"    HostName " + ip,
+		"    HostName " + runtimeFQDNLabel + "." + id.Zone(),
 		"    User " + user,
+		"    ProxyJump " + VMAlias(id),
 		"    StrictHostKeyChecking no",
 		"    UserKnownHostsFile /dev/null",
 		"",
-		"Host " + name + "-runtime",
-		"    HostName " + runtimeFQDNLabel + "." + id.Zone(),
+		"Host " + VMAlias(id),
+		"    HostName " + ip,
 		"    User " + user,
-		"    ProxyJump " + name,
 		"    StrictHostKeyChecking no",
 		"    UserKnownHostsFile /dev/null",
 	}

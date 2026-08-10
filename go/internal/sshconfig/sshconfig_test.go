@@ -29,9 +29,11 @@ func useTempConfig(t *testing.T) string {
 	return path
 }
 
-// The managed block carries exactly three stanzas: the box, the single
-// unified runtime alias, and the SOCKS alias. The naive slice edit that
-// would render runtime.runtime.<zone> is what this test pins against.
+// The managed block carries exactly three stanzas: the bare name for the
+// runtime, `-vm` for the box, and `-socks`. The naive slice edit that
+// would render runtime.runtime.<zone> is what this test pins against, and
+// the bare name must never resolve to the box's IP again — that was the
+// old meaning and silently landing on the VM is the regression to catch.
 func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	path := useTempConfig(t)
 	id := testID(t, 158)
@@ -46,10 +48,9 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	got := string(body)
 
 	for _, want := range []string{
-		"Host mpd-158\n",
-		"Host mpd-158-runtime\n",
-		"    HostName runtime.158.mpd.test\n",
-		"    ProxyJump mpd-158\n",
+		"Host mpd-158\n    HostName runtime.158.mpd.test\n",
+		"    ProxyJump mpd-158-vm\n",
+		"Host mpd-158-vm\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
 	} {
@@ -57,7 +58,11 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 			t.Errorf("managed block should contain %q:\n%s", want, got)
 		}
 	}
-	for _, forbidden := range []string{"-php", "-node", "-util", "runtime.runtime."} {
+	for _, forbidden := range []string{
+		"-php", "-node", "-util", "runtime.runtime.",
+		"Host mpd-158\n    HostName 10.1.10.158\n", // the pre-swap meaning
+		"Host mpd-158-runtime\n",
+	} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf("managed block must not contain %q:\n%s", forbidden, got)
 		}
@@ -84,7 +89,7 @@ func TestWriteReplacesLegacyBlock(t *testing.T) {
 	if strings.Contains(string(body), "mpd-158-php") {
 		t.Errorf("legacy alias survived the rewrite:\n%s", body)
 	}
-	if !strings.Contains(string(body), "mpd-158-runtime") {
+	if !strings.Contains(string(body), "mpd-158-vm") {
 		t.Errorf("new alias missing after rewrite:\n%s", body)
 	}
 }

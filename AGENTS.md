@@ -99,11 +99,19 @@ instructions whenever mpd-proxy isn't running.
 
 `takeover`/`start` write one managed block per VM into `~/.ssh/config`:
 
-- `mpd-<NNN>` — the box itself.
-- `mpd-<NNN>-runtime` — the unified runtime container, via `ProxyJump`
-  through the box (works with or without the overlay, since the jump rides the
-  box's sshd). IDEs (PhpStorm Gateway, VS Code Remote-SSH) use this directly.
+- `mpd-<NNN>` — the unified runtime container, via `ProxyJump` through the
+  box (works with or without the overlay, since the jump rides the box's
+  sshd). The bare name goes here because it is where the developer, their
+  IDE (PhpStorm Gateway, VS Code Remote-SSH) and their agent actually work.
+- `mpd-<NNN>-vm` — the box itself: `mpd`, podman, the assets tree.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
+
+Host side only. Inside the VM the bare `mpd-<NNN>` is that machine's own
+hostname, so mpd's in-VM aliases for the runtime stay `runtime` and
+`mpd-<NNN>-runtime` (see the sibling repo's `vm.EnsureSSHConfig`). The
+runtime's prompt renders `mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, so the
+prompt always echoes the alias you typed — cosmetic only, no hostname is
+changed.
 
 All ride plain SSH to the box, so they work even when mpd-proxy is down.
 
