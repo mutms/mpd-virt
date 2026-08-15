@@ -9,10 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+
+	"github.com/mutms/mpd-virt/go/internal/paths"
 )
 
-// DefaultSocket is where mpd-proxy listens unless told otherwise.
-const DefaultSocket = "/tmp/mpd-proxy.sock"
+// DefaultSocket is where mpd-proxy listens unless told otherwise:
+// ~/.mpd-virt/proxy/socket (see paths.ProxySocket).
+func DefaultSocket() string { return paths.ProxySocket() }
 
 // Request / Response / VM mirror mpd-proxy's control protocol.
 type Request struct {
@@ -48,7 +51,7 @@ type Client struct {
 // New returns a Client for the socket (DefaultSocket if empty).
 func New(socket string) *Client {
 	if socket == "" {
-		socket = DefaultSocket
+		socket = DefaultSocket()
 	}
 	return &Client{socket: socket}
 }

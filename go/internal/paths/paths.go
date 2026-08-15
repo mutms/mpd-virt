@@ -57,6 +57,13 @@ func CloudImages() string { return filepath.Join(Conf(), "cloud-images") }
 // + cidata seed are built before UTM imports them into its own bundle.
 func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging", name) }
 
+// ProxySocket is ~/.mpd-virt/proxy/socket — mpd-proxy's control socket.
+// mpd-proxy creates the proxy/ dir (user-owned, 0700) and binds the socket
+// there; it derives the same path from the sudo user's home, so it follows
+// MPD_VIRT_ROOT on this side only — a relocated root needs mpd-proxy's
+// --socket flag to match. The socket is ephemeral: it dies with the proxy.
+func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
+
 // VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
 func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.Pad()) }
 

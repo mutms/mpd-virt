@@ -148,6 +148,7 @@ MPD_VM_USER=skodak
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every box (see Developer assets)
 ├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every box — SURVIVES `uninstall` (see Developer env)
+├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
 │   ├── cert.pem / key.pem         ← leaf signed directly by the root; key 0600

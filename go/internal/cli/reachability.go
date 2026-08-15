@@ -31,7 +31,7 @@ const wgListenPort = 51820
 // wired, so callers skip the tunnel verification after a skip instead of
 // probing a route that cannot exist yet.
 func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string) (bool, error) {
-	pc := proxy.New(proxy.DefaultSocket)
+	pc := proxy.New(proxy.DefaultSocket())
 	proxyPub, err := pc.Pubkey()
 	if err != nil {
 		fmt.Printf("  … mpd-proxy not detected — skipping WireGuard overlay.\n"+
@@ -212,7 +212,7 @@ func stopCmd() *cobra.Command {
 			}
 			// Detach from the overlay: drop the mpd-proxy peer. If mpd-proxy is
 			// down there is nothing to detach, which is fine.
-			pc := proxy.New(proxy.DefaultSocket)
+			pc := proxy.New(proxy.DefaultSocket())
 			if err := pc.Remove(id.Pad()); err != nil {
 				fmt.Printf("  … mpd-proxy not reachable — nothing to detach (%v)\n", err)
 			} else {
