@@ -194,6 +194,12 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	// CA and the LAN names, nothing mpd-virt does depends on them.
 	syncAssets(ctx, t, id.Pad())
 
+	// Their MPD_* defaults, same deal — and before the `mpd --vm-setup`
+	// below, which seeds that same path from mpd's own template only when
+	// nothing is there. Pushing first means an adopted box starts out
+	// already agreeing with every other box this Mac owns.
+	syncMpdEnv(ctx, t, id.Pad())
+
 	if err := step(ctx, t, "40-install-software",
 		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {
 		return err

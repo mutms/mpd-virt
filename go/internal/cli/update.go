@@ -47,6 +47,7 @@ func updateCmd() *cobra.Command {
 				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.Pad())
 			}
 			syncAssets(cmd.Context(), t, id.Pad())
+			syncMpdEnv(cmd.Context(), t, id.Pad())
 
 			fmt.Printf("▶ update %s at %s — running /opt/mpd/bootstrap/99-update.sh\n", id.Name(), e.IP)
 			code, err := t.Stream(cmd.Context(), "bash /opt/mpd/bootstrap/99-update.sh")

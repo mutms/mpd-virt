@@ -18,32 +18,37 @@ import (
 // state (the registry under ~/.mpd-virt and the ssh-config blocks). It does not
 // touch VM data, so it is fully recoverable.
 //
-// The root CA is deliberately KEPT: a later takeover reuses the same trust
-// anchor instead of minting a fresh-fingerprint CA the dev would have to
-// re-trust everywhere. mpd-proxy and the CA's OS-trust-store entry are separate
-// concerns; uninstall reports their status and how to remove them rather than
-// doing it.
+// Two things are deliberately KEPT. The root CA, so a later takeover reuses
+// the same trust anchor instead of minting a fresh-fingerprint CA the dev
+// would have to re-trust everywhere. And mpd-virt.env, because it is the
+// dev's own writing rather than state mpd-virt generated — losing it to a
+// verb that promises to be "fully recoverable" would be a lie, and it is not
+// reproducible from anything left on the machine.
+//
+// mpd-proxy and the CA's OS-trust-store entry are separate concerns;
+// uninstall reports their status and how to remove them rather than doing it.
 func uninstallCmd() *cobra.Command {
 	var assumeYes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove mpd-virt from this Mac: stop boxes (keep them) + wipe host state (keep the root CA)",
+		Short: "Remove mpd-virt from this Mac: stop boxes (keep them) + wipe host state (keep the root CA + your mpd-virt.env)",
 		Long: "Stops every adopted box through its backend (container/parallels/utm;\n" +
 			"generic/proxmox are left running) WITHOUT deleting any — they stay\n" +
 			"re-takeover-able. Then wipes mpd-virt's host state under ~/.mpd-virt/\n" +
 			"and every ~/.ssh/config managed block. No VM data is touched, so this\n" +
 			"is fully recoverable.\n\n" +
 			"The root CA is KEPT (~/.mpd-virt/conf/caroot) so a later takeover\n" +
-			"reuses it with no re-trust. mpd-proxy and the CA's keychain trust are\n" +
-			"separate — it reports those follow-ups. Requires typing 'uninstall'\n" +
-			"to confirm, or --yes.",
+			"reuses it with no re-trust, and so is your own mpd-virt.env — this\n" +
+			"tool never wrote it and cannot reproduce it. mpd-proxy and the CA's\n" +
+			"keychain trust are separate — it reports those follow-ups. Requires\n" +
+			"typing 'uninstall' to confirm, or --yes.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entries, err := registry.List()
 			if err != nil {
 				return err
 			}
-			fmt.Printf("uninstall mpd-virt — stops %d box(es) (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA) + ssh-config blocks.\n", len(entries))
+			fmt.Printf("uninstall mpd-virt — stops %d box(es) (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA and mpd-virt.env) + ssh-config blocks.\n", len(entries))
 			if !assumeYes && !confirmWord("uninstall") {
 				fmt.Println("aborted — nothing changed")
 				return nil
@@ -59,11 +64,12 @@ func uninstallCmd() *cobra.Command {
 			}
 			pass(fmt.Sprintf("stopped %d box(es); ssh-config blocks stripped", len(entries)))
 
-			// 2. Wipe ~/.mpd-virt EXCEPT the root CA (conf/caroot).
-			if err := wipeHostStateKeepingCA(); err != nil {
+			// 2. Wipe ~/.mpd-virt EXCEPT the root CA (conf/caroot) and
+			//    the dev's own mpd-virt.env.
+			if err := wipeHostStateKeepingOwn(); err != nil {
 				return err
 			}
-			pass("removed " + paths.Root() + " (kept the root CA)")
+			pass("removed " + paths.Root() + " (kept the root CA and mpd-virt.env)")
 
 			// 3. Report what was kept and the follow-ups this tool won't do for you.
 			fmt.Print("\nmpd-virt host state removed. Finish up:\n")
@@ -85,11 +91,18 @@ func uninstallCmd() *cobra.Command {
 	return cmd
 }
 
-// wipeHostStateKeepingCA removes everything under ~/.mpd-virt except the root
-// CA directory (conf/caroot): all per-box registry dirs and the rest of conf
-// (servers, lan-hosts, service, backend.env). Keeping caroot is what lets a
-// re-adopt reuse the same trust anchor. A missing ~/.mpd-virt is a no-op.
-func wipeHostStateKeepingCA() error {
+// wipeHostStateKeepingOwn removes everything under ~/.mpd-virt except the
+// root CA directory (conf/caroot) and the dev's own mpd-virt.env: all per-box
+// registry dirs and the rest of conf (servers, lan-hosts, service,
+// backend.env). Keeping caroot is what lets a re-adopt reuse the same trust
+// anchor; keeping mpd-virt.env is because mpd-virt never wrote it and cannot
+// reproduce it. A missing ~/.mpd-virt is a no-op.
+//
+// assets/ is NOT kept, and that is the older decision this one sits beside:
+// a mirror of it exists on every box that was ever started, so it survives
+// elsewhere. mpd-virt.env has no such copy worth trusting — the in-VM ones
+// are overwritten by whatever this file said last.
+func wipeHostStateKeepingOwn() error {
 	root := paths.Root()
 	top, err := os.ReadDir(root)
 	if err != nil {
@@ -98,9 +111,13 @@ func wipeHostStateKeepingCA() error {
 		}
 		return fmt.Errorf("read %s: %w", root, err)
 	}
-	confName := filepath.Base(paths.Conf()) // "conf"
-	caName := filepath.Base(paths.CARoot()) // "caroot"
+	confName := filepath.Base(paths.Conf())  // "conf"
+	caName := filepath.Base(paths.CARoot())  // "caroot"
+	envName := filepath.Base(paths.MpdEnv()) // "mpd-virt.env"
 	for _, e := range top {
+		if e.Name() == envName {
+			continue
+		}
 		if e.Name() == confName {
 			// Inside conf, drop everything but caroot.
 			confEntries, err := os.ReadDir(paths.Conf())

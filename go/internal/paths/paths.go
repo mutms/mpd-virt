@@ -40,6 +40,15 @@ func Assets() string { return filepath.Join(Root(), "assets") }
 // `server sync` pushes into every VM so containers resolve LAN names too.
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }
 
+// MpdEnv is ~/.mpd-virt/mpd-virt.env — the developer's own MPD_* defaults,
+// pushed into every box at /var/lib/mpd/env/mpd-virt.env, where mpd layers
+// it beneath each project's own mpd.env. Optional, like Assets: absent
+// means mpd-virt pushes nothing and leaves whatever a box already has.
+//
+// At the root rather than under conf/ because it is the developer's file
+// to write, not identity mpd-virt generates and manages on their behalf.
+func MpdEnv() string { return filepath.Join(Root(), "mpd-virt.env") }
+
 // CloudImages is ~/.mpd-virt/conf/cloud-images — the cached cloud-image
 // archive(s) the UTM (and future cloud-init) backends materialize VMs from.
 func CloudImages() string { return filepath.Join(Conf(), "cloud-images") }

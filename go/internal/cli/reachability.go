@@ -171,6 +171,10 @@ func startCmd() *cobra.Command {
 			// Re-mirrored on every start, so editing a script on the Mac and
 			// running `mpd-virt start <NNN>` is the whole update loop.
 			syncAssets(cmd.Context(), t, id.Pad())
+			// Same loop for the developer's MPD_* defaults, and nothing to
+			// republish after it — mpd re-reads the file per command, and
+			// the runtime sees it through a directory mount.
+			syncMpdEnv(cmd.Context(), t, id.Pad())
 			wired, err := setupReachability(cmd.Context(), t, id, ip)
 			if err != nil {
 				return err

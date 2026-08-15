@@ -58,16 +58,16 @@ side.
 
 | Verb | Args | Role |
 |---|---|---|
-| `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container), or mDNS for a prepared box (the prep script sets up avahi); pass it explicitly when neither reaches the box. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-takeover.sh` (run on the box; converts it to systemd-resolved, installs avahi + qemu-guest-agent) — takeover refuses otherwise. Boxes made by `create` come prepared already. |
+| `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container), or mDNS for a prepared box (the prep script sets up avahi); pass it explicitly when neither reaches the box. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-takeover.sh` (run on the box; converts it to systemd-resolved, installs avahi + qemu-guest-agent) — takeover refuses otherwise. Boxes made by `create` come prepared already. |
 | `create <NNN>` | `--backend=<utm\|container> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default `mpd-virt-container-apple`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `takeover`. |
-| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm; a no-op for generic/proxmox), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
+| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm; a no-op for generic/proxmox), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
 | `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic/proxmox, and for a box already stopped). |
-| `update <NNN>` | `--username=` | Pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
+| `update <NNN>` | `--username=` | Refresh the LAN service names + developer assets + env, then pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
 | `delete <NNN>` | `--keep-vm --yes` | Remove the VM and its registry entry (keeps the root CA). `--keep-vm` leaves the hypervisor VM in place. |
 | `list` (`ls`) | `--json` | Registered VMs, with a live `:22` reachability probe. |
 | `server …` | `add / list / delete / cert / sync` | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md). |
 | `ca [export]` | `--path=` | Print the root CA's public certificate (to install in another host's trust store). |
-| `uninstall` | `--yes` | Stop every box (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary). |
+| `uninstall` | `--yes` | Stop every box (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA and your `mpd-virt.env`**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary). |
 
 ## Reachability: two tiers
 
@@ -147,6 +147,7 @@ MPD_VM_USER=skodak
 │   ├── cloud-images/              ← cached Debian cloud-image archive (utm `create`)
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every box (see Developer assets)
+├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every box — SURVIVES `uninstall` (see Developer env)
 ├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
 │   ├── cert.pem / key.pem         ← leaf signed directly by the root; key 0600
@@ -164,7 +165,10 @@ managed blocks at a file other than `~/.ssh/config`.
 
 Keeping the root CA across `delete` and `uninstall` is deliberate: a re-adopt
 reuses the same trust anchor, so you never have to re-trust a fresh-fingerprint
-CA. Delete `caroot/` by hand only when you truly want a new one. `~/.mpd/` is
+CA. Delete `caroot/` by hand only when you truly want a new one. `mpd-virt.env`
+survives `uninstall` for a different reason — mpd-virt never wrote it, so it
+cannot write it back; nothing this tool generated is worth losing your own
+defaults over. Delete it by hand too. `~/.mpd/` is
 **not** created on the host — that path is exclusively the in-VM runtime state
 directory inside each mpd VM.
 
@@ -202,6 +206,39 @@ a scratch tool — is a script in your own tree, not a flag in this repo.
   inside containers.
 - `sudo <script>` will not find them (sudoers `secure_path` does not include
   the directory) — same as mpd's in-runtime tools. Scripts `sudo` internally.
+
+## Developer env
+
+`~/.mpd-virt/mpd-virt.env` is an optional file of **your own** `MPD_*`
+defaults — PHP version, Moodle admin password, Behat preferences, the
+`MPD_RUNTIME_CONTROL` switch. `takeover`, `create`, `start` and `update`
+push it into every box at `/var/lib/mpd/env/mpd-virt.env`, where mpd layers
+it under each project's own `mpd.env`. The keys and their meanings belong
+to mpd, not here — see its `assets/vm/mpd-virt.env` template and
+`docs/ARCHITECTURE.md` §8; mpd-virt only carries the file.
+
+The layer it feeds is scoped to *you*, not to a box. A VM runs one runtime,
+so per-VM defaults were a distinction without a difference — while a
+developer routinely runs several boxes that should agree on how they
+behave. Holding the file on the Mac is what makes one edit reach all of
+them.
+
+- **The Mac is the source of truth**, as with assets: an edit made inside a
+  VM survives only until the next lifecycle verb.
+- **No file on the Mac means no action.** Absence leaves whatever the box
+  has, which matters for a sandbox VM adopted later: its hand-written file
+  survives until you actually put one on the Mac.
+- **Digest-guarded.** Every lifecycle verb calls it, and the common case
+  costs one remote `sha256sum` and nothing else.
+- **Best-effort**, and nothing to republish afterwards: mpd re-reads the
+  file per command, and the runtime container sees it through a directory
+  bind-mount.
+- **Pushed as the dev user, not root** — unlike the assets mirror. That
+  directory is mpd's, dev-owned, and `mpd --vm-setup` seeds the same path
+  from mpd's template when nothing is there. A root-owned file would leave
+  mpd unable to seed a replacement if the Mac's copy later went away.
+- **Survives `uninstall`**, alongside the root CA. It is yours, and unlike
+  `assets/` there is no copy on a box worth restoring from.
 
 ## Code layout
 
