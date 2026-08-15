@@ -59,9 +59,9 @@ func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging"
 
 // ProxySocket is ~/.mpd-virt/proxy/socket — mpd-proxy's control socket.
 // mpd-proxy creates the proxy/ dir (user-owned, 0700) and binds the socket
-// there; it derives the same path from the sudo user's home, so it follows
-// MPD_VIRT_ROOT on this side only — a relocated root needs mpd-proxy's
-// --socket flag to match. The socket is ephemeral: it dies with the proxy.
+// there; it derives the same path from the sudo user's home and knows
+// nothing of MPD_VIRT_ROOT, so under a relocated root (tests, dry-runs)
+// there is simply no proxy. The socket is ephemeral: it dies with the proxy.
 func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
 
 // VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
