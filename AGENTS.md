@@ -45,14 +45,19 @@ box — there is deliberately no default. Once a box is registered, every verb
 | `parallels` | macOS laptop | Parallels Desktop Pro (`prlctl`): power on/off + find the box's current DHCP IP. |
 | `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [containers/apple](containers/apple) base image — build it first. |
 | `utm` | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off. |
-| `proxmox` | a Proxmox host | An always-on Debian VM on a Proxmox host, adopted like `generic` — no power control, no `create`. Recorded so the registry knows the platform. |
+| `proxmox` | a Proxmox host | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)); no `create`. |
 
-The `proxmox` backend does not talk to the Proxmox API: you create the VM on
-the Proxmox side however you like (mpd-virt does not automate the cloud-init —
-doing it by hand is good for understanding the basics), then adopt it with
-`takeover --backend=proxmox`. Takeover, `update`, and reachability all work as
-for any other box; create/delete of the VM itself stay manual on the Proxmox
-side.
+The `proxmox` backend talks to the Proxmox REST API for exactly three things:
+VM state, start, and graceful shutdown. Provisioning stays manual by design —
+you create the VM on the Proxmox side (mpd-virt does not automate the
+cloud-init; doing it by hand is good for understanding the basics), then adopt
+it with `takeover --backend=proxmox`. The VM number is the Proxmox VMID, and
+the box's LAN address follows from it: `NETWORK` in
+`~/.mpd-virt/conf/backends/proxmox.env` with the last octet replaced by the
+number (the cloud image runs no guest agent, so the address is assigned
+statically in cloud-init to match). Create/delete of the VM itself stay manual
+on the Proxmox side — [`docs/PROXMOX.md`](docs/PROXMOX.md) walks through both
+installation flavors and the API token setup.
 
 ## Verbs
 
@@ -60,8 +65,8 @@ side.
 |---|---|---|
 | `takeover <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container), or mDNS for a prepared box (the prep script sets up avahi); pass it explicitly when neither reaches the box. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-takeover.sh` (run on the box; converts it to systemd-resolved, installs avahi + qemu-guest-agent) — takeover refuses otherwise. Boxes made by `create` come prepared already. |
 | `create <NNN>` | `--backend=<utm\|container> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default `mpd-virt-container-apple`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `takeover`. |
-| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm; a no-op for generic/proxmox), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
-| `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic/proxmox, and for a box already stopped). |
+| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
+| `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic, and for a box already stopped). |
 | `update <NNN>` | `--username=` | Refresh the LAN service names + developer assets + env, then pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
 | `delete <NNN>` | `--keep-vm --yes` | Remove the VM and its registry entry (keeps the root CA). `--keep-vm` leaves the hypervisor VM in place. |
 | `list` (`ls`) | `--json` | Registered VMs, with a live `:22` reachability probe. |

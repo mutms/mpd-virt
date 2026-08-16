@@ -49,7 +49,9 @@ func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 }
 
 // managed reports whether mpd-virt can power a backend from this Mac.
-func managed(be Backend) bool { return be == Container || be == Parallels || be == UTM }
+func managed(be Backend) bool {
+	return be == Container || be == Parallels || be == UTM || be == Proxmox
+}
 
 // powerOn brings a box up, and returns the state it was in beforehand so Start
 // knows whether to wait out a boot. A box already running is left alone: its
@@ -90,12 +92,16 @@ func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 // hypervisor refused the verb from the state the box is in (`was`, which is
 // what the warning names); a launch error means the CLI is not on this machine
 // (mpd-virt may be driving a box powered elsewhere) — both are reported to out
-// and swallowed. generic/proxmox have no local power and are skipped.
+// and swallowed. generic has no power at all and is skipped.
 func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb string, was vmState, want string) bool {
 	// UTM is driven through osascript, not a single-verb CLI.
 	if be == UTM {
 		utmPower(ctx, out, id, verb)
 		return true
+	}
+	// Proxmox is driven through its REST API, not a local CLI.
+	if be == Proxmox {
+		return proxmoxPower(ctx, out, id, verb)
 	}
 	argv := powerArgv(id, be, verb)
 	if argv == nil {

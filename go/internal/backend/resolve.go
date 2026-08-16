@@ -67,6 +67,10 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 		if utmVMExists(ctx, id.Name()) {
 			add(utmCanonicalIP(id), "utm")
 		}
+	case Proxmox:
+		// The cloud image runs no guest agent, so the address is the static
+		// cloud-init convention: NETWORK's last octet replaced by the number.
+		add(proxmoxDerivedIP(id), "proxmox")
 	}
 	for _, ip := range resolveHost(ctx, id.Name()) {
 		add(ip, "dns")

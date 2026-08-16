@@ -55,6 +55,8 @@ func queryState(ctx context.Context, id vmid.ID, be Backend) vmState {
 		return normalizeState(parseContainerState(res.Stdout))
 	case UTM:
 		return normalizeState(utmVMStatus(ctx, id.Name()))
+	case Proxmox:
+		return proxmoxState(ctx, id)
 	}
 	return stUnknown
 }

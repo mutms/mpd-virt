@@ -27,6 +27,10 @@ func Conf() string { return filepath.Join(Root(), "conf") }
 // CARoot is ~/.mpd-virt/conf/caroot — the root CA keypair.
 func CARoot() string { return filepath.Join(Conf(), "caroot") }
 
+// ProxmoxEnv is ~/.mpd-virt/conf/backends/proxmox.env — the Proxmox API
+// endpoint + token the proxmox backend drives power through (docs/PROXMOX.md).
+func ProxmoxEnv() string { return filepath.Join(Conf(), "backends", "proxmox.env") }
+
 // Servers is ~/.mpd-virt/servers — LAN service registry (one dir per host).
 func Servers() string { return filepath.Join(Root(), "servers") }
 
