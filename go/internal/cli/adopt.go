@@ -26,7 +26,7 @@ import (
 // cloud-image pin. (The clone itself, and `update`, deliberately track
 // mpd's main — that is the platform's own trust decision, and the checkout
 // at least leaves auditable history on the box; see docs/SECURITY.md.)
-const bootstrapRef = "039ec2da7d784f5864efadd081d6677c7da5c152"
+const bootstrapRef = "0af19300769bc228db14bb4a7d8f8cc39a6e2935"
 
 // bootstrapBaseURL is where the two wget'able bootstrap steps fetch
 // themselves from, at the pinned ref. The rest run from the checkout
