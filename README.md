@@ -52,9 +52,9 @@ same codebase.
 
 ## AI disclosure
 
-Majority of this plugin was written with the help of Claude (Anthropic). Everything it produced was
-reviewed, corrected where needed and accepted by a human maintainer before being committed; the
-design decisions and the final state of the code are the maintainers'.
+Majority of this project was written with the help of Claude (Anthropic). Everything it
+produced was reviewed, corrected where needed and accepted by a human maintainer before
+being committed; the design decisions and the final state of the code are the maintainers'.
 
 ## License
 
