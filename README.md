@@ -50,14 +50,11 @@ find it:
 macOS-only for now; Linux and Windows/WSL host support may come later in this
 same codebase.
 
-## About
+## AI disclosure
 
-I built these tools for my own daily Moodle work and release them because I
-like open source — try them, break them, send issues or PRs.
-
-mpd and its related tools are my first fully AI-driven project — the code and
-docs are largely written by [Claude Code](https://claude.com/claude-code)
-(Anthropic) under my direction (design and review stay human).
+Majority of this plugin was written with the help of Claude (Anthropic). Everything it produced was
+reviewed, corrected where needed and accepted by a human maintainer before being committed; the
+design decisions and the final state of the code are the maintainers'.
 
 ## License
 
