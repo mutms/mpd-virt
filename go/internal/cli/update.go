@@ -44,10 +44,10 @@ func updateCmd() *cobra.Command {
 			// re-runs `mpd --vm-setup`, which republishes whatever file is
 			// on the box by then — so the push costs nothing extra here.
 			if _, err := pushLanHosts(cmd.Context(), t); err != nil {
-				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.Pad())
+				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.String())
 			}
-			syncAssets(cmd.Context(), t, id.Pad())
-			syncMpdEnv(cmd.Context(), t, id.Pad())
+			syncAssets(cmd.Context(), t, id.String())
+			syncMpdEnv(cmd.Context(), t, id.String())
 
 			fmt.Printf("▶ update %s at %s — running /opt/mpd/bootstrap/99-update.sh\n", id.Name(), e.IP)
 			code, err := t.Stream(cmd.Context(), "bash /opt/mpd/bootstrap/99-update.sh")
@@ -64,7 +64,7 @@ func updateCmd() *cobra.Command {
 			// verify. Best-effort: a proxy hiccup is a warning, not a failure.
 			wired, err := setupReachability(cmd.Context(), t, id, e.IP)
 			if err != nil {
-				fmt.Printf("  ⚠ reachability re-wire failed: %v\n    run `mpd-virt start %s`\n", err, id.Pad())
+				fmt.Printf("  ⚠ reachability re-wire failed: %v\n    run `mpd-virt start %s`\n", err, id.String())
 			}
 			if wired {
 				verifyReachable(cmd.Context(), id)

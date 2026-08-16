@@ -48,7 +48,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	}
 	name := id.Name()
 	if utmVMExists(ctx, name) {
-		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or remove it first: `mpd-virt delete %s` if it is adopted, else delete it in UTM", name, id.Pad())
+		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or remove it first: `mpd-virt delete %s` if it is adopted, else delete it in UTM", name, id.String())
 	}
 	canonIP := utmCanonicalIP(id)
 

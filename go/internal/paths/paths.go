@@ -69,7 +69,7 @@ func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging"
 func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
 
 // VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
-func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.Pad()) }
+func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 
 // VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a box.
 func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }

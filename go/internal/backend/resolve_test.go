@@ -92,7 +92,7 @@ func TestLocatePicksLiveAddress(t *testing.T) {
 func TestLocateNoCandidates(t *testing.T) {
 	isolateRegistry(t)
 	stub(t, nil) // nothing resolves, nothing live
-	_, err := locate(context.Background(), mustID(t, "005"), Generic)
+	_, err := locate(context.Background(), mustID(t, "205"), Generic)
 	if err == nil {
 		t.Fatal("want an error when nothing resolves and no IP is on file")
 	}

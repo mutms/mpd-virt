@@ -73,7 +73,7 @@ func takeoverCmd() *cobra.Command {
 				ip = args[1]
 			} else if ip, err = backend.Start(cmd.Context(), cmd.OutOrStdout(), id, be); err != nil {
 				return fmt.Errorf("%w\n    or pass the IP explicitly: mpd-virt takeover %s <IP> --backend %s",
-					err, id.Pad(), be)
+					err, id.String(), be)
 			} else {
 				fmt.Printf("resolved %s → %s\n", id.Name(), ip)
 			}
@@ -192,13 +192,13 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 
 	// The developer's own assets, if they keep any. Best-effort: unlike the
 	// CA and the LAN names, nothing mpd-virt does depends on them.
-	syncAssets(ctx, t, id.Pad())
+	syncAssets(ctx, t, id.String())
 
 	// Their MPD_* defaults, same deal — and before the `mpd --vm-setup`
 	// below, which seeds that same path from mpd's own template only when
 	// nothing is there. Pushing first means an adopted box starts out
 	// already agreeing with every other box this Mac owns.
-	syncMpdEnv(ctx, t, id.Pad())
+	syncMpdEnv(ctx, t, id.String())
 
 	if err := step(ctx, t, "40-install-software",
 		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {
@@ -229,7 +229,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	// --- WireGuard reachability via mpd-proxy. Best-effort: adoption is done,
 	//     so a proxy hiccup is a warning with a re-run hint, not a failure.
 	if _, err := setupReachability(ctx, t, id, ip); err != nil {
-		fmt.Printf("  ⚠ WireGuard setup incomplete: %v\n    Re-run once fixed: mpd-virt start %s\n", err, id.Pad())
+		fmt.Printf("  ⚠ WireGuard setup incomplete: %v\n    Re-run once fixed: mpd-virt start %s\n", err, id.String())
 	}
 	checkCATrust(ctx, id)
 

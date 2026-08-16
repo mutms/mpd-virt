@@ -35,7 +35,7 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 	case Parallels, Proxmox:
 		return "", fmt.Errorf("create is not implemented for the %s backend yet (needs a template clone + cloud-init) — create the box yourself, then `mpd-virt takeover`", be)
 	default:
-		return "", fmt.Errorf("a %s box is adopted, not created — use `mpd-virt takeover %s <IP> --backend %s`", be, id.Pad(), be)
+		return "", fmt.Errorf("a %s box is adopted, not created — use `mpd-virt takeover %s <IP> --backend %s`", be, id.String(), be)
 	}
 }
 

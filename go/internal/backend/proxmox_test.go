@@ -94,15 +94,11 @@ func TestProxmoxPower(t *testing.T) {
 	}
 }
 
-// The derived address is NETWORK's last octet replaced by the VM number —
-// zero-padding in the id must not leak into the IP.
+// The derived address is NETWORK's last octet replaced by the VM number.
 func TestProxmoxDerivedIP(t *testing.T) {
 	writeProxmoxEnv(t, "https://example.invalid/")
 	if ip := proxmoxDerivedIP(mustID(t, "150")); ip != "10.1.10.150" {
 		t.Errorf("derived IP for 150 = %q, want 10.1.10.150", ip)
-	}
-	if ip := proxmoxDerivedIP(mustID(t, "007")); ip != "10.1.10.7" {
-		t.Errorf("derived IP for 007 = %q, want 10.1.10.7", ip)
 	}
 }
 

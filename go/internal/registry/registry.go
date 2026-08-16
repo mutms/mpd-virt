@@ -41,7 +41,7 @@ MPD_VM_NAME=%s
 MPD_VM_BACKEND=%s
 MPD_VM_IP=%s
 MPD_VM_USER=%s
-`, e.ID.Name(), e.ID.Pad(), e.ID.Name(), e.Backend, e.IP, e.User)
+`, e.ID.Name(), e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User)
 	return os.WriteFile(paths.VMEnv(e.ID), []byte(body), 0o644)
 }
 

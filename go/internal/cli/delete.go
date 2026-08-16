@@ -49,7 +49,7 @@ func deleteCmd() *cobra.Command {
 			}
 
 			// 1. Detach from the overlay (best-effort; mpd-proxy may be down).
-			if err := proxy.New(proxy.DefaultSocket()).Remove(id.Pad()); err == nil {
+			if err := proxy.New(proxy.DefaultSocket()).Remove(id.String()); err == nil {
 				pass("detached from overlay (mpd-proxy peer removed)")
 			}
 			// 2. Destroy the backend resource unless kept. Not fatal — the

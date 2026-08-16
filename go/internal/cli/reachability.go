@@ -35,7 +35,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	proxyPub, err := pc.Pubkey()
 	if err != nil {
 		fmt.Printf("  … mpd-proxy not detected — skipping WireGuard overlay.\n"+
-			"    Start it (`sudo mpd-proxy up`), then: mpd-virt start %s\n", id.Pad())
+			"    Start it (`sudo mpd-proxy up`), then: mpd-virt start %s\n", id.String())
 		printSocksHint(id)
 		return false, nil
 	}
@@ -71,7 +71,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 		return false, err
 	}
 	vm := proxy.VM{
-		ID:        id.Pad(),
+		ID:        id.String(),
 		PublicKey: vmPub,
 		Endpoint:  fmt.Sprintf("%s:%d", ip, wgListenPort),
 		// Route the whole 10.163.<NNN>.0/24 container subnet over the tunnel —
@@ -164,17 +164,17 @@ func startCmd() *cobra.Command {
 			// Best-effort: a box that came up fine should not fail to start
 			// over a hosts file.
 			if changed, err := syncLanHosts(cmd.Context(), t); err != nil {
-				fmt.Printf("  ⚠ LAN hosts sync failed: %v\n    run `mpd-virt server sync %s`\n", err, id.Pad())
+				fmt.Printf("  ⚠ LAN hosts sync failed: %v\n    run `mpd-virt server sync %s`\n", err, id.String())
 			} else if changed {
 				pass("LAN service names republished")
 			}
 			// Re-mirrored on every start, so editing a script on the Mac and
 			// running `mpd-virt start <NNN>` is the whole update loop.
-			syncAssets(cmd.Context(), t, id.Pad())
+			syncAssets(cmd.Context(), t, id.String())
 			// Same loop for the developer's MPD_* defaults, and nothing to
 			// republish after it — mpd re-reads the file per command, and
 			// the runtime sees it through a directory mount.
-			syncMpdEnv(cmd.Context(), t, id.Pad())
+			syncMpdEnv(cmd.Context(), t, id.String())
 			wired, err := setupReachability(cmd.Context(), t, id, ip)
 			if err != nil {
 				return err
@@ -213,7 +213,7 @@ func stopCmd() *cobra.Command {
 			// Detach from the overlay: drop the mpd-proxy peer. If mpd-proxy is
 			// down there is nothing to detach, which is fine.
 			pc := proxy.New(proxy.DefaultSocket())
-			if err := pc.Remove(id.Pad()); err != nil {
+			if err := pc.Remove(id.String()); err != nil {
 				fmt.Printf("  … mpd-proxy not reachable — nothing to detach (%v)\n", err)
 			} else {
 				pass("detached from overlay (mpd-proxy peer removed)")

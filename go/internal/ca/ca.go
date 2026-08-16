@@ -132,7 +132,7 @@ func LoadOrGenerateVM(id vmid.ID) error {
 	if err != nil {
 		return err
 	}
-	tmpl, err := baseTemplate("mpd VM "+id.Pad()+" CA", days)
+	tmpl, err := baseTemplate("mpd VM "+id.String()+" CA", days)
 	if err != nil {
 		return err
 	}

@@ -48,10 +48,6 @@ func TestUTMCanonicalIP(t *testing.T) {
 	if got := utmCanonicalIP(id); got != "192.168.64.158" {
 		t.Errorf("utmCanonicalIP(158) = %q, want 192.168.64.158", got)
 	}
-	id2, _ := vmid.Parse("7")
-	if got := utmCanonicalIP(id2); got != "192.168.64.7" {
-		t.Errorf("utmCanonicalIP(7) = %q, want 192.168.64.7", got)
-	}
 }
 
 func TestAsQuote(t *testing.T) {

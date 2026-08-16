@@ -45,7 +45,7 @@ func checkCATrust(ctx context.Context, id vmid.ID) {
 		"      sudo security add-trusted-cert -d -r trustRoot -k %s %s\n"+
 		"    Then `mpd-virt start %s` again to confirm. (A browser with its own\n"+
 		"    trust store — a dedicated Firefox — you import it there yourself.)\n",
-		systemKeychain, caPath, id.Pad())
+		systemKeychain, caPath, id.String())
 }
 
 // staleCAPresent reports whether a cert named like the root but with a

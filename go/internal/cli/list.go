@@ -47,7 +47,7 @@ const listRow = "%-4s %-10s %-10s %-16s %-9s %s\n"
 func printListTable(ctx context.Context, entries []registry.Entry) {
 	fmt.Printf(listRow, "NNN", "NAME", "BACKEND", "IP", "USER", "SSH")
 	for _, e := range entries {
-		fmt.Printf(listRow, e.ID.Pad(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP))
+		fmt.Printf(listRow, e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP))
 	}
 }
 
@@ -62,7 +62,7 @@ func printListJSON(ctx context.Context, entries []registry.Entry) error {
 	}
 	rows := make([]row, 0, len(entries))
 	for _, e := range entries {
-		rows = append(rows, row{e.ID.Pad(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP)})
+		rows = append(rows, row{e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP)})
 	}
 	b, err := json.MarshalIndent(rows, "", "  ")
 	if err != nil {

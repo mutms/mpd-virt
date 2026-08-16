@@ -22,15 +22,19 @@ projects from.
 
 ## VM identity
 
-`NNN` is the VM's id: a plain zero-padded identifier `001`–`254`
-(`go/internal/vmid` is the single source of truth — ids carry no class or
-range semantics). It keys the name `mpd-<NNN>`, the registry dir
-`~/.mpd-virt/<NNN>/`, the container subnet `10.163.<NNN>.0/24`, the overlay
-gateway `10.163.<NNN>.1`, and the DNS zone `<NNN>.mpd.test`. The box's own
-address is found by name (or given to `takeover` explicitly), not a fixed
-value. Several VMs are reachable at once — the bare `mpd.test` apex
-deliberately does not resolve. Id `000` is the sandbox VM, which lives in the
-main mpd repo's sandbox flow, not here.
+`NNN` is the VM's id: a plain identifier `100`–`254`, always exactly three
+digits (`go/internal/vmid` is the single source of truth — ids carry no
+class or range semantics, and there is no zero-padding: the same three
+characters appear everywhere the id does). It keys the name `mpd-<NNN>`, the
+registry dir `~/.mpd-virt/<NNN>/`, the container subnet `10.163.<NNN>.0/24`,
+the overlay gateway `10.163.<NNN>.1`, the DNS zone `<NNN>.mpd.test`, and on
+proxmox also the VMID and the LAN address's last octet. Starting at 100
+matches Proxmox's own VMID floor and keeps ids clear of low
+router/DHCP-infrastructure addresses. The box's own address is found by name
+(or given to `takeover` explicitly), not a fixed value. Several VMs are
+reachable at once — the bare `mpd.test` apex deliberately does not resolve.
+Sandbox VMs (the main mpd repo's sandbox flow) use ordinary ids from the
+same range — there are no special ids.
 
 ## Backends
 
