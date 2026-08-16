@@ -33,25 +33,25 @@ const bootstrapRef = "039ec2da7d784f5864efadd081d6677c7da5c152"
 // 20-git-clone lands.
 const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/" + bootstrapRef + "/bootstrap"
 
-// takeoverCmd adopts a box as mpd-<NNN>, installing mpd from source.
+// adoptCmd adopts a box as mpd-<NNN>, installing mpd from source.
 //
-// A takeover target is a stock Debian Trixie VM with only its *identity*
+// A adoption target is a stock Debian Trixie VM with only its *identity*
 // set up — hostname mpd-<NNN>, the dev user, this Mac's key authorized,
-// passwordless sudo. mpd itself is NOT required: takeover clones it from
+// passwordless sudo. mpd itself is NOT required: adoption clones it from
 // GitHub and compiles it in place. What it verifies first is only that
 // the box at the given IP really is mpd-<NNN> — then it refuses to touch
 // the wrong one, rather than remediating it.
-func takeoverCmd() *cobra.Command {
+func adoptCmd() *cobra.Command {
 	var username, backendFlag string
 	cmd := &cobra.Command{
-		Use:   "takeover <NNN> [IP]",
+		Use:   "adopt <NNN> [IP]",
 		Short: "Adopt a Debian box as mpd-<NNN> (IP resolved by name if omitted)",
 		Long: "With no IP, mpd-virt finds the box by name: it resolves mpd-<NNN>\n" +
 			"through the system resolver (how Parallels and Apple containers\n" +
 			"register a box, and how a box running mDNS advertises itself), and\n" +
 			"failing that falls back to the last address on file — which covers\n" +
-			"Proxmox and any re-takeover. An explicit <IP> always overrides, and\n" +
-			"is required for the first takeover of a box that neither resolves nor\n" +
+			"Proxmox and any re-adoption. An explicit <IP> always overrides, and\n" +
+			"is required for the first adoption of a box that neither resolves nor\n" +
 			"is on file. Either way mpd-virt verifies the box there really is\n" +
 			"mpd-<NNN> by its hostname before touching it. The box need only be\n" +
 			"stock Debian Trixie with its identity set up (hostname, dev user,\n" +
@@ -60,7 +60,7 @@ func takeoverCmd() *cobra.Command {
 			"--backend records which platform the box runs on\n" +
 			"(" + backend.List() + ") for later lifecycle\n" +
 			"commands; it does not affect how the box is reached. It is\n" +
-			"required only for the first takeover: a re-takeover of a\n" +
+			"required only for the first adoption: a re-adoption of a\n" +
 			"registered box reads it from the registry (pass it to change it).",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -71,7 +71,7 @@ func takeoverCmd() *cobra.Command {
 			if backendFlag == "" {
 				e, err := registry.Load(id)
 				if err != nil {
-					return fmt.Errorf("--backend is required for the first takeover of %s (one of %s)",
+					return fmt.Errorf("--backend is required for the first adoption of %s (one of %s)",
 						id.Name(), backend.List())
 				}
 				backendFlag = e.Backend
@@ -88,22 +88,22 @@ func takeoverCmd() *cobra.Command {
 				// ~/.ssh/config, even when typed by hand.
 				a, err := netip.ParseAddr(args[1])
 				if err != nil || !a.Is4() {
-					return fmt.Errorf("%q is not an IPv4 address — takeover takes the box's literal address", args[1])
+					return fmt.Errorf("%q is not an IPv4 address — adopt takes the box's literal address", args[1])
 				}
 				ip = a.String()
 			} else if ip, err = backend.Start(cmd.Context(), cmd.OutOrStdout(), id, be); err != nil {
-				return fmt.Errorf("%w\n    or pass the IP explicitly: mpd-virt takeover %s <IP> --backend %s",
+				return fmt.Errorf("%w\n    or pass the IP explicitly: mpd-virt adopt %s <IP> --backend %s",
 					err, id.String(), be)
 			} else {
 				fmt.Printf("resolved %s → %s\n", id.Name(), ip)
 			}
-			return runTakeover(cmd.Context(), id, ip, username, be)
+			return runAdopt(cmd.Context(), id, ip, username, be)
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(),
 		"dev user on the box (defaults to the current macOS user)")
 	cmd.Flags().StringVar(&backendFlag, "backend", "",
-		"platform the box runs on ("+backend.List()+") — required for the first takeover, read from the registry after")
+		"platform the box runs on ("+backend.List()+") — required for the first adoption, read from the registry after")
 	return cmd
 }
 
@@ -116,19 +116,19 @@ func defaultUser() string {
 	return "skodak"
 }
 
-func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backend.Backend) error {
+func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.Backend) error {
 	if strings.ContainsAny(username, " \t\"") || username == "" {
 		// Checked up front: the same rule sshconfig.Write enforces at the
 		// end, but failing after the full bootstrap would waste ten minutes.
 		return fmt.Errorf("invalid --username %q", username)
 	}
 	t := boxTarget(id, username, ip)
-	fmt.Printf("takeover %s at %s@%s  (backend=%s, zone=%s)\n\n",
+	fmt.Printf("adopt %s at %s@%s  (backend=%s, zone=%s)\n\n",
 		id.Name(), username, ip, be, id.Zone())
 
 	// --- Identity conformance. Key auth + hostname are two independent
 	//     confirmations that the box here is the one meant; refuse on any
-	//     mismatch. mpd need NOT be present — takeover installs it.
+	//     mismatch. mpd need NOT be present — adoption installs it.
 	//     The first contact records the box's host key into
 	//     ~/.mpd-virt/<NNN>/known_hosts (under the alias mpd-<NNN>); every
 	//     later connection — this run's and every verb after — refuses a
@@ -173,7 +173,7 @@ func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backen
 	} else if r.Failed() {
 		return fmt.Errorf("box at %s is not prepared — systemd-resolved is not active.\n"+
 			"Run the prepare script on the VM first (follow its reboot prompt until it says ready):\n"+
-			"    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)", ip)
+			"    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)", ip)
 	}
 	pass("network prepared (systemd-resolved active)")
 

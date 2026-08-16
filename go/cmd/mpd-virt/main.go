@@ -5,7 +5,7 @@
 // adopts existing VMs, then drives them over SSH — it owns nothing inside
 // the box beyond what SSH and the mpd binary already provide.
 //
-// The grammar is verb-first: `mpd-virt takeover 135 10.211.55.135`,
+// The grammar is verb-first: `mpd-virt adopt 135 10.211.55.135`,
 // `mpd-virt create 160`. Every verb names a box by its id NNN, from which
 // the hostname (mpd-<NNN>) and zone derive; the host IP does not — see
 // internal/vmid.

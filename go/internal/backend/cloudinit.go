@@ -209,7 +209,7 @@ func makeCidataISO(ctx context.Context, outputPath, username, sshPubKey, localHo
 }
 
 // cidataMetaData is the NoCloud meta-data: instance id + a first-boot
-// hostname. Seeding the final mpd-<NNN> name here means takeover's hostname
+// hostname. Seeding the final mpd-<NNN> name here means adoption's hostname
 // assert passes on boot one.
 func cidataMetaData(localHostname string) string {
 	return fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", localHostname, localHostname)
@@ -218,7 +218,7 @@ func cidataMetaData(localHostname string) string {
 // cidataUserData is the #cloud-config: create only the dev user (no
 // `debian` default) with passwordless sudo and key-only auth, grow the
 // rootfs to fill the disk we extended, and start sshd, so the box comes
-// up takeover-ready.
+// up adoption-ready.
 func cidataUserData(username, sshPubKey, localHostname string) string {
 	return fmt.Sprintf(`#cloud-config
 hostname: %s

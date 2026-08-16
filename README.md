@@ -31,7 +31,7 @@ Point a browser at SOCKS5 `127.0.0.1:1080` with remote DNS (or run
 [mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md) for your
 first Moodle site.
 
-Verbs: `takeover create start stop update delete list server ca uninstall` —
+Verbs: `adopt create start stop update remove list server ca uninstall` —
 `mpd-virt --help` for the surface, [AGENTS.md](AGENTS.md) for the details
 (backends, ids, registry, ssh-config, state layout).
 

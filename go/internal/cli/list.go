@@ -28,7 +28,7 @@ func listCmd() *cobra.Command {
 				return err
 			}
 			if len(entries) == 0 {
-				fmt.Fprintln(os.Stderr, "no boxes adopted — add one with `mpd-virt takeover` or `mpd-virt create`.")
+				fmt.Fprintln(os.Stderr, "no boxes adopted — add one with `mpd-virt adopt` or `mpd-virt create`.")
 				return nil
 			}
 			if jsonOut {

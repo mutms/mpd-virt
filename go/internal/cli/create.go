@@ -12,7 +12,7 @@ import (
 )
 
 // createCmd provisions a brand-new box through its backend and then adopts it
-// with the takeover flow. For --backend=container it runs the base image, seeds
+// with the adoption flow. For --backend=container it runs the base image, seeds
 // identity over `container exec`, reads the leased IP, and hands off — the
 // setup-container.sh recipe, done in one command.
 func createCmd() *cobra.Command {
@@ -21,7 +21,7 @@ func createCmd() *cobra.Command {
 		Use:   "create <NNN> --backend=<backend>",
 		Short: "Create a fresh box from its backend's base image and adopt it",
 		Long: "Provisions a brand-new box for the id through its backend, then\n" +
-			"adopts it exactly like takeover. For --backend=container it runs the\n" +
+			"adopts it exactly as `adopt` does. For --backend=container it runs the\n" +
 			"base image (--image, default derived from this Mac's runtime), waits\n" +
 			"for systemd, seeds the dev user + passwordless sudo + your public key\n" +
 			"(--pubkey), reads the leased IP from `container inspect`, and hands\n" +
@@ -54,7 +54,7 @@ func createCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("created %s → %s\n", id.Name(), ip)
-			return runTakeover(cmd.Context(), id, ip, username, be)
+			return runAdopt(cmd.Context(), id, ip, username, be)
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(), "dev user to create on the box")
@@ -69,7 +69,7 @@ func createCmd() *cobra.Command {
 
 // readPubKey loads the public key to seed into the new box. An explicit --pubkey
 // path wins; otherwise it tries the usual ~/.ssh defaults — the key ssh will
-// present to the box when takeover connects.
+// present to the box when adoption connects.
 func readPubKey(path string) (string, error) {
 	if path == "" {
 		home, err := os.UserHomeDir()

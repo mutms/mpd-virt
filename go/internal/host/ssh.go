@@ -95,7 +95,7 @@ func (t Target) Reachable(ctx context.Context) bool {
 // authorized_keys when the fix was one ssh-keygen away.
 //
 // The stale entry is named, never removed: what proves the box on this
-// address is the intended one is its host key, and takeover pushes CA
+// address is the intended one is its host key, and adoption pushes CA
 // material to whatever answers. Key auth does not stand in for that — a
 // rogue endpoint can accept an authentication it never verified — so the
 // removal stays a decision a human makes with the fingerprints in view.

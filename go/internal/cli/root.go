@@ -23,11 +23,11 @@ func Root(version string) *cobra.Command {
 		// arrived with.
 		PersistentPreRun: func(*cobra.Command, []string) { paths.EnsurePrivate() },
 	}
-	root.AddCommand(takeoverCmd())
+	root.AddCommand(adoptCmd())
 	root.AddCommand(createCmd())
 	root.AddCommand(startCmd())
 	root.AddCommand(stopCmd())
-	root.AddCommand(deleteCmd())
+	root.AddCommand(removeCmd())
 	root.AddCommand(listCmd())
 	root.AddCommand(updateCmd())
 	root.AddCommand(serverCmd())

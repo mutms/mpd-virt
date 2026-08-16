@@ -19,7 +19,8 @@ import (
 // AppleScript dictionary); the App Store build ships no `utmctl`, so
 // AppleScript is the only surface that works for everyone. `create`
 // materializes a fresh Debian VM from the cloud .raw + a cidata seed
-// (cloudinit.go); start/stop/delete are thin osascript wrappers.
+// (cloudinit.go); start/stop are thin osascript wrappers. Deleting the VM
+// itself is UTM's business — mpd-virt's `remove` only un-adopts.
 // Adapted to the Go backend model (no UUID — the registry
 // and `list` don't use it; a pinned vmnet IP instead of a guest-IP query).
 //
@@ -39,7 +40,7 @@ const (
 func utmCanonicalIP(id vmid.ID) string { return utmSubnet + "." + strconv.Itoa(int(id)) }
 
 // utmCreate provisions a fresh UTM VM and returns its (pinned) IP, ready for
-// takeover. Untestable end-to-end without nested virt (the guest won't
+// adoption. Untestable end-to-end without nested virt (the guest won't
 // boot), but every step up to the boot wait — download, clone, seed, and the
 // osascript VM creation — runs on any Mac with UTM installed.
 func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {
@@ -48,7 +49,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	}
 	name := id.Name()
 	if utmVMExists(ctx, name) {
-		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or remove it first: `mpd-virt delete %s` if it is adopted, else delete it in UTM", name, id.String())
+		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or delete that VM in UTM first (and `mpd-virt remove %s` if it is adopted)", name, id.String())
 	}
 	canonIP := utmCanonicalIP(id)
 
@@ -110,7 +111,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	}
 
 	// Pin the fresh VM's host key from the very first contact, in the same
-	// per-box file takeover will use — the key recorded while cloud-init's
+	// per-box file adoption will use — the key recorded while cloud-init's
 	// output is still on the UTM console carries through the whole lifecycle.
 	t := host.Target{
 		User: opts.User, Host: canonIP,
@@ -163,21 +164,6 @@ func utmPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) {
 	if _, err := runOsascript(ctx, script); err != nil {
 		fmt.Fprintf(out, "    … %v (continuing — the box may already be in that state)\n", err)
 	}
-}
-
-// utmDelete force-stops and removes a UTM VM, then wipes its staging dir.
-func utmDelete(ctx context.Context, out io.Writer, id vmid.ID) error {
-	if err := requireUTM(); err != nil {
-		return err
-	}
-	name := id.Name()
-	fmt.Fprintf(out, "  ▶ osascript UTM delete %s\n", name)
-	_, _ = runOsascript(ctx, utmKillScript(name)) // best-effort stop first
-	if _, err := runOsascript(ctx, utmDeleteScript(name)); err != nil {
-		return err
-	}
-	_ = os.RemoveAll(paths.UTMStaging(name))
-	return nil
 }
 
 // --- osascript plumbing -----------------------------------------------------

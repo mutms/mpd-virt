@@ -22,7 +22,7 @@ import (
 )
 
 // sshPort is the door whose reachability tells us a candidate address is a live
-// box and not a stale record — the same door takeover and start walk through.
+// box and not a stale record — the same door adopt and start walk through.
 const sshPort = "22"
 
 // probeTimeout bounds each name lookup and each ssh-port dial — short, so
@@ -214,7 +214,7 @@ func systemLookup(ctx context.Context, name string) []string {
 
 // dialSSH reports whether ip accepts a TCP connection on the ssh port. A TCP
 // dial, not ICMP: unprivileged, and it confirms the thing we care about — that
-// ssh (and so takeover/start) can reach the box.
+// ssh (and so adopt/start) can reach the box.
 func dialSSH(ctx context.Context, ip string) bool {
 	d := net.Dialer{Timeout: probeTimeout}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip, sshPort))

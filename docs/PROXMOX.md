@@ -42,8 +42,8 @@ Keychain. mpd-virt trusts the system roots plus the mpd root CA.
 4. install Debian with SSH server enabled
 5. login in your vm console and record IP address from `ip a` command
 6. add your SSH key to VM via `ssh-copy-id <vm IP address>`
-7. prepare VM for takeover using command `bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)`
-8. register VM in mpd-virt from macOS terminal: `mpd-virt takeover NNN <vm IP address> --backend=proxmox`
+7. prepare VM for adoption using command `bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)`
+8. register VM in mpd-virt from macOS terminal: `mpd-virt adopt NNN <vm IP address> --backend=proxmox`
 
 ## Cloud-init Debian VM installation
 
@@ -77,4 +77,4 @@ Keychain. mpd-virt trusts the system roots plus the mpd root CA.
   - press "Regenerate image"
 5. in "Datacenter / <node> / NNN / Permissions" and API Token permission with `mpd-virt` role
 6. start the VM
-7. register VM in mpd-virt from macOS terminal: `mpd-virt takeover NNN <vm IP address> --backend=proxmox`
+7. register VM in mpd-virt from macOS terminal: `mpd-virt adopt NNN <vm IP address> --backend=proxmox`

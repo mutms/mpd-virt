@@ -25,7 +25,7 @@ import (
 var allowed = map[string]bool{
 	"ssh": true,
 	"scp": true,
-	// ssh-keygen renders the pinned host-key fingerprint at takeover, so the
+	// ssh-keygen renders the pinned host-key fingerprint at adoption, so the
 	// first-contact key is shown for comparison against the box's console.
 	"ssh-keygen": true,
 	// Backend power control (start/stop): the native Apple container CLI and

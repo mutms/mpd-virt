@@ -304,7 +304,7 @@ func syncLanHosts(ctx context.Context, t host.Target) (bool, error) {
 // serverSync pushes the rendered hosts file into VMs and has each republish
 // it via `mpd --vm-setup`. It is the way to publish a *changed* registry to
 // boxes that are already running; adoption and the lifecycle verbs
-// (`takeover`, `create`, `start`, `update`) push the current file on their
+// (`adopt`, `create`, `start`, `update`) push the current file on their
 // own, so a freshly adopted box is never blind to the LAN names.
 //
 // A VM that is down is reported, not fatal: the records are static LAN

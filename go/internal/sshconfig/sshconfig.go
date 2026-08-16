@@ -102,12 +102,12 @@ func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 // why they still work when it is down.
 //
 // Host keys are pinned, never ignored: every stanza points at the box's own
-// known_hosts file (~/.mpd-virt/<NNN>/known_hosts — takeover records the key
+// known_hosts file (~/.mpd-virt/<NNN>/known_hosts — adoption records the key
 // on first contact) with a stable HostKeyAlias, so the pin survives DHCP
 // churn and a changed key is refused instead of silently accepted. The box
 // key is stored under the bare name (mpd-<NNN>) and the runtime container's
 // under mpd-<NNN>-runtime; both live in the same per-box file, which
-// `delete` retires with the box.
+// `remove` retires with the box.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)

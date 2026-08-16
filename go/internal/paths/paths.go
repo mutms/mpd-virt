@@ -13,7 +13,7 @@ import (
 )
 
 // Root is ~/.mpd-virt (or $MPD_VIRT_ROOT) — everything mpd-virt owns on
-// the host. Holds conf/ (identity, survives delete) and per-box dirs.
+// the host. Holds conf/ (identity, survives remove) and per-box dirs.
 func Root() string {
 	if r := os.Getenv("MPD_VIRT_ROOT"); r != "" {
 		return r
@@ -21,7 +21,7 @@ func Root() string {
 	return filepath.Join(home(), ".mpd-virt")
 }
 
-// Conf is ~/.mpd-virt/conf — identity that survives `delete` (CA, certs).
+// Conf is ~/.mpd-virt/conf — identity that survives `remove` (CA, certs).
 func Conf() string { return filepath.Join(Root(), "conf") }
 
 // CARoot is ~/.mpd-virt/conf/caroot — the root CA keypair.
@@ -75,16 +75,16 @@ func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }
 
 // KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the box's pinned ssh host
-// key, recorded on first contact (takeover/create) under the stable
+// key, recorded on first contact (adopt/create) under the stable
 // HostKeyAlias mpd-<NNN> and refused if it ever changes. Per-box so
-// `delete` retires the pin with the box and a re-created box at the same
+// `remove` retires the pin with the box and a re-created box at the same
 // id starts a fresh first-contact.
 func KnownHosts(id vmid.ID) string { return filepath.Join(VMDir(id), "known_hosts") }
 
 // EnsureKnownHosts is KnownHosts with the box directory created: ssh
 // records a first-contact key into the file but never creates parent
 // directories, and the box dir does not exist yet at the very first
-// connection of a takeover or create.
+// connection of an adoption or create.
 func EnsureKnownHosts(id vmid.ID) string {
 	_ = os.MkdirAll(VMDir(id), 0o700)
 	return KnownHosts(id)

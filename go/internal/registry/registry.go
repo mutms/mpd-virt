@@ -4,7 +4,7 @@
 // Simplified for the container/general world:
 // the Parallels-only fields (uuid, disk, ram) are gone. The backend (which
 // platform the box runs on) is recorded here because it is no longer
-// derivable from the id — it is supplied explicitly at takeover.
+// derivable from the id — it is supplied explicitly at adoption.
 package registry
 
 import (
@@ -38,7 +38,7 @@ func Save(e Entry) error {
 		return err
 	}
 	body := fmt.Sprintf(`# mpd-virt registry entry for %s.
-# Source of truth for takeover. Edit at your own risk.
+# Source of truth for adopt. Edit at your own risk.
 MPD_VM_OCTET=%s
 MPD_VM_NAME=%s
 MPD_VM_BACKEND=%s

@@ -21,7 +21,7 @@ type CreateOpts struct {
 }
 
 // Create provisions a fresh box for the id through its backend and returns the
-// IP it came up on, ready for takeover. Container runs the base image, waits
+// IP it came up on, ready for adoption. Container runs the base image, waits
 // for systemd, seeds the dev account + sudo + key, and reads the leased IP;
 // utm materializes a fresh VM from the Debian cloud image (utm.go). Parallels/
 // Proxmox need a template clone + cloud-init (not yet). A generic box is
@@ -33,9 +33,9 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 	case UTM:
 		return utmCreate(ctx, out, id, opts)
 	case Parallels, Proxmox:
-		return "", fmt.Errorf("create is not implemented for the %s backend yet (needs a template clone + cloud-init) — create the box yourself, then `mpd-virt takeover`", be)
+		return "", fmt.Errorf("create is not implemented for the %s backend yet (needs a template clone + cloud-init) — create the box yourself, then `mpd-virt adopt`", be)
 	default:
-		return "", fmt.Errorf("a %s box is adopted, not created — use `mpd-virt takeover %s <IP> --backend %s`", be, id.String(), be)
+		return "", fmt.Errorf("a %s box is adopted, not created — use `mpd-virt adopt %s <IP> --backend %s`", be, id.String(), be)
 	}
 }
 
@@ -123,7 +123,7 @@ func waitSystemd(ctx context.Context, name string) error {
 
 // seedIdentity adds the dev account, passwordless sudo, and the authorized key
 // to a freshly booted container over `container exec` — the same steps the
-// containers/apple setup script does by hand, so takeover finds a box it can
+// containers/apple setup script does by hand, so adoption finds a box it can
 // ssh into. Idempotent: re-running rotates the key.
 func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 	sudoers := "/etc/sudoers.d/90-" + user
@@ -161,7 +161,7 @@ func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 // still answer from the local hosts files, so nothing looks wrong until
 // the runtime's first apt-get cannot resolve deb.debian.org.
 //
-// This is the container equivalent of what mpd-prepare-takeover.sh does
+// This is the container equivalent of what mpd-prepare-adopt.sh does
 // for a VM by putting the link on systemd-networkd — which is not an
 // option here, since DHCP would fight the runtime for an address it
 // assigned itself.

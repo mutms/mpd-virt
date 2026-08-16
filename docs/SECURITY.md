@@ -29,9 +29,9 @@ boundary is documented where it is implemented (the mpd repo's
 
 The box's ssh host key is what proves the machine at an address is the box
 that was adopted — key auth cannot stand in for it (a rogue endpoint can
-accept an authentication it never verified), and takeover pushes CA material
-to whatever answers. So the key is pinned: first contact (takeover/create)
-records it into `~/.mpd-virt/<NNN>/known_hosts`, takeover prints the
+accept an authentication it never verified), and adoption pushes CA material
+to whatever answers. So the key is pinned: first contact (adopt/create)
+records it into `~/.mpd-virt/<NNN>/known_hosts`, adopt prints the
 fingerprint for comparison against the box's console, and every later
 connection — mpd-virt's own verbs and the managed `~/.ssh/config` aliases
 alike — refuses a changed key (`StrictHostKeyChecking accept-new` against
@@ -41,7 +41,7 @@ continuity instead of getting a fresh trust-on-first-use.
 
 A legitimately re-keyed box (rebuilt, rolled back to a snapshot) is the one
 case the refusal message names, with the exact `ssh-keygen -R` to run;
-`delete` retires the pin with the box.
+`remove` retires the pin with the box.
 
 ## What rides the WireGuard overlay
 
@@ -68,7 +68,7 @@ the runtime container.
 
 What executes on a box before mpd is built there is pinned: the stage-0
 bootstrap scripts are fetched at a commit hash (`bootstrapRef` in
-`internal/cli/takeover.go`), and the Debian cloud image the utm backend
+`internal/cli/adopt.go`), and the Debian cloud image the utm backend
 downloads is verified against a pinned SHA-512 (`internal/backend/
 cloudinit.go`) over an https-only redirect chain. The mpd checkout itself —
 and `update` — deliberately track `mutms/mpd` main: that repo is part of the
@@ -99,7 +99,7 @@ another VM's zone, and not names issued directly under `mpd.test`. The root's
 own `permitted;DNS:mpd.test` constraint means trusting it can vouch for no
 domain outside `*.mpd.test`, which is what makes System-Keychain trust safe.
 The VM CA lives under `~/.mpd-virt/<NNN>/` rather than `conf/` because that
-is its lifetime: `delete` takes it with the VM, and a re-created VM at the
+is its lifetime: `remove` takes it with the adoption, and a re-adopted VM at the
 same id gets a fresh one. Its validity is capped by whatever the root has
 left, since nothing may outlive its issuer.
 

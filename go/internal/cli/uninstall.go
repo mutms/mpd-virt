@@ -14,11 +14,11 @@ import (
 )
 
 // uninstallCmd removes mpd-virt from this Mac. It stops every adopted box
-// (without deleting it — boxes stay re-takeover-able) and wipes mpd-virt's host
+// (without deleting it — boxes stay re-adoption-able) and wipes mpd-virt's host
 // state (the registry under ~/.mpd-virt and the ssh-config blocks). It does not
 // touch VM data, so it is fully recoverable.
 //
-// Two things are deliberately KEPT. The root CA, so a later takeover reuses
+// Two things are deliberately KEPT. The root CA, so a later adoption reuses
 // the same trust anchor instead of minting a fresh-fingerprint CA the dev
 // would have to re-trust everywhere. And mpd-virt.env, because it is the
 // dev's own writing rather than state mpd-virt generated — losing it to a
@@ -34,10 +34,10 @@ func uninstallCmd() *cobra.Command {
 		Short: "Remove mpd-virt from this Mac: stop boxes (keep them) + wipe host state (keep the root CA + your mpd-virt.env)",
 		Long: "Stops every adopted box through its backend (container/parallels/utm;\n" +
 			"generic/proxmox are left running) WITHOUT deleting any — they stay\n" +
-			"re-takeover-able. Then wipes mpd-virt's host state under ~/.mpd-virt/\n" +
+			"re-adoption-able. Then wipes mpd-virt's host state under ~/.mpd-virt/\n" +
 			"and every ~/.ssh/config managed block. No VM data is touched, so this\n" +
 			"is fully recoverable.\n\n" +
-			"The root CA is KEPT (~/.mpd-virt/conf/caroot) so a later takeover\n" +
+			"The root CA is KEPT (~/.mpd-virt/conf/caroot) so a later adoption\n" +
 			"reuses it with no re-trust, and so is your own mpd-virt.env — this\n" +
 			"tool never wrote it and cannot reproduce it. mpd-proxy and the CA's\n" +
 			"keychain trust are separate — it reports those follow-ups. Requires\n" +
@@ -74,7 +74,7 @@ func uninstallCmd() *cobra.Command {
 			// 3. Report what was kept and the follow-ups this tool won't do for you.
 			fmt.Print("\nmpd-virt host state removed. Finish up:\n")
 			if _, err := os.Stat(ca.RootCertPath()); err == nil {
-				fmt.Printf("  • Root CA kept at %s — a later `takeover` reuses this trust\n"+
+				fmt.Printf("  • Root CA kept at %s — a later `adopt` reuses this trust\n"+
 					"    anchor (no re-trust). Delete it by hand only if you want a fresh CA.\n",
 					paths.CARoot())
 			} else {
@@ -83,7 +83,7 @@ func uninstallCmd() *cobra.Command {
 			reportCATrustStore(cmd.Context())
 			fmt.Print("  • mpd-proxy:  sudo mpd-proxy uninstall\n" +
 				"  • the binary:  rm ~/.local/bin/mpd-virt   (or `make uninstall`)\n\n" +
-				"The boxes are stopped, not deleted — re-adopt any later with `mpd-virt takeover <NNN> --backend <b>`.\n")
+				"The boxes are stopped, not deleted — re-adopt any later with `mpd-virt adopt <NNN> --backend <b>`.\n")
 			return nil
 		},
 	}

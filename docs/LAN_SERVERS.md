@@ -160,7 +160,7 @@ This writes `~/.mpd-virt/conf/lan-hosts`, scp's it to
 `<stateDir>/dns/lan.hosts`. VMs that are down are reported and skipped.
 
 `sync` is how you publish a *changed* registry to boxes that are already
-running. It is not the only path: `takeover` and `create` push the file
+running. It is not the only path: `adopt` and `create` push the file
 before their first `mpd --vm-setup`, `update` pushes it before
 `99-update.sh` (which re-runs vm-setup), and `start` pushes it and
 republishes when it differs. So a freshly adopted VM answers for the LAN

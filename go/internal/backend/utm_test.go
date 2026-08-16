@@ -159,8 +159,12 @@ func TestUTMLivePlumbing(t *testing.T) {
 	}
 	t.Logf("VM status after create: %q", utmVMStatus(ctx, name))
 
-	if err := utmDelete(ctx, os.Stderr, mustID(t, "199")); err != nil {
-		t.Fatalf("utmDelete: %v", err)
+	// Deleting the VM itself is UTM's business now (mpd-virt's `remove`
+	// only un-adopts), so the teardown here uses the raw scripts — the same
+	// ones create's own failure rollback runs.
+	_, _ = runOsascript(ctx, utmKillScript(name))
+	if _, err := runOsascript(ctx, utmDeleteScript(name)); err != nil {
+		t.Fatalf("utmDeleteScript: %v", err)
 	}
 	if utmVMExists(ctx, name) {
 		t.Fatal("VM still exists after delete")

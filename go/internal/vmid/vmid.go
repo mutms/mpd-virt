@@ -14,7 +14,7 @@
 //
 // The host IP is deliberately NOT here either — it is found by name
 // (resolving mpd-<NNN>) with the last known address as a fallback, or given
-// to takeover explicitly. See internal/backend.
+// to adopt explicitly. See internal/backend.
 package vmid
 
 import (
