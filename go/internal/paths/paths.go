@@ -74,6 +74,55 @@ func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 // VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a box.
 func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }
 
+// KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the box's pinned ssh host
+// key, recorded on first contact (takeover/create) under the stable
+// HostKeyAlias mpd-<NNN> and refused if it ever changes. Per-box so
+// `delete` retires the pin with the box and a re-created box at the same
+// id starts a fresh first-contact.
+func KnownHosts(id vmid.ID) string { return filepath.Join(VMDir(id), "known_hosts") }
+
+// EnsureKnownHosts is KnownHosts with the box directory created: ssh
+// records a first-contact key into the file but never creates parent
+// directories, and the box dir does not exist yet at the very first
+// connection of a takeover or create.
+func EnsureKnownHosts(id vmid.ID) string {
+	_ = os.MkdirAll(VMDir(id), 0o700)
+	return KnownHosts(id)
+}
+
+// EnsurePrivate walks ~/.mpd-virt and drops group/other permission bits
+// everywhere: directories to 0700, regular files to owner-only (keeping the
+// owner's execute bit — assets/bin scripts carry it into the boxes). Nothing
+// under the root is meant to be readable by another user — the CA keys and
+// the proxmox token outright must not be. Run on every invocation; errors
+// are ignored (a root-owned stray should not brick the CLI) and non-regular
+// files (the mpd-proxy socket) are left alone.
+func EnsurePrivate() {
+	root := Root()
+	if _, err := os.Stat(root); err != nil {
+		return
+	}
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		switch {
+		case d.IsDir():
+			_ = os.Chmod(p, 0o700)
+		case d.Type().IsRegular():
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			mode := info.Mode().Perm()&0o700 | 0o600
+			if mode != info.Mode().Perm() {
+				_ = os.Chmod(p, mode)
+			}
+		}
+		return nil
+	})
+}
+
 func home() string {
 	if h, err := os.UserHomeDir(); err == nil {
 		return h

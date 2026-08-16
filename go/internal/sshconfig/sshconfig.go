@@ -43,11 +43,14 @@
 package sshconfig
 
 import (
+	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
@@ -97,9 +100,18 @@ func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 // target the box's direct IP, and the runtime alias jumps through it — all
 // over plain SSH, independent of the mpd-proxy overlay, which is exactly
 // why they still work when it is down.
+//
+// Host keys are pinned, never ignored: every stanza points at the box's own
+// known_hosts file (~/.mpd-virt/<NNN>/known_hosts — takeover records the key
+// on first contact) with a stable HostKeyAlias, so the pin survives DHCP
+// churn and a changed key is refused instead of silently accepted. The box
+// key is stored under the bare name (mpd-<NNN>) and the runtime container's
+// under mpd-<NNN>-runtime; both live in the same per-box file, which
+// `delete` retires with the box.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)
+	knownHosts := knownHostsValue(id)
 
 	lines := []string{
 		beginMarker(id),
@@ -107,27 +119,30 @@ func render(id vmid.ID, ip, user string) string {
 		"    HostName " + runtimeHostName,
 		"    User " + user,
 		"    ProxyJump " + user + "@" + ip,
-		"    StrictHostKeyChecking no",
-		"    UserKnownHostsFile /dev/null",
+		"    StrictHostKeyChecking accept-new",
+		"    UserKnownHostsFile " + knownHosts,
+		"    HostKeyAlias " + name + "-runtime",
 		"",
 		// Both names: the alias for typing, the address because ProxyJump
 		// above names it literally and ssh matches Host patterns against
 		// the string it was given. Without the second pattern the jump
-		// would fall back to real host-key checking while `ssh <alias>`
-		// did not — same box, two behaviours.
+		// would fall back to the default known_hosts while `ssh <alias>`
+		// used the pin — same box, two behaviours.
 		"Host " + VMAlias(id) + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
-		"    StrictHostKeyChecking no",
-		"    UserKnownHostsFile /dev/null",
+		"    StrictHostKeyChecking accept-new",
+		"    UserKnownHostsFile " + knownHosts,
+		"    HostKeyAlias " + name,
 	}
 	lines = append(lines,
 		"",
 		"Host "+name+"-socks",
 		"    HostName "+ip,
 		"    User "+user,
-		"    StrictHostKeyChecking no",
-		"    UserKnownHostsFile /dev/null",
+		"    StrictHostKeyChecking accept-new",
+		"    UserKnownHostsFile "+knownHosts,
+		"    HostKeyAlias "+name,
 		"    DynamicForward "+socksPort,
 		"    ServerAliveInterval 30",
 		"    ServerAliveCountMax 3",
@@ -136,9 +151,33 @@ func render(id vmid.ID, ip, user string) string {
 	return strings.Join(lines, "\n")
 }
 
+// knownHostsValue is the per-box known_hosts path as an ssh-config value,
+// quoted if the path carries whitespace.
+func knownHostsValue(id vmid.ID) string {
+	p := paths.KnownHosts(id)
+	if strings.ContainsAny(p, " \t") {
+		return `"` + p + `"`
+	}
+	return p
+}
+
 // Write inserts (or replaces) the managed block for a box, creating ~/.ssh
 // and the config file if missing. Idempotent.
+//
+// The ip and user are validated here at the sink, not only at their
+// sources: this function writes into ~/.ssh/config, where a value carrying
+// whitespace or config syntax would become directives ssh obeys for other
+// hosts. Discovery upstream already validates addresses, but that guard
+// must not be the only one in front of this file.
 func Write(id vmid.ID, ip, user string) error {
+	if a, err := netip.ParseAddr(ip); err != nil || !a.Is4() {
+		return fmt.Errorf("refusing to write ssh config for %s: %q is not an IPv4 address", id.Name(), ip)
+	}
+	if user == "" || strings.ContainsFunc(user, func(r rune) bool {
+		return r <= ' ' || r == '"' || r == 0x7f
+	}) {
+		return fmt.Errorf("refusing to write ssh config for %s: invalid user %q", id.Name(), user)
+	}
 	if err := ensureFile(); err != nil {
 		return err
 	}

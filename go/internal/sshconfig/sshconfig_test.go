@@ -9,6 +9,13 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
+// keep tests off the developer's real ~/.mpd-virt for the known_hosts path
+// rendered into the block.
+func useTempRoot(t *testing.T) {
+	t.Helper()
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+}
+
 func testID(t *testing.T, n int) vmid.ID {
 	t.Helper()
 	id, err := vmid.Parse(itoa(n))
@@ -24,6 +31,7 @@ func itoa(n int) string {
 
 func useTempConfig(t *testing.T) string {
 	t.Helper()
+	useTempRoot(t)
 	path := filepath.Join(t.TempDir(), "config")
 	t.Setenv("MPD_VIRT_SSH_CONFIG", path)
 	return path
@@ -53,6 +61,13 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		"Host mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
+		// Host keys are pinned per box, never ignored: every stanza binds
+		// to the box's known_hosts under a stable alias, refusing changed
+		// keys (accept-new records first contact only).
+		"    StrictHostKeyChecking accept-new\n",
+		"    HostKeyAlias mpd-158\n",
+		"    HostKeyAlias mpd-158-runtime\n",
+		"    UserKnownHostsFile ",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("managed block should contain %q:\n%s", want, got)
@@ -62,9 +77,37 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		"-php", "-node", "-util", "runtime.runtime.", "runtime.158.mpd.test",
 		"Host mpd-158\n    HostName 10.1.10.158\n", // the pre-swap meaning
 		"Host mpd-158-runtime\n",
+		// The old disabled-verification block must never come back: it let
+		// anything that occupied the box's address impersonate it.
+		"StrictHostKeyChecking no",
+		"/dev/null",
 	} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf("managed block must not contain %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, filepath.Join("158", "known_hosts")) {
+		t.Errorf("known_hosts should live in the box's own dir:\n%s", got)
+	}
+}
+
+// Write is the last line of defense in front of ~/.ssh/config: values that
+// are not a literal IPv4 address or a sane username must be refused, or a
+// hostile discovery source could smuggle config directives.
+func TestWriteRefusesNonAddressValues(t *testing.T) {
+	useTempConfig(t)
+	id := testID(t, 158)
+
+	for _, bad := range []struct{ ip, user string }{
+		{"not-an-ip", "dev"},
+		{"10.1.10.158\nProxyCommand evil", "dev"},
+		{"fe80::1", "dev"}, // v6 is not a candidate the overlay produces
+		{"10.1.10.158", "dev user"},
+		{"10.1.10.158", "dev\"x"},
+		{"10.1.10.158", ""},
+	} {
+		if err := Write(id, bad.ip, bad.user); err == nil {
+			t.Errorf("Write(%q, %q) should have been refused", bad.ip, bad.user)
 		}
 	}
 }

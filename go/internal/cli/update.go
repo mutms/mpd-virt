@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
@@ -38,7 +37,12 @@ func updateCmd() *cobra.Command {
 			if user == "" {
 				user = e.User
 			}
-			t := host.Target{User: user, Host: e.IP}
+			t := boxTarget(id, user, e.IP)
+			// One classified check up front: a refused host key stops the
+			// update with the remedy, before anything is pushed or run.
+			if err := t.CheckReachable(cmd.Context()); err != nil {
+				return err
+			}
 
 			// Refresh the LAN names before the update runs: 99-update.sh
 			// re-runs `mpd --vm-setup`, which republishes whatever file is

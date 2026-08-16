@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -47,8 +48,18 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 	type candidate struct{ ip, label string }
 	var cands []candidate
 	seen := map[string]bool{}
+	// Every candidate is validated as a literal IPv4 address, whatever its
+	// source claimed. Discovery consumes attacker-influenceable strings —
+	// prlctl's ip_configured is guest-reported, mDNS answers come from
+	// whoever is on the LAN — and the winner ends up in the registry and
+	// ~/.ssh/config, so nothing that is not an address may pass this point.
 	add := func(ip, source string) {
-		if ip == "" || seen[ip] {
+		a, err := netip.ParseAddr(strings.TrimSpace(ip))
+		if err != nil || !a.Is4() {
+			return
+		}
+		ip = a.String()
+		if seen[ip] {
 			return
 		}
 		seen[ip] = true

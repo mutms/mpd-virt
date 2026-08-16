@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"time"
@@ -70,6 +71,13 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	if err != nil {
 		return false, err
 	}
+	// The one VM-controlled string that crosses into a privileged Mac
+	// process (mpd-proxy runs as root) — validated here at the boundary,
+	// whatever the daemon's own parsing does: exactly a WireGuard key, 32
+	// bytes of base64, nothing else rides along.
+	if err := validateWGKey(vmPub); err != nil {
+		return false, fmt.Errorf("box returned an invalid wg0 public key: %w", err)
+	}
 	vm := proxy.VM{
 		ID:        id.String(),
 		PublicKey: vmPub,
@@ -88,6 +96,23 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	}
 	pass("mpd-proxy peer " + vm.Endpoint + " → " + vm.AllowedIPs[0] + " (DNS via " + vm.Resolver + ")")
 	return true, nil
+}
+
+// validateWGKey requires s to be exactly a WireGuard public key: standard
+// base64 of 32 bytes (44 characters). Everything else — extra lines, shell
+// noise, an error message a hostile sshd substituted — is refused.
+func validateWGKey(s string) error {
+	if len(s) != 44 {
+		return fmt.Errorf("got %d characters, want 44", len(s))
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return fmt.Errorf("not base64: %v", err)
+	}
+	if len(raw) != 32 {
+		return fmt.Errorf("decodes to %d bytes, want 32", len(raw))
+	}
+	return nil
 }
 
 // printSocksHint tells the user how to reach the box without mpd-proxy: the
@@ -156,7 +181,13 @@ func startCmd() *cobra.Command {
 			if err := sshconfig.Write(id, ip, user); err != nil {
 				return fmt.Errorf("ssh config: %w", err)
 			}
-			t := host.Target{User: user, Host: ip}
+			t := boxTarget(id, user, ip)
+			// Gate everything on one classified reachability check: a
+			// refused host key must stop the verb with the remedy in
+			// view, not degrade into a string of push warnings.
+			if err := t.CheckReachable(cmd.Context()); err != nil {
+				return err
+			}
 			// LAN names, before reachability rather than after: a changed
 			// file republishes via `mpd --vm-setup`, which restarts wg0 and
 			// would drop the mpd-proxy peer added below. Unchanged — the

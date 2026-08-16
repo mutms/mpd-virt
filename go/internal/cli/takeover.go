@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os/user"
+	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/ca"
@@ -16,9 +18,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// bootstrapRef pins the stage-0 bootstrap scripts — the two steps that are
+// piped straight from GitHub into bash with passwordless sudo behind them,
+// before any checkout exists on the box to audit. A commit hash, not a
+// branch: what runs is exactly what was reviewed when the pin was bumped,
+// not whatever `main` holds at that instant. Bump deliberately, like the
+// cloud-image pin. (The clone itself, and `update`, deliberately track
+// mpd's main — that is the platform's own trust decision, and the checkout
+// at least leaves auditable history on the box; see docs/SECURITY.md.)
+const bootstrapRef = "039ec2da7d784f5864efadd081d6677c7da5c152"
+
 // bootstrapBaseURL is where the two wget'able bootstrap steps fetch
-// themselves from. The rest run from the checkout 20-git-clone lands.
-const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/main/bootstrap"
+// themselves from, at the pinned ref. The rest run from the checkout
+// 20-git-clone lands.
+const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/" + bootstrapRef + "/bootstrap"
 
 // takeoverCmd adopts a box as mpd-<NNN>, installing mpd from source.
 //
@@ -70,7 +83,14 @@ func takeoverCmd() *cobra.Command {
 			}
 			ip := ""
 			if len(args) == 2 {
-				ip = args[1]
+				// The same rule locate() enforces on discovered candidates:
+				// only a literal IPv4 address reaches the registry and
+				// ~/.ssh/config, even when typed by hand.
+				a, err := netip.ParseAddr(args[1])
+				if err != nil || !a.Is4() {
+					return fmt.Errorf("%q is not an IPv4 address — takeover takes the box's literal address", args[1])
+				}
+				ip = a.String()
 			} else if ip, err = backend.Start(cmd.Context(), cmd.OutOrStdout(), id, be); err != nil {
 				return fmt.Errorf("%w\n    or pass the IP explicitly: mpd-virt takeover %s <IP> --backend %s",
 					err, id.String(), be)
@@ -97,17 +117,28 @@ func defaultUser() string {
 }
 
 func runTakeover(ctx context.Context, id vmid.ID, ip, username string, be backend.Backend) error {
-	t := host.Target{User: username, Host: ip}
+	if strings.ContainsAny(username, " \t\"") || username == "" {
+		// Checked up front: the same rule sshconfig.Write enforces at the
+		// end, but failing after the full bootstrap would waste ten minutes.
+		return fmt.Errorf("invalid --username %q", username)
+	}
+	t := boxTarget(id, username, ip)
 	fmt.Printf("takeover %s at %s@%s  (backend=%s, zone=%s)\n\n",
 		id.Name(), username, ip, be, id.Zone())
 
 	// --- Identity conformance. Key auth + hostname are two independent
 	//     confirmations that the box here is the one meant; refuse on any
 	//     mismatch. mpd need NOT be present — takeover installs it.
+	//     The first contact records the box's host key into
+	//     ~/.mpd-virt/<NNN>/known_hosts (under the alias mpd-<NNN>); every
+	//     later connection — this run's and every verb after — refuses a
+	//     changed key. The fingerprint is printed so it can be compared
+	//     against the box's console while the adoption is fresh.
 	if err := t.CheckReachable(ctx); err != nil {
 		return err
 	}
 	pass("SSH key auth")
+	printHostKeyFingerprint(ctx, id)
 
 	got, err := t.Line(ctx, "hostname")
 	if err != nil {

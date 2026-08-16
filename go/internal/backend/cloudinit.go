@@ -2,6 +2,8 @@ package backend
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -21,10 +23,14 @@ import (
 // curl, tar, hdiutil — so nothing needs installing.
 
 // Debian Trixie generic-cloud, arm64. Bump in lockstep with the sibling
-// mpd's image pin when refreshing.
+// mpd's image pin when refreshing — all three constants together: the
+// SHA-512 comes from the SHA512SUMS file in the same dated directory, and
+// pinning it means the archive that becomes every VM's operating system is
+// exactly the published one, whatever a mirror or CDN served.
 const (
-	cloudBase    = "https://cloud.debian.org/images/cloud/trixie/20260722-2547"
-	cloudArchive = "debian-13-genericcloud-arm64-20260722-2547.tar.xz"
+	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20260722-2547"
+	cloudArchive       = "debian-13-genericcloud-arm64-20260722-2547.tar.xz"
+	cloudArchiveSHA512 = "becf76bfdd7870086b6207a1604afc27bf1742ced01f867b10612d7aed288684970832c41612680ea5d5d93896f8f0b13a6c70671f16c00b54782eecf81e4426"
 )
 
 func cachedArchivePath() string { return filepath.Join(paths.CloudImages(), cloudArchive) }
@@ -45,8 +51,10 @@ func ensureBaseArchive(ctx context.Context, out io.Writer) (string, error) {
 	partial := dst + ".partial"
 	url := cloudBase + "/" + cloudArchive
 	fmt.Fprintf(out, "  ▶ downloading %s (~200 MB, first create only) …\n", cloudArchive)
+	// --proto '=https' pins the whole redirect chain to TLS — -L must never
+	// be talked down to plaintext, wherever the mirror sends us.
 	code, err := exec.Run(ctx, exec.Cmd{Name: "curl", Args: []string{
-		"-L", "--fail", "--progress-bar", "-o", partial, url,
+		"-L", "--fail", "--proto", "=https", "--progress-bar", "-o", partial, url,
 	}})
 	if err != nil {
 		return "", err
@@ -55,10 +63,36 @@ func ensureBaseArchive(ctx context.Context, out io.Writer) (string, error) {
 		_ = os.Remove(partial)
 		return "", fmt.Errorf("curl failed to download %s (exit %d)", url, code)
 	}
+	if err := verifySHA512(partial, cloudArchiveSHA512); err != nil {
+		_ = os.Remove(partial)
+		return "", fmt.Errorf("downloaded %s failed verification: %w", cloudArchive, err)
+	}
+	fmt.Fprintf(out, "  ✓ archive SHA-512 verified\n")
 	if err := os.Rename(partial, dst); err != nil {
 		return "", err
 	}
 	return dst, nil
+}
+
+// verifySHA512 streams the file and compares its SHA-512 to want (lowercase
+// hex). The archive becomes the OS of every VM this backend creates, so a
+// mismatch — a truncated download, a tampering mirror — is fatal, never a
+// warning.
+func verifySHA512(path, want string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha512.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		return fmt.Errorf("SHA-512 mismatch:\n  got  %s\n  want %s", got, want)
+	}
+	return nil
 }
 
 // materializeDisk produces a per-VM disk at destPath: extract the raw from

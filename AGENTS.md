@@ -132,6 +132,12 @@ changed.
 
 All ride plain SSH to the box, so they work even when mpd-proxy is down.
 
+Every stanza pins the box's ssh host key: first contact (takeover/create)
+records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
+`mpd-<NNN>` (`HostKeyAlias`, so DHCP churn does not reset the pin), and a
+changed key is refused — by the aliases and by mpd-virt's own verbs alike.
+See `docs/SECURITY.md` for why that pin is the identity of the box.
+
 ## Registry
 
 One `~/.mpd-virt/<NNN>/env` file per adopted VM, shell-style:
@@ -164,10 +170,16 @@ MPD_VM_USER=skodak
 │   └── sans                       ← issued SAN list, so a re-issue reproduces it
 └── <NNN>/                         ← per-VM, removed by `delete`
     ├── env                        ← registry entry (see Registry above)
+    ├── known_hosts                ← the box's pinned ssh host key (alias mpd-<NNN>)
     └── ca/
         ├── vmCA.pem               ← this VM's signing CA, signed by the root
         └── vmCA-key.pem           ← 0600. Pushed to the VM
 ```
+
+The whole tree is owner-only: every invocation re-asserts 0700 on
+directories and strips group/other bits from files (owner execute bits on
+`assets/` scripts survive). Nothing under `~/.mpd-virt` is another user's
+to read — least of all the CA keys and the proxmox token.
 
 Two environment overrides exist, mostly for tests and dry-runs:
 `MPD_VIRT_ROOT` relocates `~/.mpd-virt`, and `MPD_VIRT_SSH_CONFIG` points the

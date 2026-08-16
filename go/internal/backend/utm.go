@@ -109,7 +109,13 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 		return "", err
 	}
 
-	t := host.Target{User: opts.User, Host: canonIP}
+	// Pin the fresh VM's host key from the very first contact, in the same
+	// per-box file takeover will use — the key recorded while cloud-init's
+	// output is still on the UTM console carries through the whole lifecycle.
+	t := host.Target{
+		User: opts.User, Host: canonIP,
+		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: id.Name(),
+	}
 	if !waitReachable(ctx, t, 300*time.Second) {
 		return "", fmt.Errorf("UTM VM %s did not come up at %s within 5 min — cloud-init may still be running or have failed; open the UTM console to inspect", name, canonIP)
 	}

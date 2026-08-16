@@ -15,24 +15,52 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/exec"
 )
 
-// Target identifies a box: a user at an address.
+// Target identifies a box: a user at an address, plus where its ssh host
+// key is pinned.
 type Target struct {
 	User string
 	Host string
+	// KnownHostsFile pins the box's host key in a per-box file (recorded on
+	// first contact, refused if it ever changes). Empty falls back to the
+	// user's own ~/.ssh/known_hosts — only for targets that are not adopted
+	// boxes (a LAN probe, a not-yet-created VM).
+	KnownHostsFile string
+	// HostKeyAlias stores and looks up the host key under a stable name
+	// (mpd-<NNN>) instead of the current address, so a box that moves to a
+	// new DHCP lease keeps its key continuity instead of a fresh TOFU.
+	HostKeyAlias string
 }
 
 func (t Target) addr() string { return t.User + "@" + t.Host }
 
 // sshArgs are the non-interactive options every mpd-virt ssh call uses:
 // key auth only (no password prompt), accept a new host key on first
-// contact, and a short connect timeout. remote is the command to run.
+// contact but NEVER a changed one, and a short connect timeout. remote is
+// the command to run. The known-hosts file and alias are passed explicitly
+// so the pinning holds even though the managed ~/.ssh/config block matches
+// the box's bare IP (command-line options win over config-file ones).
 func (t Target) sshArgs(remote string) []string {
-	return []string{
+	args := []string{
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ConnectTimeout=6",
-		t.addr(), remote,
 	}
+	if t.KnownHostsFile != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+quoteIfSpaces(t.KnownHostsFile))
+	}
+	if t.HostKeyAlias != "" {
+		args = append(args, "-o", "HostKeyAlias="+t.HostKeyAlias)
+	}
+	return append(args, t.addr(), remote)
+}
+
+// quoteIfSpaces wraps a path in double quotes when it contains whitespace —
+// -o values go through ssh's config-line parser, which splits on spaces.
+func quoteIfSpaces(p string) string {
+	if strings.ContainsAny(p, " \t") {
+		return `"` + p + `"`
+	}
+	return p
 }
 
 // Run executes a remote command over ssh and captures its output.
@@ -90,15 +118,23 @@ func (t Target) classify(detail string) error {
 	switch {
 	case strings.Contains(detail, "REMOTE HOST IDENTIFICATION HAS CHANGED"),
 		strings.Contains(detail, "Host key verification failed"):
-		return fmt.Errorf(`the host key of %s does not match the one in known_hosts.
+		name, file, where := t.Host, "", "known_hosts"
+		if t.HostKeyAlias != "" {
+			name = t.HostKeyAlias
+		}
+		if t.KnownHostsFile != "" {
+			file = " -f " + t.KnownHostsFile
+			where = t.KnownHostsFile
+		}
+		return fmt.Errorf(`the host key of %s does not match the one pinned in %s.
 
 Expected when the box was rolled back to a snapshot or rebuilt on the
 same address. If you did neither, do not clear it — that is the warning
 working.
 
-    ssh-keygen -R %s
+    ssh-keygen -R %s%s
 
-then re-run this command.`, t.Host, t.Host)
+then re-run this command.`, t.Host, where, name, file)
 
 	case strings.Contains(detail, "Permission denied"):
 		return fmt.Errorf("%s refused key auth — is this Mac's public key in ~/.ssh/authorized_keys on the box?", t.addr())
@@ -208,15 +244,21 @@ func (t Target) WriteRemote(ctx context.Context, content, remotePath, mode strin
 	return t.Install(ctx, tmp.Name(), remotePath, mode)
 }
 
-// scpArgs mirror sshArgs: non-interactive, key auth, accept a new host
-// key, short timeout. dest is the remote path (this host's side).
+// scpArgs mirror sshArgs — same options, same host-key pinning. dest is
+// the remote path (this host's side).
 func (t Target) scpArgs(localPath, dest string) []string {
-	return []string{
+	args := []string{
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ConnectTimeout=6",
-		localPath, t.addr() + ":" + dest,
 	}
+	if t.KnownHostsFile != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+quoteIfSpaces(t.KnownHostsFile))
+	}
+	if t.HostKeyAlias != "" {
+		args = append(args, "-o", "HostKeyAlias="+t.HostKeyAlias)
+	}
+	return append(args, localPath, t.addr()+":"+dest)
 }
 
 // scpTreeArgs are scpArgs for a directory: -r to recurse and -p to keep

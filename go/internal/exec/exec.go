@@ -25,6 +25,9 @@ import (
 var allowed = map[string]bool{
 	"ssh": true,
 	"scp": true,
+	// ssh-keygen renders the pinned host-key fingerprint at takeover, so the
+	// first-contact key is shown for comparison against the box's console.
+	"ssh-keygen": true,
 	// Backend power control (start/stop): the native Apple container CLI and
 	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the box.
 	"container": true,
@@ -64,12 +67,21 @@ func (r Result) Failed() bool { return r.Code != 0 }
 // own os.Stdout / os.Stderr. Same error contract as Capture: a non-zero
 // exit is not an error, only a failure to start (or a disallowed name).
 // Used for the long, verbose bootstrap steps a caller wants to watch.
+//
+// ssh output is remote output — a box this tool's own threat model calls
+// compromised — so it streams through the terminal sanitizer (SGR colors
+// pass, every other escape sequence is dropped). Local tools (curl's
+// progress bar needs the real tty) stream untouched.
 func Run(ctx context.Context, cmd Cmd) (int, error) {
 	if !allowed[cmd.Name] {
 		return -1, fmt.Errorf("command %q is not allow-listed in internal/exec", cmd.Name)
 	}
 	c := osexec.CommandContext(ctx, cmd.Name, cmd.Args...)
-	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if cmd.Name == "ssh" {
+		c.Stdout, c.Stderr = newFilterWriter(os.Stdout), newFilterWriter(os.Stderr)
+	} else {
+		c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	}
 	if err := c.Run(); err != nil {
 		var ee *osexec.ExitError
 		if errors.As(err, &ee) {
@@ -83,6 +95,12 @@ func Run(ctx context.Context, cmd Cmd) (int, error) {
 // Capture runs cmd and captures stdout and stderr separately, with
 // trailing newlines trimmed. A non-zero exit is NOT an error: err is
 // non-nil only when the command is not allow-listed or could not start.
+//
+// Both streams are scrubbed of terminal escape sequences and stray control
+// bytes before anything parses or prints them: ssh output is remote (and so
+// untrusted), and even local tools relay guest-influenced strings (prlctl's
+// guest-reported fields, container inspect). Nothing captured here is
+// binary, so the scrub is loss-free for every legitimate caller.
 func Capture(ctx context.Context, cmd Cmd) (Result, error) {
 	if !allowed[cmd.Name] {
 		return Result{Code: -1}, fmt.Errorf("command %q is not allow-listed in internal/exec", cmd.Name)
@@ -93,8 +111,8 @@ func Capture(ctx context.Context, cmd Cmd) (Result, error) {
 
 	err := c.Run()
 	res := Result{
-		Stdout: strings.TrimRight(stdout.String(), "\n"),
-		Stderr: strings.TrimRight(stderr.String(), "\n"),
+		Stdout: Sanitize(strings.TrimRight(stdout.String(), "\n")),
+		Stderr: Sanitize(strings.TrimRight(stderr.String(), "\n")),
 	}
 	if err != nil {
 		var ee *osexec.ExitError

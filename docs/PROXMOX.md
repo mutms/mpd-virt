@@ -24,7 +24,11 @@ TOKEN_ID=<copy_from_dialog>
 TOKEN_SECRET=<copy_from_dialog>
 ```
 `TOKEN_ID` and `TOKEN_SECRET` are the two values the token-creation dialog
-shows, copied verbatim — no quotes, no angle brackets.
+shows, copied verbatim — no quotes, no angle brackets. The file holds a
+secret: `chmod 600` it (mpd-virt re-asserts owner-only permissions on the
+whole `~/.mpd-virt` tree on every run, but there is no reason to leave it
+readable even once). Grant the token only the `mpd-virt` role from step 1,
+scoped to the mpd VMs — power control and state are all it ever needs.
 
 The API endpoint's TLS certificate must be trusted on the Mac: either serve
 an mpd-CA-signed certificate on the Proxmox host, or add its CA to the System

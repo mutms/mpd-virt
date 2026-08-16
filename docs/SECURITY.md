@@ -12,11 +12,73 @@ A Mac compromise gives you everything.
 A *VM* compromise (e.g. via a malicious project) does not climb back to
 the Mac: the root CA's private key is not on the VM (only the name-constrained
 per-VM intermediate is), and SSH is one-way — the VM holds no keys to reach
-the Mac.
+the Mac. The few strings a box reports back (its hostname, file digests, the
+wg0 public key) are consumed inertly: external commands on the Mac go through
+`internal/exec`'s allow-list with argument vectors (no shell), captured output
+is scrubbed of terminal escape sequences before anything prints or parses it,
+the wg key is validated to be exactly a key before it reaches the
+root-privileged mpd-proxy, and every discovered address must parse as a
+literal IPv4 address before it may enter the registry or `~/.ssh/config`
+(which validates again at the sink).
 
 This is the host-side half of the boundary only. The VM-side reachability
 boundary is documented where it is implemented (the mpd repo's
 `docs/SECURITY.md` and mpd-proxy).
+
+## Host key continuity
+
+The box's ssh host key is what proves the machine at an address is the box
+that was adopted — key auth cannot stand in for it (a rogue endpoint can
+accept an authentication it never verified), and takeover pushes CA material
+to whatever answers. So the key is pinned: first contact (takeover/create)
+records it into `~/.mpd-virt/<NNN>/known_hosts`, takeover prints the
+fingerprint for comparison against the box's console, and every later
+connection — mpd-virt's own verbs and the managed `~/.ssh/config` aliases
+alike — refuses a changed key (`StrictHostKeyChecking accept-new` against
+the per-box file). The pin is stored under the stable alias `mpd-<NNN>`
+(`HostKeyAlias`), so a box that moves to a new DHCP lease keeps its
+continuity instead of getting a fresh trust-on-first-use.
+
+A legitimately re-keyed box (rebuilt, rolled back to a snapshot) is the one
+case the refusal message names, with the exact `ssh-keygen -R` to run;
+`delete` retires the pin with the box.
+
+## What rides the WireGuard overlay
+
+The overlay is Mac → VM by intent, but WireGuard has no notion of direction —
+which would leave every Mac listener bound to 0.0.0.0 (dev servers, debug
+ports) reachable from a compromised box. mpd-proxy therefore filters inbound
+tunnel traffic down to replies inside its own process (its `filter.go`, on
+the utun between WireGuard's decrypt and the kernel — no pf rules, nothing
+else to install): VM-initiated TCP connections and inbound probes are
+dropped; only responses to traffic the Mac originated pass. The SOCKS tier
+has no equivalent exposure — a `DynamicForward` opens no server-to-client
+channels.
+
+Two consequences worth knowing. The SOCKS browser proxies *everything*
+(remote DNS included) through the compromised-by-assumption box — full
+visibility, plain-HTTP tampering — so "a dedicated browser" is load-bearing,
+not a convenience. And an agent or IDE is only inside the boundary when it
+runs inside the box: an AI agent running on the Mac that merely SSHes into
+the runtime keeps its Mac-side tools, and a prompt injection in hostile
+project code walks straight back out through them. Run the agent binary in
+the runtime container.
+
+## Supply-chain pins
+
+What executes on a box before mpd is built there is pinned: the stage-0
+bootstrap scripts are fetched at a commit hash (`bootstrapRef` in
+`internal/cli/takeover.go`), and the Debian cloud image the utm backend
+downloads is verified against a pinned SHA-512 (`internal/backend/
+cloudinit.go`) over an https-only redirect chain. The mpd checkout itself —
+and `update` — deliberately track `mutms/mpd` main: that repo is part of the
+trusted computing base, and the checkout leaves auditable history on the box
+that pipe-to-bash never would. Bump both pins deliberately, together with a
+review of what changed.
+
+Everything under `~/.mpd-virt` is owner-only (0700/0600, re-asserted on
+every run); nothing there — CA keys, the proxmox API token, pinned host
+keys — is any other user's to read.
 
 ## Why two CAs
 

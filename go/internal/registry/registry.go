@@ -10,6 +10,7 @@ package registry
 import (
 	"bufio"
 	"fmt"
+	"net/netip"
 	"os"
 	"sort"
 	"strings"
@@ -28,10 +29,12 @@ type Entry struct {
 }
 
 // Save writes (or overwrites) the env file for a box, creating the
-// <NNN>/ directory as needed.
+// <NNN>/ directory as needed. Owner-only modes, like everything under
+// ~/.mpd-virt — the entry holds no secret, but the directory beside it
+// holds the box's CA key and pinned host key.
 func Save(e Entry) error {
 	dir := paths.VMDir(e.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	body := fmt.Sprintf(`# mpd-virt registry entry for %s.
@@ -42,7 +45,7 @@ MPD_VM_BACKEND=%s
 MPD_VM_IP=%s
 MPD_VM_USER=%s
 `, e.ID.Name(), e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User)
-	return os.WriteFile(paths.VMEnv(e.ID), []byte(body), 0o644)
+	return os.WriteFile(paths.VMEnv(e.ID), []byte(body), 0o600)
 }
 
 // Exists reports whether a box's env file is present (no parsing).
@@ -83,6 +86,15 @@ func Load(id vmid.ID) (Entry, error) {
 	ip, user := kv["MPD_VM_IP"], kv["MPD_VM_USER"]
 	if ip == "" || user == "" {
 		return Entry{}, fmt.Errorf("registry entry for %s is missing MPD_VM_IP or MPD_VM_USER", id.Name())
+	}
+	// The env file says "edit at your own risk" — this is the risk check.
+	// Both values flow into ssh command lines and ~/.ssh/config, so a
+	// mangled entry is refused here rather than obeyed downstream.
+	if a, err := netip.ParseAddr(ip); err != nil || !a.Is4() {
+		return Entry{}, fmt.Errorf("registry entry for %s: MPD_VM_IP %q is not an IPv4 address", id.Name(), ip)
+	}
+	if strings.ContainsAny(user, " \t\"") {
+		return Entry{}, fmt.Errorf("registry entry for %s: MPD_VM_USER %q is not a valid username", id.Name(), user)
 	}
 	// Backend is metadata for lifecycle commands, not needed to reach the box,
 	// so it is optional: an entry written before backends were recorded still
