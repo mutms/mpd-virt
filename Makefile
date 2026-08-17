@@ -13,16 +13,26 @@ BIN    := $(BINDIR)/mpd-virt
 # it, lower the `go` directive in go/go.mod rather than raising the floor.
 export GOTOOLCHAIN = local
 
-.PHONY: build install uninstall clean test vet fmt fmt-check tidy lint-shell fmt-shell
+.PHONY: build install uninstall build-static clean test vet fmt fmt-check tidy lint-shell fmt-shell
 
 # Stamped into `mpd-virt --version`; "dev" outside a git checkout, the
-# commit hash before any tag exists.
+# commit hash before any tag exists. Release builds are made AFTER
+# tagging so the tag lands here.
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X main.version=$(VERSION)
 
 build:
 	@mkdir -p bin
-	cd $(GO_DIR) && go build -ldflags "-X main.version=$(VERSION)" -o $(CURDIR)/bin/mpd-virt ./cmd/mpd-virt
+	cd $(GO_DIR) && go build -ldflags "$(LDFLAGS)" -o $(CURDIR)/bin/mpd-virt ./cmd/mpd-virt
 	@echo "Native binary: bin/mpd-virt"
+
+# Self-contained binaries for GitHub releases (Apple Silicon Macs). The
+# version is part of the file name, so dist/ is cleared first — otherwise
+# binaries of older versions would pile up next to the new ones, waiting
+# to be uploaded by mistake.
+build-static:
+	rm -rf $(CURDIR)/dist
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-darwin-arm64 ./cmd/mpd-virt
 
 install: build
 	@mkdir -p "$(BINDIR)"
@@ -63,5 +73,5 @@ fmt-shell:
 	@shfmt -w -i 4 $(SHELL_FILES) && echo "shfmt applied"
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
 	cd $(GO_DIR) && go clean -cache -testcache
