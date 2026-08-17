@@ -32,7 +32,7 @@ build:
 # to be uploaded by mistake.
 build-static:
 	rm -rf $(CURDIR)/dist
-	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-darwin-arm64 ./cmd/mpd-virt
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-macos-arm64 ./cmd/mpd-virt
 
 install: build
 	@mkdir -p "$(BINDIR)"
