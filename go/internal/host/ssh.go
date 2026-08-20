@@ -187,9 +187,14 @@ func (t Target) Install(ctx context.Context, localPath, remotePath, mode string)
 // The destination is root-owned and read-only for the dev user — the Mac
 // is the source of truth, and nothing on the box should be editing it. So
 // the copy lands in a dev-user temp dir first (scp cannot write into
-// root-owned territory) and sudo installs it from there. `chmod -R go-w`
-// closes the hole a group/world-writable file from the Mac would open:
-// root-owned but dev-writable is worse than either.
+// root-owned territory) and sudo installs it from there. `chmod -R
+// a+rX,go-w` normalises the perms the Mac copy arrived with: `a+rX` makes
+// every directory traversable and every file readable by the dev user
+// (and keeps the execute bit on anything already executable, so a bin/
+// script stays runnable), and `go-w` then strips group/world write. A Mac
+// file that arrived 0700 would otherwise land root-only, locking the dev
+// user out of their own assets — "read-only for the dev user" means they
+// can read them.
 func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) error {
 	staging, err := t.Line(ctx, "mktemp -d")
 	if err != nil {
@@ -216,7 +221,7 @@ func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) err
 			"sudo rm -rf %[2]s && "+
 			"sudo cp -a %[3]s %[2]s && "+
 			"sudo chown -R root:root %[2]s && "+
-			"sudo chmod -R go-w %[2]s",
+			"sudo chmod -R a+rX,go-w %[2]s",
 		path.Dir(remotePath), remotePath, staged)
 	if r, err := t.Run(ctx, install); err != nil {
 		return err
