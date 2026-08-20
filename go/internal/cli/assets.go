@@ -86,6 +86,6 @@ func syncAssets(ctx context.Context, t host.Target, idPad string) {
 		return
 	}
 	if pushed {
-		pass("assets mirrored → " + remoteAssetsDir + "  (bin/ on PATH, root-owned)")
+		pass("assets mirrored → " + remoteAssetsDir + "  (bin/ on PATH)")
 	}
 }

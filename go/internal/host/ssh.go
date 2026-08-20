@@ -184,17 +184,17 @@ func (t Target) Install(ctx context.Context, localPath, remotePath, mode string)
 // is removed first, so a file deleted on the Mac disappears from the box
 // and the two can never drift into a union of both histories.
 //
-// The destination is root-owned and read-only for the dev user — the Mac
-// is the source of truth, and nothing on the box should be editing it. So
-// the copy lands in a dev-user temp dir first (scp cannot write into
-// root-owned territory) and sudo installs it from there. `chmod -R
-// a+rX,go-w` normalises the perms the Mac copy arrived with: `a+rX` makes
-// every directory traversable and every file readable by the dev user
-// (and keeps the execute bit on anything already executable, so a bin/
-// script stays runnable), and `go-w` then strips group/world write. A Mac
-// file that arrived 0700 would otherwise land root-only, locking the dev
-// user out of their own assets — "read-only for the dev user" means they
-// can read them.
+// The destination is owned by the dev user, exactly like /opt/mpd. On a
+// passwordless-sudo VM root ownership protects nothing — the dev user
+// sudo's freely — and it only creates access friction (a Mac file that
+// arrived 0700 would land root-only and lock the dev user out of their
+// own assets). It stays a mirror regardless of ownership: the tree is
+// removed and replaced on every push, so the Mac remains the source of
+// truth. sudo is used only to create and replace under /opt (root
+// territory); the tree is then chowned to the dev user. `chmod -R
+// u+rwX,go-w` normalises the Mac's perms so the owner can always traverse
+// directories and read files (keeping the execute bit on anything already
+// executable, so a bin/ script stays runnable) and group/world lose write.
 func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) error {
 	staging, err := t.Line(ctx, "mktemp -d")
 	if err != nil {
@@ -217,12 +217,12 @@ func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) err
 	// One remote shell so a half-installed tree is not left behind: the old
 	// copy goes away and the new one lands in the same invocation.
 	install := fmt.Sprintf(
-		"sudo install -d -o root -g root -m 0755 %[1]s && "+
+		"sudo install -d -o %[4]s -g %[4]s -m 0755 %[1]s && "+
 			"sudo rm -rf %[2]s && "+
 			"sudo cp -a %[3]s %[2]s && "+
-			"sudo chown -R root:root %[2]s && "+
-			"sudo chmod -R a+rX,go-w %[2]s",
-		path.Dir(remotePath), remotePath, staged)
+			"sudo chown -R %[4]s:%[4]s %[2]s && "+
+			"sudo chmod -R u+rwX,go-w %[2]s",
+		path.Dir(remotePath), remotePath, staged, t.User)
 	if r, err := t.Run(ctx, install); err != nil {
 		return err
 	} else if r.Failed() {

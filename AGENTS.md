@@ -214,8 +214,10 @@ a scratch tool — is a script in your own tree, not a flag in this repo.
 
 - **The Mac is the source of truth.** The push is a *mirror*: the box's copy
   is removed and replaced, so a file deleted on the Mac disappears from the
-  box on the next lifecycle verb. The in-VM copy is **root-owned and
-  read-only** for the dev user — edit on the Mac and re-push, never in the VM.
+  box on the next lifecycle verb. Edit on the Mac and re-push, never in the
+  VM — an in-VM edit is overwritten on the next push anyway. The in-VM copy
+  is **owned by the dev user**, like `/opt/mpd`: root ownership would protect
+  nothing on a passwordless-sudo VM and only gets in the way.
 - **No assets directory means no action**, not "remove them from the box" —
   absence is the normal state for a VM that never wanted any.
 - **Best-effort.** A failed push warns and points at `mpd-virt start <NNN>`;
