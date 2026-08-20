@@ -291,8 +291,10 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 There is no `docs/proposals/` and none should be created — design notes go
 into `docs/` proper (or straight into code comments), and shipped behavior is
 documented only in the canonical files above. The only planned platform work
-is Linux and Windows/WSL host support, keyed on `GOOS` in this same codebase,
-much later.
+is Linux host support, keyed on `GOOS` in this same codebase, much later.
+Windows is not on the roadmap — WSL containers cannot run the mpd runtime's
+systemd, and mdl-demo covers Windows users; if Windows ever happens it would
+ride on the Linux path via WSL, sharing that code rather than its own.
 
 ## Validation
 

@@ -47,8 +47,7 @@ find it:
   machines
 - [containers/apple/README.md](containers/apple/README.md) — the base image
 
-macOS-only for now; Linux and Windows/WSL host support may come later in this
-same codebase.
+macOS-only for now; Linux host support may come later in this same codebase.
 
 ## AI disclosure
 

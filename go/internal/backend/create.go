@@ -39,12 +39,11 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 	}
 }
 
-// DefaultContainerImage is the base image `create --backend=container` runs,
-// derived from the runtime this machine hosts. Deliberately named
-// mpd-virt-container-<runtime> so a future wsl build slots in without a new
-// convention; --image overrides it (e.g. a published ghcr.io/… reference).
+// DefaultContainerImage is the base image `create --backend=container` runs.
+// Only the Apple `container` runtime is supported; --image overrides it
+// (e.g. a published ghcr.io/… reference).
 func DefaultContainerImage() string {
-	return "mpd-virt-container-apple" // darwin/Apple `container` today
+	return "mpd-virt-container-apple" // darwin/Apple `container`
 }
 
 func containerCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {

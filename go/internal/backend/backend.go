@@ -15,7 +15,7 @@ type Backend string
 const (
 	Generic   Backend = "generic"   // adopted / manually managed box (demos, LAN)
 	Parallels Backend = "parallels" // Parallels VM
-	Container Backend = "container" // native Apple / WSL container
+	Container Backend = "container" // native Apple container
 	UTM       Backend = "utm"       // UTM Desktop VM (macOS, osascript-driven)
 	Proxmox   Backend = "proxmox"   // Proxmox VM behind warp
 )
