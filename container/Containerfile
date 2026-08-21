@@ -5,13 +5,17 @@
 # `container build -t mpd-virt-container-apple .`; `mpd-virt create --backend=container` (and
 # a manual adopt) run and provision boxes from it.
 #
-# NOT libnss-resolve here: on a prepped VM prep converts eth0 to networkd, so
-# systemd-resolved learns a default upstream from DHCP and nss `resolve` can
-# route everything. In this container eth0 is runtime-managed, so resolved
-# only knows mpd.test (10.163.141.1) and no default upstream — pointing nss at
-# it via `resolve [!UNAVAIL=return]` then strands github.com and every other
-# name. So nss stays `files dns` (the runtime's /etc/resolv.conf), and the
-# mpd.test zone is reached the way it always is: over the wire, or `resolvectl`.
+# DNS goes through systemd-resolved the standard way: nss stays `files dns`,
+# and /etc/resolv.conf points at resolved's stub (127.0.0.53), so glibc — and
+# ssh's ProxyJump to the bare `runtime` — resolves *.mpd.test via resolved →
+# the VM's dnsmasq, and everything else via the upstream resolved learned. The
+# Apple-container catch: the runtime rewrites /etc/resolv.conf to the raw vmnet
+# nameserver on every boot, clobbering that symlink. So mpd-resolv-stub.service
+# (below) re-points it each boot — but only once mpd-virt's seedResolver has
+# recorded the upstream (its 00-upstream.conf drop-in), since before that the
+# raw file is the only working DNS and seedResolver reads it to find the
+# upstream. That guard is what keeps the unit from clobbering resolv.conf too
+# early and sending resolved into a forward-to-itself loop.
 #
 # The image is generic: the dev user + passwordless sudo + authorized key are
 # provisioned AFTER start with `container exec` (see README), so one image
@@ -52,6 +56,31 @@ RUN set -eux; \
       'PermitRootLogin no' \
       'UseDNS no' \
       > /etc/ssh/sshd_config.d/10-hardening.conf
+
+# Re-point /etc/resolv.conf at resolved's stub on every boot (see the DNS note
+# at the top): the Apple runtime rewrites it to the raw vmnet nameserver each
+# boot, which bypasses resolved. Guarded on the 00-upstream.conf drop-in so it
+# never fires before mpd-virt's seedResolver has recorded the upstream — before
+# that the raw file is the only working DNS, and seedResolver reads it to find
+# the upstream. After= resolved so the stub file exists when we link to it.
+RUN set -eux; \
+    printf '%s\n' \
+      '[Unit]' \
+      'Description=Re-point /etc/resolv.conf at the systemd-resolved stub (Apple container rewrites it each boot)' \
+      'After=systemd-resolved.service' \
+      'Wants=systemd-resolved.service' \
+      'ConditionPathExists=/run/systemd/resolve/stub-resolv.conf' \
+      'ConditionPathExists=/etc/systemd/resolved.conf.d/00-upstream.conf' \
+      '' \
+      '[Service]' \
+      'Type=oneshot' \
+      'RemainAfterExit=yes' \
+      'ExecStart=/bin/ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf' \
+      '' \
+      '[Install]' \
+      'WantedBy=multi-user.target' \
+      > /etc/systemd/system/mpd-resolv-stub.service; \
+    systemctl enable mpd-resolv-stub.service
 
 # systemd as PID 1. SIGRTMIN+3 is systemd's clean-shutdown signal.
 STOPSIGNAL SIGRTMIN+3

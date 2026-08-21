@@ -207,7 +207,24 @@ func seedResolver(ctx context.Context, out io.Writer, name string) error {
 	} else if r.Failed() {
 		return fmt.Errorf("reloading systemd-resolved in %s failed: %s", name, shortErr(r))
 	}
-	fmt.Fprintf(out, "    upstream DNS: %s\n", strings.Join(servers, " "))
+
+	// Point the box's own /etc/resolv.conf at resolved's stub, so glibc — and
+	// so ssh's ProxyJump to the bare `runtime` — resolves *.mpd.test through
+	// resolved (→ dnsmasq) rather than the raw vmnet upstream the runtime wrote.
+	// This is the create-time application of what mpd-resolv-stub.service in the
+	// image re-does on every later boot (the Apple runtime rewrites resolv.conf
+	// each boot). The upstream drop-in written just above is what keeps the stub
+	// resolving the internet too, so nothing is stranded — and it is why this
+	// must run after the drop-in, not before: seedResolver reads the raw
+	// resolv.conf to discover the upstream in the first place.
+	if r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
+		"exec", name, "ln", "-sf", "/run/systemd/resolve/stub-resolv.conf", "/etc/resolv.conf",
+	}}); err != nil {
+		return err
+	} else if r.Failed() {
+		return fmt.Errorf("pointing /etc/resolv.conf at the resolved stub in %s failed: %s", name, shortErr(r))
+	}
+	fmt.Fprintf(out, "    upstream DNS: %s (resolv.conf → resolved stub)\n", strings.Join(servers, " "))
 	return nil
 }
 
