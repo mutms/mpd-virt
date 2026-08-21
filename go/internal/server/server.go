@@ -254,9 +254,9 @@ func ValidateIP(ip string) error {
 // --- Hosts rendering -------------------------------------------------------
 
 // hostsBody is the hosts(5) body for every registered server. hosts format
-// rather than something bespoke: it pastes into /etc/hosts verbatim and is
-// exactly what dnsmasq's hostsdir= reads at the other end — one format, no
-// conversion at either boundary.
+// rather than something bespoke: it pastes into /etc/hosts verbatim here,
+// and mpd copies its lines into the block it keeps in the VM's /etc/hosts
+// at the other end — one format, no conversion at either boundary.
 func hostsBody() (string, error) {
 	entries, err := LoadAll()
 	if err != nil {

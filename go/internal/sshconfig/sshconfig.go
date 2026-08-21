@@ -23,7 +23,8 @@
 // their IDE, and their agent) actually works; the VM that manages the
 // containers is the occasional destination, so it takes the `-vm` suffix.
 // `ssh mpd-<NNN>` jumps through the box, which resolves the bare
-// `runtime` via the search domain mpd gives systemd-resolved there.
+// `runtime` from the alias mpd keeps on the runtime's line in its
+// /etc/hosts.
 //
 // Note this is the host side only. Inside the VM, mpd writes its own
 // aliases for the runtime (`runtime`, `mpd-<NNN>-runtime`) — there the
@@ -68,9 +69,9 @@ func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 
 // runtimeHostName is what the runtime stanza connects to. Deliberately
 // the bare `runtime`, not the FQDN: with ProxyJump the *box* resolves the
-// target, and mpd gives the box its own zone as a search domain, so
-// `runtime` qualifies to runtime.<zone> there. Works over plain SSH with
-// the mpd-proxy overlay down.
+// target, and mpd publishes `runtime` as a hosts alias on the runtime's
+// line in the box's /etc/hosts, so libc there answers it directly. Works
+// over plain SSH with the mpd-proxy overlay down.
 //
 // The bare form is also the documentation: this block is what a developer
 // reads when wiring up an SSH app that has a jump-host field but no

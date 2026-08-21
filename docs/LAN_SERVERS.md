@@ -156,8 +156,9 @@ mpd-virt server sync            # or one VM: mpd-virt server sync 126
 
 This writes `~/.mpd-virt/conf/lan-hosts`, scp's it to
 `/var/lib/mpd/conf/lan-hosts` on each running VM, and runs
-`mpd --vm-setup`, which republishes it through dnsmasq as
-`<stateDir>/dns/lan.hosts`. VMs that are down are reported and skipped.
+`mpd --vm-setup`, which republishes the names in the block mpd keeps in
+the VM's `/etc/hosts` — where both the VM's libc and its dnsmasq read
+them. VMs that are down are reported and skipped.
 
 `sync` is how you publish a *changed* registry to boxes that are already
 running. It is not the only path: `adopt` and `create` push the file
@@ -170,8 +171,8 @@ those compares a remote `sha256sum` first, so the usual unchanged case
 costs one remote command and republishes nothing.
 
 Containers inherit this for free — they resolve through the VM's dnsmasq
-at the bridge gateway and have no `/etc/hosts` of their own. That is the
-point of the exercise:
+at the bridge gateway and carry no copy of the VM's `/etc/hosts`. That is
+the point of the exercise:
 
 ```sh
 ssh mpd-126-vm 'podman run --rm --network mpd-internal alpine \
