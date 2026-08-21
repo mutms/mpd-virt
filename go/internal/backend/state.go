@@ -33,6 +33,17 @@ const (
 // only so tests can substitute it.
 var probeState = queryState
 
+// PowerState reports the box's power state as its backend authoritatively knows
+// it — "running", "stopped", "suspended", "paused" — or "" when the backend
+// cannot say: its CLI/API is absent or misconfigured, the box is unknown to it,
+// or the backend is `generic` (no power model at all). Callers like `list` use
+// it to skip an SSH dial to a box the hypervisor already reports as off, and to
+// fall back to dialing whenever the answer is "" — the connect-first behaviour
+// that `generic` gives you deliberately.
+func PowerState(ctx context.Context, id vmid.ID, be Backend) string {
+	return string(probeState(ctx, id, be))
+}
+
 // queryState asks the backend what state the box is in. Everything it runs is
 // read-only and best-effort: any failure — CLI absent, box unknown, output we
 // do not recognize — is stUnknown, never an error, because a state we cannot
