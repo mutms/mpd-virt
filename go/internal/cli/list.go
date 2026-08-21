@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/mutms/mpd-virt/go/internal/registry"
@@ -44,14 +45,34 @@ func listCmd() *cobra.Command {
 
 const listRow = "%-4s %-10s %-10s %-16s %-9s %s\n"
 
+// sshStates probes every entry's ssh port concurrently and returns the states
+// aligned to entries by index. Serial probing stalled the whole listing by the
+// dial timeout for each unreachable box; done in parallel the listing is only
+// as slow as the single slowest probe.
+func sshStates(ctx context.Context, entries []registry.Entry) []string {
+	states := make([]string, len(entries))
+	var wg sync.WaitGroup
+	for i, e := range entries {
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			states[i] = sshState(ctx, ip)
+		}(i, e.IP)
+	}
+	wg.Wait()
+	return states
+}
+
 func printListTable(ctx context.Context, entries []registry.Entry) {
+	states := sshStates(ctx, entries)
 	fmt.Printf(listRow, "NNN", "NAME", "BACKEND", "IP", "USER", "SSH")
-	for _, e := range entries {
-		fmt.Printf(listRow, e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP))
+	for i, e := range entries {
+		fmt.Printf(listRow, e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, states[i])
 	}
 }
 
 func printListJSON(ctx context.Context, entries []registry.Entry) error {
+	states := sshStates(ctx, entries)
 	type row struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
@@ -61,8 +82,8 @@ func printListJSON(ctx context.Context, entries []registry.Entry) error {
 		SSH     string `json:"ssh"`
 	}
 	rows := make([]row, 0, len(entries))
-	for _, e := range entries {
-		rows = append(rows, row{e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, sshState(ctx, e.IP)})
+	for i, e := range entries {
+		rows = append(rows, row{e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, states[i]})
 	}
 	b, err := json.MarshalIndent(rows, "", "  ")
 	if err != nil {
