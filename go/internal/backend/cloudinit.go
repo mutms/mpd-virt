@@ -16,26 +16,33 @@ import (
 
 // Cloud-init image cache + NoCloud seed-ISO generation, shared by backends
 // that materialize a Debian VM from a cloud image (UTM today).
-// Only the ~200 MB .tar.xz is cached (a slow link can't
+// Only the ~290 MB .tar.xz is cached (a slow link can't
 // spare a 3 GB raw download); the raw disk inside is re-extracted per create
 // — cheap on Apple Silicon, and a stray multi-GB raw on disk is more
 // annoying than re-running tar. Everything shells to macOS built-ins —
 // curl, tar, hdiutil — so nothing needs installing.
 
-// Debian Trixie generic-cloud, arm64. Bump in lockstep with the sibling
+// Debian Trixie "generic", arm64. Bump in lockstep with the sibling
 // mpd's image pin when refreshing — all three constants together: the
 // SHA-512 comes from the SHA512SUMS file in the same dated directory, and
 // pinning it means the archive that becomes every VM's operating system is
 // exactly the published one, whatever a mirror or CDN served.
+//
+// "generic", NOT "genericcloud". genericcloud is built on Debian's cloud
+// kernel, whose module tree contains no DRM drivers at all, so a VM built
+// from it has no /dev/dri: the text console works, and anything graphical
+// — gdm, a Wayland greeter — is a black screen with no useful error in
+// any log. generic carries the full kernel and is still cloud-init driven,
+// for roughly 90 MB more download.
 const (
-	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20260722-2547"
-	cloudArchive       = "debian-13-genericcloud-arm64-20260722-2547.tar.xz"
-	cloudArchiveSHA512 = "becf76bfdd7870086b6207a1604afc27bf1742ced01f867b10612d7aed288684970832c41612680ea5d5d93896f8f0b13a6c70671f16c00b54782eecf81e4426"
+	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20260819-2575"
+	cloudArchive       = "debian-13-generic-arm64-20260819-2575.tar.xz"
+	cloudArchiveSHA512 = "2ddf5cb28ff545d47645a1860bcd9e62d08e97f8454b19986327f7cd728f9dd689e127c449ca273b7bc2a8c6ccca2168186da6eb6265010a5f1f4f6022693caf"
 )
 
 func cachedArchivePath() string { return filepath.Join(paths.CloudImages(), cloudArchive) }
 
-// ensureBaseArchive downloads the Debian generic-cloud archive into
+// ensureBaseArchive downloads the Debian generic cloud-image archive into
 // ~/.mpd-virt/conf/cloud-images/ on first use and returns its path.
 // Idempotent: instant if already cached. The download streams to a
 // .partial renamed on success, so an interrupted download never looks
@@ -50,7 +57,7 @@ func ensureBaseArchive(ctx context.Context, out io.Writer) (string, error) {
 	}
 	partial := dst + ".partial"
 	url := cloudBase + "/" + cloudArchive
-	fmt.Fprintf(out, "  ▶ downloading %s (~200 MB, first create only) …\n", cloudArchive)
+	fmt.Fprintf(out, "  ▶ downloading %s (~290 MB, first create only) …\n", cloudArchive)
 	// --proto '=https' pins the whole redirect chain to TLS — -L must never
 	// be talked down to plaintext, wherever the mirror sends us.
 	code, err := exec.Run(ctx, exec.Cmd{Name: "curl", Args: []string{

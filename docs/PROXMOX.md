@@ -47,7 +47,13 @@ Keychain. mpd-virt trusts the system roots plus the mpd root CA.
 
 ## Cloud-init Debian VM installation
 
-1. download `debian-13-genericcloud-amd64-202XXXXX-XXXX.qcow2` into `Import` in `local` store
+1. download `debian-13-generic-amd64-202XXXXX-XXXX.qcow2` into `Import` in `local` store
+  from <https://cloud.debian.org/images/cloud/trixie/> (newest dated directory)
+  - **`generic`, not `genericcloud`.** genericcloud is built on Debian's cloud
+    kernel, which ships no DRM drivers, so the VM has no `/dev/dri`: the text
+    console works, and anything graphical (gdm, a Wayland greeter) is a black
+    screen with nothing useful in any log. `generic` carries the full kernel
+    and is still cloud-init driven, for about 90 MB more download.
 2. create new `mpd-NNN` VM using NNN as VM id where NNN is 100...254
   - General
     - VM ID: NNN
@@ -57,7 +63,7 @@ Keychain. mpd-virt trusts the system roots plus the mpd root CA.
     - Do not use any media: true
   - Disks
     - delete "scsi0"
-    - Import - Select image - debian-13-genericcloud-*
+    - Import - Select image - debian-13-generic-*
   - CPU
     - Cores: 4
   - Memory
