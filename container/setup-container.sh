@@ -2,12 +2,12 @@
 # Build the mpd-virt-container-apple image, boot it as a systemd box under `container run`,
 # and provision the dev user - all in one go. Run from THIS directory:
 #
-#   cd containers/apple
+#   cd container
 #   ./setup-container.sh
 #
 # The box boots real systemd (PID 1) with 10G of memory, then gets the dev
 # account + passwordless sudo + the test SSH key added via `container exec`.
-# Afterwards adopt it from the dev VM with:  mpd-virt takeover 141 <ip>
+# Afterwards adopt it from the dev VM with:  mpd-virt adopt 141 <ip> --backend=container
 
 set -e
 

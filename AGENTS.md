@@ -47,7 +47,7 @@ box — there is deliberately no default. Once a box is registered, every verb
 |---|---|---|
 | `generic` | anywhere | Adopt an **already-running** Debian box by IP — a cloud VM, bare metal. No power control (it stays up). The path for anything not on the laptop. |
 | `parallels` | macOS laptop | Parallels Desktop Pro (`prlctl`): power on/off + find the box's current DHCP IP. |
-| `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [containers/apple](containers/apple) base image — build it first. |
+| `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first. |
 | `utm` | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off. |
 | `proxmox` | a Proxmox host | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)); no `create`. |
 
@@ -293,7 +293,7 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 - this file — the detailed reference (verbs, backends, state, layout)
 - `docs/SECURITY.md` — trust model, certificate chain, CA backup, known gaps
 - `docs/LAN_SERVERS.md` — LAN service hosts (non-VM machines) and their certs
-- `containers/apple/README.md` — the Apple `container` base image
+- `container/README.md` — the Apple `container` base image
 
 There is no `docs/proposals/` and none should be created — design notes go
 into `docs/` proper (or straight into code comments), and shipped behavior is

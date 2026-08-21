@@ -122,7 +122,7 @@ func waitSystemd(ctx context.Context, name string) error {
 
 // seedIdentity adds the dev account, passwordless sudo, and the authorized key
 // to a freshly booted container over `container exec` — the same steps the
-// containers/apple setup script does by hand, so adoption finds a box it can
+// container/ setup script does by hand, so adoption finds a box it can
 // ssh into. Idempotent: re-running rotates the key.
 func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 	sudoers := "/etc/sudoers.d/90-" + user

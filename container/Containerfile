@@ -3,7 +3,7 @@
 # Needs `--cap-add ALL` (systemd needs SYS_ADMIN to mount cgroups; without it
 # it exits silently). Hostname comes from --name. Build it once with
 # `container build -t mpd-virt-container-apple .`; `mpd-virt create --backend=container` (and
-# manual takeover) run and provision boxes from it.
+# a manual adopt) run and provision boxes from it.
 #
 # NOT libnss-resolve here: on a prepped VM prep converts eth0 to networkd, so
 # systemd-resolved learns a default upstream from DHCP and nss `resolve` can
@@ -22,12 +22,12 @@
 # without pam_systemd the per-user manager (user@<uid>) never gets a session or
 # XDG_RUNTIME_DIR and fails — so mpd's user services (the portal `mpd --web`,
 # `mpd --control`) never start and the box's root URL 502s. Installing them
-# makes this image behave like the stock-Debian VMs takeover targets are. (The
+# makes this image behave like the stock-Debian VMs adopt targets are. (The
 # base is non-slim debian:trixie, matching mpd's "basic Trixie install"
 # contract — an OCI base ships no systemd regardless, so the session stack is
 # still installed explicitly below.)
 #
-#   container build -t mpd-virt-container-apple containers/apple
+#   container build -t mpd-virt-container-apple container
 #   container run -d --name mpd-128 --cap-add ALL mpd-virt-container-apple
 #   container exec mpd-128 systemctl is-system-running   # running/degraded = systemd up
 FROM debian:trixie

@@ -46,7 +46,7 @@ but the `container` runtime is young, so treat this backend as experimental;
 UTM, Parallels, or an adopted Debian box are the steadier choices:
 
 ```bash
-container build -t mpd-virt-container-apple containers/apple/   # base image, once
+container build -t mpd-virt-container-apple container/   # base image, once
 mpd-virt create 141 --backend=container             # provision + adopt mpd-141
 ```
 
@@ -96,7 +96,7 @@ find it:
 - [docs/SECURITY.md](docs/SECURITY.md) — trust model, why two CAs, CA backup
 - [docs/LAN_SERVERS.md](docs/LAN_SERVERS.md) — certificates for non-VM LAN
   machines
-- [containers/apple/README.md](containers/apple/README.md) — the base image
+- [container/README.md](container/README.md) — the base image
 
 macOS-only for now; Linux host support may come later in this same codebase.
 

@@ -10,7 +10,7 @@ freshly-provisioned Debian Trixie machine — the same network + service shape
 Build the image once (rebuild when the base changes); everything else runs it:
 
 ```bash
-cd containers/apple
+cd container
 container build -t mpd-virt-container-apple .
 ```
 

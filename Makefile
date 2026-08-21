@@ -64,7 +64,7 @@ tidy:
 
 # Shell scripts this repo ships: the installer and container entrypoints.
 # Identified by content, since some are extensionless.
-SHELL_FILES = $$(find scripts containers -type f -exec file --mime-type {} + 2>/dev/null | grep x-shellscript | cut -d: -f1)
+SHELL_FILES = $$(find scripts container -type f -exec file --mime-type {} + 2>/dev/null | grep x-shellscript | cut -d: -f1)
 
 lint-shell:
 	@shellcheck -S warning $(SHELL_FILES) && echo "shellcheck clean"
