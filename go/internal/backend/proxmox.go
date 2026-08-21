@@ -195,8 +195,70 @@ func proxmoxPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) b
 	return true
 }
 
+// overlayRange is the in-VM container/overlay subnet family (10.163.<NNN>.0/24
+// for every box). A box's guest agent reports addresses on it — the overlay
+// gateway .1, container bridges — that are not the box's LAN address and are
+// not routable from the Mac without the tunnel, so they are filtered out of
+// address discovery.
+var overlayRange = netip.MustParsePrefix("10.163.0.0/16")
+
+// proxmoxAgentIPs asks the box's qemu-guest-agent, through the Proxmox API, for
+// its current LAN addresses. Adopted boxes run the agent (the prep script and
+// bootstrap install it), so this is the authoritative address of a *running*
+// box — and unlike proxmoxDerivedIP it finds a box that sits off the cloud-init
+// convention on a non-standard static lease. Empty on any failure (agent not up
+// yet, API unreachable, box off), so locate falls back to the derived IP.
+//
+// Loopback, link-local and the overlay range are filtered out; only real LAN
+// candidates are returned, and locate's ssh probe has the final say among them.
+func proxmoxAgentIPs(ctx context.Context, id vmid.ID) []string {
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		return nil
+	}
+	c := newProxmoxClient(cfg)
+	vm, err := c.findVM(ctx, id)
+	if err != nil {
+		return nil
+	}
+	var data struct {
+		Result []struct {
+			Name        string `json:"name"`
+			IPAddresses []struct {
+				Type    string `json:"ip-address-type"`
+				Address string `json:"ip-address"`
+			} `json:"ip-addresses"`
+		} `json:"result"`
+	}
+	path := fmt.Sprintf("nodes/%s/qemu/%d/agent/network-get-interfaces", url.PathEscape(vm.Node), int(id))
+	if err := c.call(ctx, http.MethodGet, path, &data); err != nil {
+		return nil
+	}
+	var ips []string
+	for _, iface := range data.Result {
+		if iface.Name == "lo" {
+			continue
+		}
+		for _, a := range iface.IPAddresses {
+			if a.Type != "ipv4" {
+				continue
+			}
+			addr, err := netip.ParseAddr(a.Address)
+			if err != nil || !addr.Is4() {
+				continue
+			}
+			if addr.IsLoopback() || addr.IsLinkLocalUnicast() || overlayRange.Contains(addr) {
+				continue
+			}
+			ips = append(ips, addr.String())
+		}
+	}
+	return ips
+}
+
 // proxmoxDerivedIP is the box's LAN address by convention: NETWORK with its
-// last octet replaced by the VM number (10.1.10.0 + 150 → 10.1.10.150).
+// last octet replaced by the VM number (10.1.10.0 + 150 → 10.1.10.150). Used as
+// the fallback when the guest agent cannot be reached (see proxmoxAgentIPs).
 // locate's ssh probe has the final word, as for every candidate address.
 func proxmoxDerivedIP(id vmid.ID) string {
 	cfg, err := loadProxmoxConfig()

@@ -51,23 +51,28 @@ box — there is deliberately no default. Once a box is registered, every verb
 | `utm` | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off. |
 | `proxmox` | a Proxmox host | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)); no `create`. |
 
-The `proxmox` backend talks to the Proxmox REST API for exactly three things:
-VM state, start, and graceful shutdown. Provisioning stays manual by design —
-you create the VM on the Proxmox side (mpd-virt does not automate the
-cloud-init; doing it by hand is good for understanding the basics), then adopt
-it with `adopt --backend=proxmox`. The VM number is the Proxmox VMID, and
-the box's LAN address follows from it: `NETWORK` in
+The `proxmox` backend talks to the Proxmox REST API for VM state, start,
+graceful shutdown, and — once a box is adopted — its live IP through the
+guest agent. Provisioning stays manual by design — you create the VM on the
+Proxmox side (mpd-virt does not automate the cloud-init; doing it by hand is
+good for understanding the basics), then adopt it with `adopt
+--backend=proxmox`. The VM number is the Proxmox VMID. For the box's LAN
+address there are two sources, in order: at first adoption, before the box
+runs a guest agent, the address is derived by convention — `NETWORK` in
 `~/.mpd-virt/conf/backends/proxmox.env` with the last octet replaced by the
-number (the cloud image runs no guest agent, so the address is assigned
-statically in cloud-init to match). Create/delete of the VM itself stay manual
-on the Proxmox side — [`docs/PROXMOX.md`](docs/PROXMOX.md) walks through both
+number — so the cloud-init assigns a static address matching that rule.
+After adoption the box runs `qemu-guest-agent` (the prep script and
+bootstrap install it), so `start` asks the API for its real address, which
+is authoritative and finds a box that sits off the convention on a
+non-standard lease. Create/delete of the VM itself stay manual on the
+Proxmox side — [`docs/PROXMOX.md`](docs/PROXMOX.md) walks through both
 installation flavors and the API token setup.
 
 ## Verbs
 
 | Verb | Args | Role |
 |---|---|---|
-| `adopt <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container), or mDNS for a prepared box (the prep script sets up avahi); pass it explicitly when neither reaches the box. **Precondition:** the box must first be prepared with mpd's `setup/mpd-prepare-adopt.sh` (run on the box; converts it to systemd-resolved, installs avahi + qemu-guest-agent) — adopt refuses otherwise. Boxes made by `create` come prepared already. To adopt a sandbox VM (the intended upgrade path from trying mpd to the daily managed workflow, projects intact), run the prep script on it first too — a sandbox deliberately ships without sshd, and the prep script installs it (plus avahi + qemu-guest-agent) idempotently on top of the sandbox's own network conversion. |
+| `adopt <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container, or the proxmox guest agent once adopted), or mDNS for a box that advertises itself (cloud-init or the prep script sets up avahi); pass it explicitly when neither reaches the box. **Precondition — the systemd-resolved network stack:** the one thing adopt gates on, beyond a reachable sshd with key auth and passwordless sudo on Debian Trixie, is that the box runs the systemd-resolved network stack — the state a Debian cloud-init image already has; it refuses otherwise. avahi (mDNS discovery) and qemu-guest-agent (the proxmox IP query) are *added* on top, not required: the cloud-init image ships them and the bootstrap installs them regardless. A box built from cloud-init has the required stack *by definition* and needs no prep step: proxmox VMs (their cloud-init seed) and `create`-made boxes (utm/container) are ready as they are. Prep exists only to bring a box that did **not** come from cloud-init up to that stack: mpd's `setup/mpd-prepare-adopt.sh` (run on the box) reproduces the cloud-init network state without the cloud-init, over whatever slightly different stack the box happened to have (and adds the same avahi + qemu-guest-agent conveniences while it is there). The two cases that need it are an already-running generic/bare-metal box, and a sandbox VM (the intended upgrade path from trying mpd to the daily managed workflow, projects intact): a sandbox deliberately ships without sshd, and the prep script installs it idempotently on top of the sandbox's own network conversion. |
 | `create <NNN>` | `--backend=<utm\|container> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default `mpd-virt-container-apple`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `adopt`. |
 | `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
 | `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic, and for a box already stopped). |

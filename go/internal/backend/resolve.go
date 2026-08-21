@@ -79,8 +79,15 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 			add(utmCanonicalIP(id), "utm")
 		}
 	case Proxmox:
-		// The cloud image runs no guest agent, so the address is the static
-		// cloud-init convention: NETWORK's last octet replaced by the number.
+		// A running, adopted box runs qemu-guest-agent (the prep script and
+		// bootstrap install it), so ask the API for its real address first —
+		// authoritative, and the only way to find a box that sits off the
+		// cloud-init convention on a non-standard static lease. The derived
+		// convention (NETWORK's last octet = the number) stays as the fallback
+		// for the very first adoption, before the agent exists to answer.
+		for _, ip := range proxmoxAgentIPs(ctx, id) {
+			add(ip, "proxmox-agent")
+		}
 		add(proxmoxDerivedIP(id), "proxmox")
 	}
 	for _, ip := range resolveHost(ctx, id.Name()) {

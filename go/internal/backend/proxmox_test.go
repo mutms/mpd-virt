@@ -42,6 +42,18 @@ func fakeProxmox(t *testing.T, status string, hits *[]string) *httptest.Server {
 			_, _ = w.Write([]byte(`{"data":[{"vmid":150,"node":"kitchenbox","status":"` + status + `"},{"vmid":151,"node":"kitchenbox","status":"stopped"}]}`))
 		case strings.HasPrefix(r.URL.Path, "/nodes/kitchenbox/qemu/150/status/"):
 			_, _ = w.Write([]byte(`{"data":"UPID:kitchenbox:0:0:0:qmstart:150:t:"}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/150/agent/network-get-interfaces":
+			// lo (loopback), ens18 (the real LAN address + link-local +
+			// ipv6), and an overlay-range address on the container bridge —
+			// only the ens18 LAN v4 should survive filtering.
+			_, _ = w.Write([]byte(`{"data":{"result":[
+				{"name":"lo","ip-addresses":[{"ip-address-type":"ipv4","ip-address":"127.0.0.1"}]},
+				{"name":"ens18","ip-addresses":[
+					{"ip-address-type":"ipv4","ip-address":"10.1.1.54"},
+					{"ip-address-type":"ipv4","ip-address":"169.254.3.4"},
+					{"ip-address-type":"ipv6","ip-address":"fe80::1"}]},
+				{"name":"mpd0","ip-addresses":[{"ip-address-type":"ipv4","ip-address":"10.163.150.1"}]}
+			]}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -99,6 +111,34 @@ func TestProxmoxDerivedIP(t *testing.T) {
 	writeProxmoxEnv(t, "https://example.invalid/")
 	if ip := proxmoxDerivedIP(mustID(t, "150")); ip != "10.1.10.150" {
 		t.Errorf("derived IP for 150 = %q, want 10.1.10.150", ip)
+	}
+}
+
+// The guest agent's real LAN address is returned, and only that: loopback,
+// link-local, IPv6, and overlay-range (10.163.x) addresses are filtered out.
+// This is the authoritative address that finds a box off the derived convention.
+func TestProxmoxAgentIPs(t *testing.T) {
+	var hits []string
+	ts := fakeProxmox(t, "running", &hits)
+	defer ts.Close()
+	writeProxmoxEnv(t, ts.URL+"/")
+
+	got := proxmoxAgentIPs(context.Background(), mustID(t, "150"))
+	if len(got) != 1 || got[0] != "10.1.1.54" {
+		t.Errorf("agent IPs = %v, want [10.1.1.54]", got)
+	}
+}
+
+// A VM the token cannot see yields no agent address, never an error — locate
+// then falls back to the derived convention, exactly as before this existed.
+func TestProxmoxAgentIPsUnknownVM(t *testing.T) {
+	var hits []string
+	ts := fakeProxmox(t, "running", &hits)
+	defer ts.Close()
+	writeProxmoxEnv(t, ts.URL+"/")
+
+	if got := proxmoxAgentIPs(context.Background(), mustID(t, "152")); got != nil {
+		t.Errorf("agent IPs for an unlisted VM = %v, want nil", got)
 	}
 }
 
