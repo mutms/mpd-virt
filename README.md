@@ -62,14 +62,16 @@ container build -t mpd-virt-container-apple container/   # base image, once, thi
 mpd-virt create 141 --backend=container                  # creates + provisions mpd-141 — the slow step (several minutes)
 ```
 
-Either way you now have a running mpd box. SSH into its runtime and create your
+Either way you now have a running mpd box. SSH into **the box** and create your
 first Moodle project — from here the in-VM `mpd` takes over; follow
 [mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md). Until a
-project exists there is no site to open.
+project exists there is no site to open — and no runtime container yet, so the
+bare `mpd-141` alias (which jumps into the runtime, where you actually work)
+only starts resolving once `mpd start` has brought a project up.
 
 ```bash
-ssh mpd-141                                         # the runtime container, where you work
-# … then create a project with `mpd` (see mpd's USAGE)
+ssh mpd-141-vm                                       # the box: where mpd, mudev, and podman live
+# … assemble a tree with `mudev`, then `mpd init` + `mpd start` (see mpd's USAGE)
 ```
 
 With a project running, view its `*.mpd.test` site from a browser on your Mac.
