@@ -64,8 +64,11 @@ func sshStates(ctx context.Context, entries []registry.Entry) []string {
 }
 
 func printListTable(ctx context.Context, entries []registry.Entry) {
-	states := sshStates(ctx, entries)
+	// Header first, then the probes: everything but the SSH column is known
+	// up front, so the table's shape appears immediately while the parallel
+	// probe runs, rather than after the dial timeout.
 	fmt.Printf(listRow, "NNN", "NAME", "BACKEND", "IP", "USER", "SSH")
+	states := sshStates(ctx, entries)
 	for i, e := range entries {
 		fmt.Printf(listRow, e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, states[i])
 	}
