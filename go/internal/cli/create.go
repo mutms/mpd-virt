@@ -13,8 +13,8 @@ import (
 
 // createCmd provisions a brand-new box through its backend and then adopts it
 // with the adoption flow. For --backend=container it runs the base image, seeds
-// identity over `container exec`, reads the leased IP, and hands off — the
-// setup-container.sh recipe, done in one command.
+// identity over `container exec`, reads the leased IP, and hands off — image to
+// adopted box in one command.
 func createCmd() *cobra.Command {
 	var username, backendFlag, image, memory, disk, pubkeyPath string
 	cmd := &cobra.Command{

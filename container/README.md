@@ -40,17 +40,3 @@ vmnet address, and mpd-virt owns its hostname and accounts.
 provisions the account + sudo + your key via `container exec`, reads the IP
 from `container inspect`, and adopts the box — no manual steps. The image must
 exist first (build it as above — `create` neither builds nor pulls it).
-
-### Manual fallback (debugging only)
-
-`setup-container.sh` does the same steps by hand from this directory — build,
-boot `mpd-181` with 10G of memory, wait for systemd, then create the dev user +
-passwordless sudo + an SSH key — and prints the IP. It is a hardcoded personal
-spike (`mpd-181`, `DEVUSER=skodak`, a throwaway `testkey`), useful for poking
-at the image, not a supported path:
-
-```bash
-./setup-container.sh
-# then, if you really want to adopt that box:
-mpd-virt adopt 181 <ip> --backend=container
-```
