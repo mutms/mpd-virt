@@ -3,7 +3,7 @@
 The base image `mpd-virt` runs, provisions, and adopts as an mpd box on Apple
 `container`. From the host's side a box booted from it looks like a
 freshly-provisioned Debian Trixie machine — the same network + service shape
-`mpd-virt create --backend=container` (and manual `takeover`) expect.
+`mpd-virt create --backend=container` (and a manual `adopt`) expect.
 
 ## Build it
 
@@ -25,7 +25,7 @@ vmnet address, and mpd-virt owns its hostname and accounts.
 ## What a box from it provides
 
 1. **Hostname `mpd-<NNN>`** — taken from the container `--name`, so `--name
-   mpd-141` makes `hostname` return `mpd-141` (what `takeover` checks).
+   mpd-141` makes `hostname` return `mpd-141` (what `adopt` checks).
 2. **Nothing baked about the user** — the dev account, its passwordless sudo,
    and the authorized key are added *after* start via `container exec`, so one
    image serves every box and keys rotate without a rebuild.
@@ -52,5 +52,5 @@ at the image, not a supported path:
 ```bash
 ./setup-container.sh
 # then, if you really want to adopt that box:
-mpd-virt takeover 181 <ip>
+mpd-virt adopt 181 <ip> --backend=container
 ```
