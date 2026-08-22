@@ -34,9 +34,12 @@ const bootstrapRef = "30af81d01a54fb41f200df29a64c7b9263264b55"
 // pinned ref. Step 30 lands the checkout; everything after runs from it.
 const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/" + bootstrapRef + "/bootstrap"
 
-// bootstrapStep is `bash <(wget …)` of one step at the pinned ref.
+// bootstrapStep fetches one step at the pinned ref and runs it. Fetched to
+// a file first: `bash <(wget …)` turns a failed download into an empty
+// script that exits 0, and the whole bootstrap silently does nothing.
 func bootstrapStep(script string) string {
-	return "bash <(wget -qO- " + bootstrapBaseURL + "/" + script + ")"
+	url := bootstrapBaseURL + "/" + script
+	return "f=$(mktemp) && wget -qO \"$f\" " + url + " && bash \"$f\"; rc=$?; rm -f \"$f\"; exit $rc"
 }
 
 // adoptCmd adopts a box as mpd-<NNN>, installing mpd from source.
