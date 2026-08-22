@@ -16,7 +16,9 @@ import (
 
 // removeCmd un-adopts a box: it wipes the host-side bookkeeping — overlay
 // peer, ssh-config block, registry entry, pinned host key, per-VM CA — and
-// powers the box off, but never deletes it. Powering off is a convenience:
+// powers the box off, but never deletes it — unless --full, which also
+// destroys the hypervisor object (Apple containers only: the inverse of
+// what `create` makes). Powering off is a convenience:
 // a running Apple container refuses `container rm`, so leaving it up just
 // forces a `stop` before the delete. Destroying the box stays the
 // hypervisor's call (UTM, `container delete`, the Proxmox UI) — a stopped
@@ -29,7 +31,7 @@ import (
 // per-VM CA is a trust decision — the next adoption will believe whatever
 // answers at the address — so it should never happen by a slip of the id.
 func removeCmd() *cobra.Command {
-	var assumeYes bool
+	var assumeYes, full bool
 	cmd := &cobra.Command{
 		Use:     "remove <NNN>",
 		Aliases: []string{"delete", "rm"},
@@ -43,7 +45,8 @@ func removeCmd() *cobra.Command {
 			"stopped, never deleted: destroying it belongs to the hypervisor\n" +
 			"(UTM, `container delete`, the Proxmox UI), and a stopped box stays\n" +
 			"re-adoptable. The root CA under ~/.mpd-virt/conf/ survives too\n" +
-			"(uninstall's job).\n\n" +
+			"(uninstall's job). --full goes one step further and deletes the box\n" +
+			"itself (Apple containers only) — the inverse of `create`.\n\n" +
 			"This is how a rebuilt box comes back: re-image it, `remove`, then\n" +
 			"`adopt` — the new host key is recorded as a deliberate first\n" +
 			"contact and the certificates are reprovisioned under a fresh per-VM\n" +
@@ -59,7 +62,16 @@ func removeCmd() *cobra.Command {
 			// The registry entry is informational here: print what is known,
 			// but clean up regardless, so a half-removed box clears on re-run.
 			e, loadErr := registry.Load(id)
-			if loadErr == nil {
+			if full && loadErr != nil {
+				return fmt.Errorf("%s has no registry entry, so its backend is unknown — --full needs one", id.Name())
+			}
+			if full && backend.Backend(e.Backend) != backend.Container {
+				return fmt.Errorf("--full can delete Apple containers only; %s is a %s box — delete it in its hypervisor after `remove`", id.Name(), e.Backend)
+			}
+			if loadErr == nil && full {
+				fmt.Printf("remove --full %s  (backend=%s, ip=%s) — DELETES the box and its disk\n",
+					id.Name(), e.Backend, e.IP)
+			} else if loadErr == nil {
 				fmt.Printf("remove %s  (backend=%s, ip=%s) — powers the box off, but never deletes it\n",
 					id.Name(), e.Backend, e.IP)
 			} else {
@@ -86,6 +98,15 @@ func removeCmd() *cobra.Command {
 					fmt.Printf("  ⚠ could not power %s off: %v (continuing)\n", id.Name(), err)
 				}
 			}
+			// 2b. --full: destroy the hypervisor object, now that it is
+			//     stopped. Before the registry goes, so a failure here leaves
+			//     a re-runnable state (the backend is still on file).
+			if full {
+				if err := backend.Delete(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend)); err != nil {
+					return err
+				}
+				pass("box deleted")
+			}
 			// 3. Strip the ssh-config block.
 			if err := sshconfig.Strip(id); err != nil {
 				return fmt.Errorf("ssh config: %w", err)
@@ -99,7 +120,9 @@ func removeCmd() *cobra.Command {
 			pass("~/.mpd-virt/" + id.String() + "/ removed (registry, pinned host key, per-VM CA; the root CA survives)")
 
 			fmt.Printf("\n✓ %s removed.", id.Name())
-			if loadErr == nil {
+			if full {
+				fmt.Printf("  Create again with: mpd-virt create %s --backend=container\n", id.String())
+			} else if loadErr == nil {
 				fmt.Printf("  Re-adopt with: mpd-virt adopt %s --backend=%s\n", id.String(), e.Backend)
 			} else {
 				fmt.Println()
@@ -108,6 +131,7 @@ func removeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "skip the typed confirmation")
+	cmd.Flags().BoolVar(&full, "full", false, "also delete the box itself (Apple containers only)")
 	return cmd
 }
 

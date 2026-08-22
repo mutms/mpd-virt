@@ -48,6 +48,24 @@ func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 	return nil
 }
 
+// Delete destroys a box's hypervisor object — the inverse of Create, so
+// only for what Create makes. Apple container only for now: the box must
+// already be stopped (`container delete` refuses a running one).
+func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
+	if be != Container {
+		return fmt.Errorf("--full can delete Apple containers only; a %s box is deleted in its hypervisor", be)
+	}
+	fmt.Fprintf(out, "  ▶ container delete %s\n", id.Name())
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"delete", id.Name()}})
+	if err != nil {
+		return err
+	}
+	if r.Failed() {
+		return fmt.Errorf("`container delete %s` failed: %s", id.Name(), shortErr(r))
+	}
+	return nil
+}
+
 // managed reports whether mpd-virt can power a backend from this Mac.
 func managed(be Backend) bool {
 	return be == Container || be == Parallels || be == UTM || be == Proxmox
