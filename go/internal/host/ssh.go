@@ -151,7 +151,7 @@ then re-run this command.`, t.Host, where, name, file)
 
 // Install copies a local file into the box at remotePath with the given
 // octal mode, creating parent directories. It runs as the dev user with
-// no sudo: the CA lands under /var/lib/mpd, which 20-git-clone leaves
+// no sudo: the CA lands under /var/lib/mpd, which 30-mpd-build leaves
 // owned by that user, and mpd --vm-setup — also that user — must own the
 // tree to chmod it. A sudo push would leave the parent dirs root-owned
 // and break vm-setup.

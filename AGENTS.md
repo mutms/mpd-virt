@@ -76,7 +76,7 @@ installation flavors and the API token setup.
 | `create <NNN>` | `--backend=<utm\|container> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default `mpd-virt-container-apple`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `adopt`. |
 | `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
 | `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic, and for a box already stopped). |
-| `update <NNN>` | `--username=` | Refresh the LAN service names + developer assets + env, then pull + rebuild `mpd` on the VM and re-run `mpd --vm-setup`, then re-wire reachability. Runs mpd's own `bootstrap/99-update.sh` over SSH. |
+| `update <NNN>` | `--username=` | Refresh the LAN service names + developer assets + env, then run mpd's bootstrap step 20 over SSH (apt dist-upgrade + the package set, so a stale template or image converges) and `mpd --vm-upgrade` (pull + rebuild + re-run `mpd --vm-setup`), then re-wire reachability. |
 | `remove <NNN>` | `--yes` | Un-adopt a box (aliases `delete`, `rm`): detach it from the overlay, strip its ssh-config block, and delete `~/.mpd-virt/<NNN>/` — registry entry, pinned host key, per-VM CA. **Powers the box off** (a no-op for generic) so its hypervisor object can be deleted right after — a running Apple container refuses `container rm` — but **never deletes the box itself**: destroying it belongs to the hypervisor (UTM, `container delete`, the Proxmox UI), and a stopped box stays re-adoptable. Keeps the root CA. A rebuilt box comes back via `remove` + `adopt`: the new host key is recorded as a deliberate first contact and its certs are reissued under a fresh per-VM CA. |
 | `list` (`ls`) | `--json` | Registered VMs, with a live `:22` reachability probe. |
 | `server …` | `add / list / delete / cert / sync` | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md). |
@@ -227,7 +227,7 @@ a scratch tool — is a script in your own tree, not a flag in this repo.
 - **Best-effort.** A failed push warns and points at `mpd-virt start <NNN>`;
   it never fails an adoption, start, or update.
 - **Not under `/opt/mpd`** — that is mpd's git checkout, which
-  `bootstrap/99-update.sh` pulls; `/opt/mpd-virt` is mpd-virt's own slot and
+  `mpd --vm-upgrade` pulls; `/opt/mpd-virt` is mpd-virt's own slot and
   is never touched by an mpd update.
 - **VM-only.** mpd bind-mounts `/opt/mpd` read-only into every runtime
   container but knows nothing about `/opt/mpd-virt`, so these do not appear

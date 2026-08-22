@@ -33,6 +33,13 @@ vmnet address, and mpd-virt owns its hostname and accounts.
    `container inspect` (the name does not resolve host-side), never chosen by
    the guest. vmnet only delivers to the address it leased, so a guest-side
    pin strands the box.
+4. **Every package mpd needs, already installed** — the image runs mpd's
+   bootstrap step 20 (`bootstrap/20-install-software.sh`: apt dist-upgrade,
+   podman, dnsmasq, caddy, WireGuard, the build toolchain, avahi,
+   qemu-guest-agent) at build time, at the commit pinned by
+   `MPD_BOOTSTRAP_REF` in the Containerfile — the same pin as `bootstrapRef`
+   in `internal/cli/adopt.go`. Adoption re-runs the step and finds nothing to
+   do; rebuild the image when the pin moves.
 
 ## Running & provisioning a box
 

@@ -8,21 +8,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// updateCmd refreshes an adopted box's mpd to current main by running mpd's own
-// bootstrap/99-update.sh over SSH (git pull → rebuild → re-run mpd --vm-setup →
-// migrations), then verifies reachability. The update logic lives in mpd, so
-// this stays a thin orchestration verb — mpd never needs a mpd-virt release for
-// a changed update flow.
+// updateCmd refreshes an adopted box over SSH: mpd's bootstrap step 20
+// (apt dist-upgrade + the package set — the same script adoption and a
+// template pre-run use, so a stale box converges), then mpd's own
+// `--vm-upgrade` (git pull → rebuild → mudev + catalogues → re-run
+// `mpd --vm-setup`), then verifies reachability. The update logic lives
+// in mpd, so this stays a thin orchestration verb.
 func updateCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
 		Use:   "update <NNN>",
-		Short: "Refresh an adopted box's mpd to current main (pull + rebuild + vm-setup)",
-		Long: "SSHes into the box and runs mpd's bootstrap/99-update.sh — pulls the\n" +
-			"latest mpd source, rebuilds, re-runs `mpd --vm-setup`, applies any\n" +
-			"migrations — then verifies reachability. A release that reshuffles the\n" +
-			"update script itself may need two runs (see the script's\n" +
-			"self-modification note).",
+		Short: "Refresh an adopted box: OS packages, then mpd (pull + rebuild + vm-setup)",
+		Long: "SSHes into the box and runs mpd's bootstrap/20-install-software.sh\n" +
+			"(apt dist-upgrade + every package mpd needs) followed by\n" +
+			"`mpd --vm-upgrade` (pull, rebuild, re-run `mpd --vm-setup`) — then\n" +
+			"verifies reachability.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
@@ -44,7 +44,7 @@ func updateCmd() *cobra.Command {
 				return err
 			}
 
-			// Refresh the LAN names before the update runs: 99-update.sh
+			// Refresh the LAN names before the update runs: --vm-upgrade
 			// re-runs `mpd --vm-setup`, which republishes whatever file is
 			// on the box by then — so the push costs nothing extra here.
 			if _, err := pushLanHosts(cmd.Context(), t); err != nil {
@@ -53,17 +53,17 @@ func updateCmd() *cobra.Command {
 			syncAssets(cmd.Context(), t, id.String())
 			syncMpdEnv(cmd.Context(), t, id.String())
 
-			fmt.Printf("▶ update %s at %s — running /opt/mpd/bootstrap/99-update.sh\n", id.Name(), e.IP)
-			code, err := t.Stream(cmd.Context(), "bash /opt/mpd/bootstrap/99-update.sh")
-			if err != nil {
-				return err
+			fmt.Printf("update %s at %s\n", id.Name(), e.IP)
+			if err := step(cmd.Context(), t, "20-install-software (OS upgrade + package set)",
+				bootstrapStep("20-install-software.sh")); err != nil {
+				return fmt.Errorf("%w — ssh in and re-run `%s` to see the full output", err, bootstrapStep("20-install-software.sh"))
 			}
-			if code != 0 {
-				return fmt.Errorf("update failed (exit %d) — ssh in and re-run `bash /opt/mpd/bootstrap/99-update.sh` to see the full output", code)
+			if err := step(cmd.Context(), t, "mpd --vm-upgrade", "/opt/mpd/bin/mpd --vm-upgrade"); err != nil {
+				return fmt.Errorf("%w — ssh in and re-run `mpd --vm-upgrade` to see the full output", err)
 			}
 			pass("update complete")
 
-			// 99-update.sh re-runs mpd --vm-setup, which restarts wg0 and drops
+			// --vm-upgrade re-runs mpd --vm-setup, which restarts wg0 and drops
 			// the mpd-proxy peer — re-wire reachability (as start does), then
 			// verify. Best-effort: a proxy hiccup is a warning, not a failure.
 			wired, err := setupReachability(cmd.Context(), t, id, e.IP)

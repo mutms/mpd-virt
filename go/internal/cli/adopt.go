@@ -18,20 +18,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bootstrapRef pins the stage-0 bootstrap scripts — the two steps that are
+// bootstrapRef pins mpd's bootstrap scripts — the three steps that are
 // piped straight from GitHub into bash with passwordless sudo behind them,
 // before any checkout exists on the box to audit. A commit hash, not a
 // branch: what runs is exactly what was reviewed when the pin was bumped,
 // not whatever `main` holds at that instant. Bump deliberately, like the
-// cloud-image pin. (The clone itself, and `update`, deliberately track
-// mpd's main — that is the platform's own trust decision, and the checkout
-// at least leaves auditable history on the box; see docs/SECURITY.md.)
+// cloud-image pin, and together with MPD_BOOTSTRAP_REF in
+// container/Containerfile, which bakes step 20 into the Apple image at
+// the same ref. (The clone itself, and `update`, deliberately track mpd's
+// main — that is the platform's own trust decision, and the checkout at
+// least leaves auditable history on the box; see docs/SECURITY.md.)
 const bootstrapRef = "0af19300769bc228db14bb4a7d8f8cc39a6e2935"
 
-// bootstrapBaseURL is where the two wget'able bootstrap steps fetch
-// themselves from, at the pinned ref. The rest run from the checkout
-// 20-git-clone lands.
+// bootstrapBaseURL is where the bootstrap steps are fetched from, at the
+// pinned ref. Step 30 lands the checkout; everything after runs from it.
 const bootstrapBaseURL = "https://raw.githubusercontent.com/mutms/mpd/" + bootstrapRef + "/bootstrap"
+
+// bootstrapStep is `bash <(wget …)` of one step at the pinned ref.
+func bootstrapStep(script string) string {
+	return "bash <(wget -qO- " + bootstrapBaseURL + "/" + script + ")"
+}
 
 // adoptCmd adopts a box as mpd-<NNN>, installing mpd from source.
 //
@@ -175,19 +181,29 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	}
 	pass("per-VM CA generated (" + id.Zone() + " only)")
 
-	// --- Provision. Install mpd from source, push the CA in, build, set
-	//     up the platform. All the bootstrap steps are idempotent, so a
-	//     re-run resumes cleanly.
-	if err := step(ctx, t, "10-passwordless-sudo",
-		"bash <(wget -qO- "+bootstrapBaseURL+"/10-passwordless-sudo.sh)"); err != nil {
+	// --- Provision. The three bootstrap steps (sudo; OS upgrade + every
+	//     package; clone + build), then push the CA in and set up the
+	//     platform. All idempotent, so a re-run resumes cleanly — and a
+	//     template VM or a pre-baked image that already ran 10 + 20 gets
+	//     through them in seconds.
+	if err := step(ctx, t, "10-passwordless-sudo", bootstrapStep("10-passwordless-sudo.sh")); err != nil {
 		return err
 	}
-	if err := step(ctx, t, "20-git-clone (clone mpd → /opt/mpd)",
-		"bash <(wget -qO- "+bootstrapBaseURL+"/20-git-clone.sh)"); err != nil {
+	// Root over SSH off, password auth off. Safe here: key auth was just
+	// verified, and the script refuses when no authorized key exists.
+	if err := step(ctx, t, "15-secure-ssh (keys only)", bootstrapStep("15-secure-ssh.sh")); err != nil {
+		return err
+	}
+	if err := step(ctx, t, "20-install-software (OS upgrade + package set)",
+		bootstrapStep("20-install-software.sh")); err != nil {
+		return err
+	}
+	if err := step(ctx, t, "30-mpd-build (clone mpd → /opt/mpd, make install)",
+		bootstrapStep("30-mpd-build.sh")); err != nil {
 		return err
 	}
 
-	// The CA push needs /var/lib/mpd, which 20-git-clone creates.
+	// The CA push needs /var/lib/mpd, which 30-mpd-build creates.
 	const caDir = "/var/lib/mpd/conf/caroot"
 	for _, p := range []struct{ local, remote, mode string }{
 		{ca.RootCertPath(), caDir + "/rootCA.pem", "0644"},
@@ -218,15 +234,6 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	// nothing is there. Pushing first means an adopted box starts out
 	// already agreeing with every other box this Mac owns.
 	syncMpdEnv(ctx, t, id.String())
-
-	if err := step(ctx, t, "40-install-software",
-		"bash /opt/mpd/bootstrap/40-install-software.sh"); err != nil {
-		return err
-	}
-	if err := step(ctx, t, "50-build (compile /opt/mpd/bin/mpd)",
-		"bash /opt/mpd/bootstrap/50-build.sh"); err != nil {
-		return err
-	}
 
 	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
 	// own IP off the interface.

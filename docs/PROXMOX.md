@@ -34,6 +34,26 @@ The API endpoint's TLS certificate must be trusted on the Mac: either serve
 an mpd-CA-signed certificate on the Proxmox host, or add its CA to the System
 Keychain. mpd-virt trusts the system roots plus the mpd root CA.
 
+## Template VM (optional, faster adoption)
+
+Install Debian once into a VM named `mpd-template` (or
+`mpd-template-<x>`), add your SSH key, and run mpd's bootstrap steps 10,
+15 and 20 in it — sudo, keys-only sshd, and the full package set
+(podman, caddy, WireGuard, the Go toolchain, avahi, qemu-guest-agent):
+
+```
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/20-install-software.sh)
+```
+
+Convert it to a template and clone `mpd-NNN` VMs from it (set the
+hostname in the clone). A clone reports its IP to the Proxmox UI through
+qemu-guest-agent, so `mpd-virt adopt NNN --backend=proxmox` needs no
+address, and adoption only has to clone + build mpd. Step 20 re-runs
+during adoption and brings a stale template current. Details in mpd's
+`bootstrap/README.md`.
+
 ## Regular Debian VM installation
 
 1. download `debian-13.X.X-amd64-netinst.iso` into `ISO images` in `local` store

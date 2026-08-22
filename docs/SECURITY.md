@@ -66,9 +66,9 @@ the runtime container.
 
 ## Supply-chain pins
 
-What executes on a box before mpd is built there is pinned: the stage-0
+What executes on a box before mpd is built there is pinned: mpd's three
 bootstrap scripts are fetched at a commit hash (`bootstrapRef` in
-`internal/cli/adopt.go`), and the Debian cloud image the utm backend
+`internal/cli/adopt.go`, mirrored by `MPD_BOOTSTRAP_REF` in `container/Containerfile`), and the Debian cloud image the utm backend
 downloads is verified against a pinned SHA-512 (`internal/backend/
 cloudinit.go`) over an https-only redirect chain. The mpd checkout itself —
 and `update` — deliberately track `mutms/mpd` main: that repo is part of the

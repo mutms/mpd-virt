@@ -17,7 +17,7 @@ import (
 // one-off fix belongs in the developer's own tree, not as a feature here.
 //
 // Deliberately NOT under /opt/mpd: that is mpd's git checkout, which
-// bootstrap/99-update.sh pulls, so anything dropped in there fights the
+// `mpd --vm-upgrade` pulls, so anything dropped in there fights the
 // update. /opt/mpd-virt is mpd-virt's own FHS slot on the box.
 //
 // mpd bind-mounts /opt/mpd read-only into every runtime container but knows
