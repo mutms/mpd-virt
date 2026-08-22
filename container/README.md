@@ -39,9 +39,9 @@ container registry login ghcr.io      # once
 container/github-publish.sh           # builds + pushes the TAG set in the script
 ```
 
-Publishing and switching to a tag are separate on purpose: bump `TAG` in
-the script to publish, and bump `DefaultContainerImage()` in
-`go/internal/backend/create.go` when mpd-virt should start using it.
+To bump the tag, search-and-replace it across the repo (the script's
+`TAG`, `DefaultContainerImage()` in `go/internal/backend/create.go`, and
+this file), commit, then run the script.
 
 ## systemd as PID 1
 
