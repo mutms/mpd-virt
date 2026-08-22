@@ -39,11 +39,17 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 	}
 }
 
-// DefaultContainerImage is the base image `create --backend=container` runs.
-// Only the Apple `container` runtime is supported; --image overrides it
-// (e.g. a published ghcr.io/… reference).
+// DefaultContainerImage is the published, pre-baked base image
+// `create --backend=container` runs (built from container/Containerfile):
+// `container run` pulls it, so a fresh box costs a pull rather than the
+// apt run adoption would otherwise do. The tag is <debian point
+// release>.<build>; bump the build number here when the image is
+// republished because Debian has drifted far enough to slow adoption's
+// package step again (see the Containerfile header). Only the Apple
+// `container` runtime is supported; --image overrides it, e.g. for a
+// locally built tag.
 func DefaultContainerImage() string {
-	return "mpd-virt-container-apple" // darwin/Apple `container`
+	return "ghcr.io/mutms/mpd-virt-container-apple:13.6.1" // darwin/Apple `container`
 }
 
 func containerCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {

@@ -5,14 +5,43 @@ The base image `mpd-virt` runs, provisions, and adopts as an mpd box on Apple
 freshly-provisioned Debian Trixie machine — the same network + service shape
 `mpd-virt create --backend=container` (and a manual `adopt`) expect.
 
-## Build it
+## Testing a local build
 
-Build the image once (rebuild when the base changes); everything else runs it:
+Build with the tag mpd-virt currently pins (`DefaultContainerImage()` in
+`go/internal/backend/create.go`); the local image shadows the published
+one on this Mac only:
 
 ```bash
-cd container
-container build -t mpd-virt-container-apple .
+container build -t ghcr.io/mutms/mpd-virt-container-apple:13.6.1 container
+mpd-virt create 141 --backend=container
 ```
+
+When done, remove it so the next `create` pulls the published image again:
+
+```bash
+container image rm ghcr.io/mutms/mpd-virt-container-apple:13.6.1
+```
+
+## Publishing image
+
+Nobody builds this per Mac. `mpd-virt create --backend=container` runs the
+tag `backend.DefaultContainerImage()` names — and `container run`
+pulls it when it is not local. That is the point of the image: it is
+pre-baked (mpd's bootstrap step 20 already applied), so a box is a pull
+plus a few seconds of adoption rather than a 300 MB apt run.
+
+The tag is `<Debian point release>.<build>`. Tags should be immutable; publish
+a new one when Debian has drifted far enough that adoption's re-run of
+step 20 is slow again (or when `MPD_BOOTSTRAP_REF` / `FROM` move):
+
+```bash
+container registry login ghcr.io      # once
+container/github-publish.sh           # builds + pushes the TAG set in the script
+```
+
+Publishing and switching to a tag are separate on purpose: bump `TAG` in
+the script to publish, and bump `DefaultContainerImage()` in
+`go/internal/backend/create.go` when mpd-virt should start using it.
 
 ## systemd as PID 1
 
@@ -39,11 +68,11 @@ vmnet address, and mpd-virt owns its hostname and accounts.
    qemu-guest-agent) at build time, at the commit pinned by
    `MPD_BOOTSTRAP_REF` in the Containerfile — the same pin as `bootstrapRef`
    in `internal/cli/adopt.go`. Adoption re-runs the step and finds nothing to
-   do; rebuild the image when the pin moves.
+   do.
 
 ## Running & provisioning a box
 
 `mpd-virt create <NNN> --backend=container` is the path: it runs the image,
 provisions the account + sudo + your key via `container exec`, reads the IP
-from `container inspect`, and adopts the box — no manual steps. The image must
-exist first (build it as above — `create` neither builds nor pulls it).
+from `container inspect`, and adopts the box — no manual steps. `container run`
+pulls the published image on first use; `create` itself never builds one.

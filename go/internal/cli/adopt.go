@@ -28,7 +28,7 @@ import (
 // the same ref. (The clone itself, and `update`, deliberately track mpd's
 // main — that is the platform's own trust decision, and the checkout at
 // least leaves auditable history on the box; see docs/SECURITY.md.)
-const bootstrapRef = "0af19300769bc228db14bb4a7d8f8cc39a6e2935"
+const bootstrapRef = "30af81d01a54fb41f200df29a64c7b9263264b55"
 
 // bootstrapBaseURL is where the bootstrap steps are fetched from, at the
 // pinned ref. Step 30 lands the checkout; everything after runs from it.

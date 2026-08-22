@@ -57,9 +57,7 @@ but the `container` runtime is young, so treat this backend as experimental;
 UTM, Parallels, or an adopted Debian box are the steadier choices:
 
 ```bash
-cd ~/Developer/mpd-virt                                  # repo root — build reads ./container/
-container build -t mpd-virt-container-apple container/   # base image, once, this may take a while
-mpd-virt create 141 --backend=container                  # creates + provisions mpd-141 — the slow step (several minutes)
+mpd-virt create 141 --backend=container   # pulls the published base image, creates + provisions mpd-141
 ```
 
 Either way you now have a running mpd box. SSH into **the box** and create your

@@ -20,16 +20,9 @@ func createCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <NNN> --backend=<backend>",
 		Short: "Create a fresh box from its backend's base image and adopt it",
-		Long: "Provisions a brand-new box for the id through its backend, then\n" +
-			"adopts it exactly as `adopt` does. For --backend=container it runs the\n" +
-			"base image (--image, default derived from this Mac's runtime), waits\n" +
-			"for systemd, seeds the dev user + passwordless sudo + your public key\n" +
-			"(--pubkey), reads the leased IP from `container inspect`, and hands\n" +
-			"off. For --backend=utm it downloads the Debian cloud image, builds a\n" +
-			"cidata seed (dev user + key + static vmnet IP), creates and boots the\n" +
-			"VM in UTM (--memory, --disk), waits for cloud-init, then hands off.\n" +
-			"parallels/proxmox are not implemented yet (they need a template clone\n" +
-			"+ cloud-init); a generic box is adopted, not created.",
+		Long: "Creates a fresh box on its backend and adopts it. Backends: container\n" +
+			"(Apple container, base image --image) and utm (Debian cloud image,\n" +
+			"--memory, --disk). parallels/proxmox boxes are created by hand and adopted.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
@@ -44,9 +37,6 @@ func createCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if image == "" {
-				image = backend.DefaultContainerImage()
-			}
 			ip, err := backend.Create(cmd.Context(), cmd.OutOrStdout(), id, be, backend.CreateOpts{
 				Image: image, Memory: memory, Disk: disk, User: username, PubKey: pubkey,
 			})
@@ -59,7 +49,7 @@ func createCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(), "dev user to create on the box")
 	cmd.Flags().StringVar(&backendFlag, "backend", "", "platform to create on ("+backend.List()+") — required")
-	cmd.Flags().StringVar(&image, "image", "", "base image to run — container backend (default derived from this Mac's runtime)")
+	cmd.Flags().StringVar(&image, "image", backend.DefaultContainerImage(), "base image to run — container backend")
 	cmd.Flags().StringVar(&memory, "memory", "10g", "memory: container --memory, or VM RAM (utm)")
 	cmd.Flags().StringVar(&disk, "disk", "", "VM disk size for utm, e.g. 80g (default 80g; ignored by container)")
 	cmd.Flags().StringVar(&pubkeyPath, "pubkey", "", "public key to authorize (default ~/.ssh/id_ed25519.pub, then id_rsa.pub)")
