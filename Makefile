@@ -26,13 +26,17 @@ build:
 	cd $(GO_DIR) && go build -ldflags "$(LDFLAGS)" -o $(CURDIR)/bin/mpd-virt ./cmd/mpd-virt
 	@echo "Native binary: bin/mpd-virt"
 
-# Self-contained binaries for GitHub releases (Apple Silicon Macs). The
-# version is part of the file name, so dist/ is cleared first — otherwise
-# binaries of older versions would pile up next to the new ones, waiting
-# to be uploaded by mistake.
+# Self-contained binaries for GitHub releases: Linux amd64 + arm64 and
+# macOS arm64. The version is part of the file name, so dist/ is cleared
+# first — otherwise binaries of older versions would pile up next to the
+# new ones, waiting to be uploaded by mistake. The macOS one is ad-hoc
+# signed by the Go linker and runs as downloaded with curl; a browser
+# download needs `xattr -d com.apple.quarantine` once (Gatekeeper).
 build-static:
 	rm -rf $(CURDIR)/dist
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-macos-arm64 ./cmd/mpd-virt
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-linux-amd64 ./cmd/mpd-virt
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-virt-$(VERSION)-linux-arm64 ./cmd/mpd-virt
 
 install: build
 	@mkdir -p "$(BINDIR)"

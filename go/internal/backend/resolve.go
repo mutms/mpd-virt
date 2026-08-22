@@ -78,6 +78,11 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 		if utmVMExists(ctx, id.Name()) {
 			add(utmCanonicalIP(id), "utm")
 		}
+	case Libvirt:
+		// Pinned to the libvirt default network, like UTM on vmnet.
+		if libvirtDomainExists(ctx, id.Name()) {
+			add(libvirtCanonicalIP(id), "libvirt")
+		}
 	case Proxmox:
 		// A running, adopted box runs qemu-guest-agent (the prep script and
 		// bootstrap install it), so ask the API for its real address first —

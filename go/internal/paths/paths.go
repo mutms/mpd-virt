@@ -61,6 +61,12 @@ func CloudImages() string { return filepath.Join(Conf(), "cloud-images") }
 // + cidata seed are built before UTM imports them into its own bundle.
 func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging", name) }
 
+// LibvirtDir is /var/lib/mpd-virt/<name> — a libvirt box's disk + cidata
+// seed. Not under ~/.mpd-virt: qemu runs as libvirt-qemu and a Debian home
+// is 0700, so it could not open anything there. Created once by hand
+// (docs/LIBVIRT.md), dev-user-owned.
+func LibvirtDir(name string) string { return filepath.Join("/var/lib/mpd-virt", name) }
+
 // ProxySocket is ~/.mpd-virt/proxy/socket — mpd-proxy's control socket.
 // mpd-proxy creates the proxy/ dir (user-owned, 0700) and binds the socket
 // there; it derives the same path from the sudo user's home and knows

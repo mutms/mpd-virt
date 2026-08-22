@@ -65,8 +65,8 @@ func removeCmd() *cobra.Command {
 			if full && loadErr != nil {
 				return fmt.Errorf("%s has no registry entry, so its backend is unknown — --full needs one", id.Name())
 			}
-			if full && backend.Backend(e.Backend) != backend.Container {
-				return fmt.Errorf("--full can delete Apple containers only; %s is a %s box — delete it in its hypervisor after `remove`", id.Name(), e.Backend)
+			if full && backend.Backend(e.Backend) != backend.Container && backend.Backend(e.Backend) != backend.Libvirt {
+				return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; %s is a %s box — delete it in its hypervisor after `remove`", id.Name(), e.Backend)
 			}
 			if loadErr == nil && full {
 				fmt.Printf("remove --full %s  (backend=%s, ip=%s) — DELETES the box and its disk\n",
@@ -121,7 +121,7 @@ func removeCmd() *cobra.Command {
 
 			fmt.Printf("\n✓ %s removed.", id.Name())
 			if full {
-				fmt.Printf("  Create again with: mpd-virt create %s --backend=container\n", id.String())
+				fmt.Printf("  Create again with: mpd-virt create %s --backend=%s\n", id.String(), e.Backend)
 			} else if loadErr == nil {
 				fmt.Printf("  Re-adopt with: mpd-virt adopt %s --backend=%s\n", id.String(), e.Backend)
 			} else {
@@ -131,7 +131,7 @@ func removeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "skip the typed confirmation")
-	cmd.Flags().BoolVar(&full, "full", false, "also delete the box itself (Apple containers only)")
+	cmd.Flags().BoolVar(&full, "full", false, "also delete the box itself (Apple containers and libvirt VMs)")
 	return cmd
 }
 

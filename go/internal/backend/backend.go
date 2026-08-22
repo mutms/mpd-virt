@@ -18,10 +18,11 @@ const (
 	Container Backend = "container" // native Apple container
 	UTM       Backend = "utm"       // UTM Desktop VM (macOS, osascript-driven)
 	Proxmox   Backend = "proxmox"   // Proxmox VM behind warp
+	Libvirt   Backend = "libvirt"   // libvirt/KVM VM on a Linux host
 )
 
 // backends is the closed set of valid values, in help/order.
-var backends = []Backend{Generic, Parallels, Container, UTM, Proxmox}
+var backends = []Backend{Generic, Parallels, Container, UTM, Proxmox, Libvirt}
 
 // Parse validates a --backend value against the known set.
 func Parse(s string) (Backend, error) {

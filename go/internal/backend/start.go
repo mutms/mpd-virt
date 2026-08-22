@@ -52,8 +52,11 @@ func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 // only for what Create makes. Apple container only for now: the box must
 // already be stopped (`container delete` refuses a running one).
 func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
+	if be == Libvirt {
+		return libvirtDelete(ctx, out, id)
+	}
 	if be != Container {
-		return fmt.Errorf("--full can delete Apple containers only; a %s box is deleted in its hypervisor", be)
+		return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; a %s box is deleted in its hypervisor", be)
 	}
 	fmt.Fprintf(out, "  ▶ container delete %s\n", id.Name())
 	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"delete", id.Name()}})
@@ -68,7 +71,7 @@ func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 
 // managed reports whether mpd-virt can power a backend from this Mac.
 func managed(be Backend) bool {
-	return be == Container || be == Parallels || be == UTM || be == Proxmox
+	return be == Container || be == Parallels || be == UTM || be == Proxmox || be == Libvirt
 }
 
 // powerOn brings a box up, and returns the state it was in beforehand so Start
@@ -120,6 +123,9 @@ func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb stri
 	// Proxmox is driven through its REST API, not a local CLI.
 	if be == Proxmox {
 		return proxmoxPower(ctx, out, id, verb)
+	}
+	if be == Libvirt {
+		return libvirtPower(ctx, out, id, verb)
 	}
 	argv := powerArgv(id, be, verb)
 	if argv == nil {

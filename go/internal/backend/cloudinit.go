@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/exec"
@@ -200,19 +201,64 @@ func makeCidataISO(ctx context.Context, outputPath, username, sshPubKey, localHo
 	}
 	_ = os.Remove(outputPath)
 
-	r, err := exec.Capture(ctx, exec.Cmd{Name: "hdiutil", Args: []string{
-		"makehybrid", "-o", outputPath,
-		"-iso", "-joliet",
-		"-default-volume-name", "cidata",
-		work,
-	}})
+	// macOS has hdiutil built in; Linux uses genisoimage (docs/LIBVIRT.md).
+	cmd := exec.Cmd{Name: "hdiutil", Args: []string{
+		"makehybrid", "-o", outputPath, "-iso", "-joliet", "-default-volume-name", "cidata", work,
+	}}
+	if runtime.GOOS != "darwin" {
+		cmd = exec.Cmd{Name: "genisoimage", Args: []string{
+			"-output", outputPath, "-volid", "cidata", "-joliet", "-rock", work,
+		}}
+	}
+	r, err := exec.Capture(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	if r.Failed() {
-		return fmt.Errorf("hdiutil makehybrid failed (exit %d): %s", r.Code, shortErr(r))
+		return fmt.Errorf("%s failed (exit %d): %s", cmd.Name, r.Code, shortErr(r))
 	}
 	return nil
+}
+
+// Debian Trixie "generic", amd64, as qcow2 — the libvirt backend's base.
+// Same dated directory as the arm64 archive; bump the three together.
+const (
+	cloudQcow2       = "debian-13-generic-amd64-20260819-2575.qcow2"
+	cloudQcow2SHA512 = "ae204682c015fd026838b71f1ce82585368dbb8c050b779ffd8a21a90a6c94f20648133dd078ee8fca9f0aa956e6901a943899be69ee24480035da6aeecd4f68"
+)
+
+// ensureCloudQcow2 downloads and verifies the amd64 qcow2 into the cache on
+// first use and returns its path — ensureBaseArchive's twin.
+func ensureCloudQcow2(ctx context.Context, out io.Writer) (string, error) {
+	dst := filepath.Join(paths.CloudImages(), cloudQcow2)
+	if _, err := os.Stat(dst); err == nil {
+		return dst, nil
+	}
+	if err := os.MkdirAll(paths.CloudImages(), 0o755); err != nil {
+		return "", err
+	}
+	partial := dst + ".partial"
+	url := cloudBase + "/" + cloudQcow2
+	fmt.Fprintf(out, "  ▶ downloading %s (~400 MB, first create only) …\n", cloudQcow2)
+	code, err := exec.Run(ctx, exec.Cmd{Name: "curl", Args: []string{
+		"-L", "--fail", "--proto", "=https", "--progress-bar", "-o", partial, url,
+	}})
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		_ = os.Remove(partial)
+		return "", fmt.Errorf("curl failed to download %s (exit %d)", url, code)
+	}
+	if err := verifySHA512(partial, cloudQcow2SHA512); err != nil {
+		_ = os.Remove(partial)
+		return "", fmt.Errorf("downloaded %s failed verification: %w", cloudQcow2, err)
+	}
+	fmt.Fprintf(out, "  ✓ image SHA-512 verified\n")
+	if err := os.Rename(partial, dst); err != nil {
+		return "", err
+	}
+	return dst, nil
 }
 
 // cidataMetaData is the NoCloud meta-data: instance id + a first-boot

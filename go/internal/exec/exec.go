@@ -39,6 +39,11 @@ var allowed = map[string]bool{
 	"curl":      true,
 	"tar":       true,
 	"hdiutil":   true,
+	// libvirt backend (Linux host): virsh defines/powers the VM, qemu-img
+	// makes its disk from the cloud image, genisoimage builds the seed.
+	"virsh":       true,
+	"qemu-img":    true,
+	"genisoimage": true,
 	// Read-only System Keychain checks: is the mpd root CA trusted, and is a
 	// stale one present. A macOS built-in; mpd-virt only reads, never installs
 	// trust (that stays an explicit `sudo security add-trusted-cert` the user
