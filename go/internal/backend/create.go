@@ -23,8 +23,9 @@ type CreateOpts struct {
 // Create provisions a fresh box for the id through its backend and returns the
 // IP it came up on, ready for adoption. Container runs the base image, waits
 // for systemd, seeds the dev account + sudo + key, and reads the leased IP;
-// utm materializes a fresh VM from the Debian cloud image (utm.go). Parallels/
-// Proxmox need a template clone + cloud-init (not yet). A generic box is
+// utm materializes a fresh VM from the Debian cloud image (utm.go); proxmox
+// clones the mpd-template VM and points its cloud-init at the box's address
+// (proxmox.go). Parallels needs a template clone (not yet). A generic box is
 // adopted, not created.
 func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts CreateOpts) (string, error) {
 	switch be {
@@ -32,7 +33,9 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 		return containerCreate(ctx, out, id, opts)
 	case UTM:
 		return utmCreate(ctx, out, id, opts)
-	case Parallels, Proxmox:
+	case Proxmox:
+		return proxmoxCreate(ctx, out, id, opts)
+	case Parallels:
 		return "", fmt.Errorf("create is not implemented for the %s backend yet (needs a template clone + cloud-init) — create the box yourself, then `mpd-virt adopt`", be)
 	default:
 		return "", fmt.Errorf("a %s box is adopted, not created — use `mpd-virt adopt %s <IP> --backend %s`", be, id.String(), be)

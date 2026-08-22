@@ -1,11 +1,10 @@
 package backend
 
-// proxmox.go drives Proxmox VMs through the Proxmox REST API — power state,
-// start, and graceful shutdown, nothing else. Provisioning stays manual by
-// design (docs/PROXMOX.md). The VM number is the Proxmox VMID, and the VM's
-// LAN address is NETWORK with the last octet replaced by that number — the
-// cloud image runs no guest agent, so the address is assigned statically in
-// cloud-init to match this rule rather than queried.
+// proxmox.go drives Proxmox VMs through the Proxmox REST API: power state,
+// start, graceful shutdown, and `create` — a full clone of the mpd-template
+// VM with the clone's hostname and static IP set through cloud-init
+// (docs/PROXMOX.md). The VM number is the Proxmox VMID, and the VM's LAN
+// address is NETWORK with the last octet replaced by that number.
 
 import (
 	"bufio"
@@ -20,9 +19,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
@@ -31,9 +32,12 @@ import (
 // the VMs sit on, and the API token exactly as the Proxmox UI shows it.
 type proxmoxConfig struct {
 	apiURL      string // https://<host>:8006/api2/json/
-	network     string // e.g. 10.1.10.0 — VM NNN lives at .NNN
+	network     string // e.g. 10.1.10.0/16 — VM NNN lives at .NNN; the prefix (default /24) is the clone's netmask
+	gateway     string // GATEWAY: the clone's default route (create only)
 	tokenID     string // <user>@<realm>!<token name>
 	tokenSecret string // the secret uuid
+	template    string // TEMPLATE_VMID: the VM `create` clones (default 999)
+	pool        string // POOL: the pool new VMs join (optional; the token's grant usually lives there)
 }
 
 // loadProxmoxConfig reads and validates the env file. Every key is required;
@@ -63,6 +67,12 @@ func loadProxmoxConfig() (proxmoxConfig, error) {
 		network:     vals["NETWORK"],
 		tokenID:     vals["TOKEN_ID"],
 		tokenSecret: vals["TOKEN_SECRET"],
+		template:    vals["TEMPLATE_VMID"],
+		pool:        vals["POOL"],
+		gateway:     vals["GATEWAY"],
+	}
+	if cfg.template == "" {
+		cfg.template = "999"
 	}
 	for k, v := range map[string]string{
 		"API_URL": cfg.apiURL, "NETWORK": cfg.network,
@@ -103,9 +113,21 @@ func newProxmoxClient(cfg proxmoxConfig) *proxmoxClient {
 // call performs one API request and decodes the response's "data" envelope
 // into out (nil to discard). Every Proxmox reply is {"data": ...}.
 func (c *proxmoxClient) call(ctx context.Context, method, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, c.cfg.apiURL+path, nil)
+	return c.callForm(ctx, method, path, nil, out)
+}
+
+// callForm is call with a form body (POST/PUT parameters).
+func (c *proxmoxClient) callForm(ctx context.Context, method, path string, form url.Values, out any) error {
+	var body io.Reader
+	if form != nil {
+		body = strings.NewReader(form.Encode())
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.cfg.apiURL+path, body)
 	if err != nil {
 		return err
+	}
+	if form != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	req.Header.Set("Authorization", "PVEAPIToken="+c.cfg.tokenID+"="+c.cfg.tokenSecret)
 	resp, err := c.http.Do(req)
@@ -114,7 +136,8 @@ func (c *proxmoxClient) call(ctx context.Context, method, path string, out any) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("proxmox API %s %s: %s", method, path, resp.Status)
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("proxmox API %s %s: %s %s", method, path, resp.Status, strings.TrimSpace(string(msg)))
 	}
 	if out == nil {
 		return nil
@@ -265,11 +288,210 @@ func proxmoxDerivedIP(id vmid.ID) string {
 	if err != nil {
 		return ""
 	}
-	addr, err := netip.ParseAddr(cfg.network)
+	return derivedIP(cfg.network, id)
+}
+
+// --- create -----------------------------------------------------------------
+
+// proxmoxCreate makes a box by cloning the template VM: full clone under the
+// new VMID named mpd-<NNN>, cloud-init pointed at the derived static IP with
+// the dev user and the Mac's key, then start and wait for the first boot's
+// cloud-init to finish. The template never ran `mpd --vm-setup`, so its
+// cloud-init modules are all still enabled: the clone's first boot sets the
+// hostname, creates the user and generates fresh host keys. Returns the IP
+// the box is reachable at, ready for adoption.
+func proxmoxCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		return "", err
+	}
+	c := newProxmoxClient(cfg)
+	ip, err := c.cloneFromTemplate(ctx, out, id, opts)
+	if err != nil {
+		return "", err
+	}
+
+	t := host.Target{
+		User: opts.User, Host: ip,
+		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: id.Name(),
+	}
+	fmt.Fprintf(out, "  ▶ waiting for %s at %s (cloud-init first boot) …\n", id.Name(), ip)
+	if !waitReachable(ctx, t, 300*time.Second) {
+		return "", fmt.Errorf("%s did not come up at %s within 5 min — open its console in the Proxmox UI", id.Name(), ip)
+	}
+	if err := waitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
+		return "", err
+	}
+	fmt.Fprintf(out, "  ▶ Proxmox VM ready: %s\n", ip)
+	return ip, nil
+}
+
+// cloneFromTemplate is the API half of proxmoxCreate: clone, configure
+// cloud-init, start. Split off so it can be exercised against a fake API.
+func (c *proxmoxClient) cloneFromTemplate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {
+	if vm, err := c.findVM(ctx, id); err == nil {
+		return "", fmt.Errorf("proxmox already has VM %d (%s on %s) — pick another id, or `mpd-virt remove` and delete it first", int(id), vm.Status, vm.Node)
+	}
+	if _, err := strconv.Atoi(c.cfg.template); err != nil {
+		return "", fmt.Errorf("TEMPLATE_VMID=%q in proxmox.env is not a VMID", c.cfg.template)
+	}
+	var template vmResource
+	{
+		var vms []vmResource
+		if err := c.call(ctx, http.MethodGet, "cluster/resources?type=vm", &vms); err != nil {
+			return "", err
+		}
+		for _, vm := range vms {
+			if fmt.Sprint(vm.VMID) == c.cfg.template {
+				template = vm
+			}
+		}
+		if template.Node == "" {
+			return "", fmt.Errorf("template VM %s is not visible to the token — create it (docs/PROXMOX.md) and grant the token on it", c.cfg.template)
+		}
+	}
+	node := url.PathEscape(template.Node)
+
+	ipconfig, ip, err := proxmoxIPConfig(c.cfg.network, c.cfg.gateway, id)
+	if err != nil {
+		return "", err
+	}
+	// The template's cloud-init keys are kept; the Mac's key is added if
+	// it is not among them.
+	var tcfg struct {
+		SSHKeys string `json:"sshkeys"`
+	}
+	if err := c.call(ctx, http.MethodGet, fmt.Sprintf("nodes/%s/qemu/%s/config", node, c.cfg.template), &tcfg); err != nil {
+		return "", err
+	}
+	keys := proxmoxAddKey(tcfg.SSHKeys, opts.PubKey)
+
+	fmt.Fprintf(out, "  ▶ proxmox clone %s → %d %s (node %s)\n", c.cfg.template, int(id), id.Name(), template.Node)
+	form := url.Values{"newid": {fmt.Sprint(int(id))}, "name": {id.Name()}, "full": {"1"}}
+	if c.cfg.pool != "" {
+		form.Set("pool", c.cfg.pool)
+	}
+	var upid string
+	if err := c.callForm(ctx, http.MethodPost, fmt.Sprintf("nodes/%s/qemu/%s/clone", node, c.cfg.template), form, &upid); err != nil {
+		return "", err
+	}
+	if err := c.waitTask(ctx, template.Node, upid, 10*time.Minute); err != nil {
+		return "", fmt.Errorf("clone: %w", err)
+	}
+
+	fmt.Fprintf(out, "  ▶ cloud-init: %s, user %s, your key\n", ipconfig, opts.User)
+	// sshkeys is stored URL-encoded by Proxmox (its verifier accepts only
+	// [-A-Za-z0-9_.!~*'()%], so spaces must be %20, not +); the form
+	// encoding on top is the transport's.
+	form = url.Values{
+		"ipconfig0": {ipconfig},
+		"ciuser":    {opts.User},
+		"sshkeys":   {proxmoxURLEncode(keys)},
+		"delete":    {"cipassword"},
+	}
+	if err := c.callForm(ctx, http.MethodPut, fmt.Sprintf("nodes/%s/qemu/%d/config", node, int(id)), form, nil); err != nil {
+		return "", err
+	}
+
+	fmt.Fprintf(out, "  ▶ proxmox start %s\n", id.Name())
+	if err := c.callForm(ctx, http.MethodPost, fmt.Sprintf("nodes/%s/qemu/%d/status/start", node, int(id)), url.Values{}, &upid); err != nil {
+		return "", err
+	}
+	if err := c.waitTask(ctx, template.Node, upid, 2*time.Minute); err != nil {
+		return "", fmt.Errorf("start: %w", err)
+	}
+	return ip, nil
+}
+
+// proxmoxIPConfig is the clone's cloud-init ipconfig0 — "ip=<NETWORK with
+// .NNN>/<prefix>,gw=<GATEWAY>" — and the address in it, which is what the
+// box is waited for at. NETWORK may carry the prefix (10.1.10.0/16);
+// without one it is /24.
+func proxmoxIPConfig(network, gateway string, id vmid.ID) (string, string, error) {
+	ip := derivedIP(network, id)
+	if ip == "" {
+		return "", "", fmt.Errorf("NETWORK=%q in proxmox.env is not an IPv4 network (e.g. 10.1.10.0/16)", network)
+	}
+	prefix := "24"
+	if _, p, ok := strings.Cut(network, "/"); ok {
+		prefix = p
+	}
+	if gw, err := netip.ParseAddr(gateway); err != nil || !gw.Is4() {
+		return "", "", fmt.Errorf("GATEWAY=%q in proxmox.env is not an IPv4 address — create needs the clone's default route", gateway)
+	}
+	return "ip=" + ip + "/" + prefix + ",gw=" + gateway, ip, nil
+}
+
+// derivedIP is NETWORK (with or without a prefix) with the last octet
+// replaced by the VM number; "" when NETWORK does not parse.
+func derivedIP(network string, id vmid.ID) string {
+	base, _, _ := strings.Cut(network, "/")
+	addr, err := netip.ParseAddr(base)
 	if err != nil || !addr.Is4() {
 		return ""
 	}
 	b := addr.As4()
 	b[3] = byte(int(id))
 	return netip.AddrFrom4(b).String()
+}
+
+// proxmoxAddKey appends key to a VM's sshkeys value (URL-encoded,
+// newline-separated) unless it is already there, returning the decoded
+// list.
+func proxmoxAddKey(encoded, key string) string {
+	existing, _ := url.PathUnescape(encoded)
+	var keys []string
+	for _, k := range strings.Split(existing, "\n") {
+		if k = strings.TrimSpace(k); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	key = strings.TrimSpace(key)
+	for _, k := range keys {
+		if k == key {
+			return strings.Join(keys, "\n")
+		}
+	}
+	return strings.Join(append(keys, key), "\n")
+}
+
+// proxmoxURLEncode is JavaScript's encodeURIComponent — what the Proxmox UI
+// uses for sshkeys and what its verifier accepts.
+func proxmoxURLEncode(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '-', c == '_', c == '.', c == '!', c == '~', c == '*', c == '\'', c == '(', c == ')':
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// waitTask polls a node task until it finishes, failing on any exit status
+// other than OK.
+func (c *proxmoxClient) waitTask(ctx context.Context, node, upid string, timeout time.Duration) error {
+	path := fmt.Sprintf("nodes/%s/tasks/%s/status", url.PathEscape(node), url.PathEscape(upid))
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var st struct {
+			Status     string `json:"status"`
+			ExitStatus string `json:"exitstatus"`
+		}
+		if err := c.call(ctx, http.MethodGet, path, &st); err != nil {
+			return err
+		}
+		if st.Status == "stopped" {
+			if st.ExitStatus != "OK" {
+				return fmt.Errorf("proxmox task %s: %s", upid, st.ExitStatus)
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("proxmox task %s did not finish within %s", upid, timeout)
 }

@@ -21,8 +21,9 @@ func createCmd() *cobra.Command {
 		Use:   "create <NNN> --backend=<backend>",
 		Short: "Create a fresh box from its backend's base image and adopt it",
 		Long: "Creates a fresh box on its backend and adopts it. Backends: container\n" +
-			"(Apple container, base image --image) and utm (Debian cloud image,\n" +
-			"--memory, --disk). parallels/proxmox boxes are created by hand and adopted.",
+			"(Apple container, base image --image), utm (Debian cloud image,\n" +
+			"--memory, --disk) and proxmox (full clone of the mpd-template VM,\n" +
+			"TEMPLATE_VMID in proxmox.env). parallels boxes are created by hand and adopted.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])

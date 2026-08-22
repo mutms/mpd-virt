@@ -1,8 +1,8 @@
 # Proxmox mpd backend
 
-Proxmox backend does not provide automatic provisioning of mpd VMs.
-Developer is expected to create mpd VMs manually either using normal Debian Trixie
-installer or from cloud-init images.
+`mpd-virt create NNN --backend=proxmox` clones a template VM (see "Template
+VM" below) and adopts the clone. VMs can also be created by hand — Debian
+installer or cloud-init image — and adopted.
 
 Once a VM is adopted, mpd-virt drives it through the Proxmox REST API — but
 only for three things: VM status, start, and graceful shutdown (`mpd-virt
@@ -14,45 +14,72 @@ cloud-init IP config.
 
 ## Prepare API token and configure mpd-virt
 
-1. Create role `mpd-virt` with permissions "VM.Audit VM.GuestAgent.Audit VM.PowerMgmt" in "Datacenter / Permissions / Roles"
-2. Create a new token in "Datacenter / Permissions / API Tokens"
-3. Create ~/.mpd-virt/conf/backends/proxmox.env file with the following content
+1. Create role `mpd-virt` in "Datacenter / Permissions / Roles" with
+   `VM.Audit VM.Clone VM.Allocate VM.Config.Cloudinit VM.Config.Options VM.GuestAgent.Audit VM.PowerMgmt Datastore.AllocateSpace SDN.Use`
+   (`create` needs clone/allocate/cloud-init/start; `Datastore.AllocateSpace`
+   — not `Datastore.Allocate` — is what the clone's disk needs)
+2. Create a new token in "Datacenter / Permissions / API Tokens" with
+   privilege separation on
+3. Put the VMs, the template and the storage in a pool (`mpd`) and grant the
+   token the role on `/pool/mpd` and on the bridge
+   (`/sdn/zones/localnetwork/vmbr0`), both with propagate
+4. Create ~/.mpd-virt/conf/backends/proxmox.env file with the following content
 ```
 API_URL=https://<proxmoxserverurl>:8006/api2/json/
-NETWORK=<local_network_prefix>.0
+NETWORK=<local_network_prefix>.0/24
+GATEWAY=<gateway>
 TOKEN_ID=<copy_from_dialog>
 TOKEN_SECRET=<copy_from_dialog>
+TEMPLATE_VMID=999
+POOL=mpd
 ```
+`NETWORK` with `.NNN` is the VM's address; its prefix (`/24` when omitted)
+and `GATEWAY` make up the clone's cloud-init IP line
+(`ip=10.1.10.154/16,gw=10.1.1.1`). The template itself stays on DHCP.
 `TOKEN_ID` and `TOKEN_SECRET` are the two values the token-creation dialog
 shows, copied verbatim — no quotes, no angle brackets. The file holds a
 secret: `chmod 600` it (mpd-virt re-asserts owner-only permissions on the
 whole `~/.mpd-virt` tree on every run, but there is no reason to leave it
 readable even once). Grant the token only the `mpd-virt` role from step 1,
-scoped to the mpd VMs — power control and state are all it ever needs.
+scoped to the pool: it can then create, configure, power and delete VMs
+there and nothing outside it.
 
 The API endpoint's TLS certificate must be trusted on the Mac: either serve
 an mpd-CA-signed certificate on the Proxmox host, or add its CA to the System
 Keychain. mpd-virt trusts the system roots plus the mpd root CA.
 
-## Template VM (optional, faster adoption)
+## Template VM and `mpd-virt create`
 
-Install Debian once into a VM named `mpd-template` (or
-`mpd-template-<x>`), add your SSH key, and run mpd's bootstrap steps 10,
-15 and 20 in it — sudo, keys-only sshd, and the full package set
-(podman, caddy, WireGuard, the Go toolchain, avahi, qemu-guest-agent):
+`mpd-virt create NNN --backend=proxmox` does, through the API: full clone of
+the template as VMID NNN named `mpd-NNN` into `POOL`; cloud-init on the
+clone set to the static `NETWORK.NNN` with `GATEWAY`, your user and SSH
+key, no password; start;
+wait for cloud-init's first boot; then the normal adoption. A clone comes
+up in about a minute because the template already carries mpd's packages.
 
-```
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/20-install-software.sh)
-```
+Build the template once (VMID `TEMPLATE_VMID`, default 999):
 
-Convert it to a template and clone `mpd-NNN` VMs from it (set the
-hostname in the clone). A clone reports its IP to the Proxmox UI through
-qemu-guest-agent, so `mpd-virt adopt NNN --backend=proxmox` needs no
-address, and adoption only has to clone + build mpd. Step 20 re-runs
-during adoption and brings a stale template current. Details in mpd's
-`bootstrap/README.md`.
+1. create the VM as in "Cloud-init Debian VM installation" below, named
+   `mpd-template`, in the pool, cloud-init: user, your SSH key(s), DNS,
+   **no password**, IP config DHCP, "Upgrade packages: No". A clone keeps
+   the template's keys; `create` adds the key it was given (`--pubkey`,
+   default `~/.ssh/id_ed25519.pub`) when it is not among them
+2. start it, SSH in and run mpd's bootstrap steps 10, 15 and 20 (sudo,
+   keys-only sshd, the full package set incl. qemu-guest-agent):
+   ```
+   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
+   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
+   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/20-install-software.sh)
+   ```
+3. `sudo cloud-init clean --logs && sudo poweroff` — so every clone's first
+   boot is a clean cloud-init run (new hostname, fresh host keys, your key)
+4. optionally convert it to a template in the UI; `create` does a full
+   clone either way
+
+Never run `mpd --vm-setup` on the template: it would install the cloud-init
+drop-in that freezes identity, and clones would keep the template's
+hostname. Refresh the template by starting it and re-running step 20,
+then step 3 again.
 
 ## Regular Debian VM installation
 

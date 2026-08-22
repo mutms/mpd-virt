@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -177,5 +178,93 @@ func TestProxmoxConfigMissingKey(t *testing.T) {
 	_, err := loadProxmoxConfig()
 	if err == nil || !strings.Contains(err.Error(), "TOKEN_SECRET") {
 		t.Errorf("err = %v, want mention of TOKEN_SECRET", err)
+	}
+}
+
+func TestProxmoxIPConfig(t *testing.T) {
+	line, ip, err := proxmoxIPConfig("10.1.10.0/16", "10.1.1.1", 154)
+	if err != nil || line != "ip=10.1.10.154/16,gw=10.1.1.1" || ip != "10.1.10.154" {
+		t.Fatalf("got %q %q, %v", line, ip, err)
+	}
+	if line, _, _ := proxmoxIPConfig("10.1.10.0", "10.1.10.1", 154); line != "ip=10.1.10.154/24,gw=10.1.10.1" {
+		t.Errorf("no prefix should mean /24, got %q", line)
+	}
+	if _, _, err := proxmoxIPConfig("10.1.10.0/16", "", 154); err == nil {
+		t.Error("missing GATEWAY must be an error")
+	}
+	if _, _, err := proxmoxIPConfig("nope", "10.1.1.1", 154); err == nil {
+		t.Error("bad NETWORK must be an error")
+	}
+}
+
+// The API half of create: clone the template under the new id, set
+// cloud-init (derived IP from the template's prefix/gateway, user, key, no
+// password), start. Each call is checked for the parameters Proxmox needs.
+func TestProxmoxCloneFromTemplate(t *testing.T) {
+	var hits []string
+	forms := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		forms[r.Method+" "+r.URL.Path] = r.PostForm.Encode()
+		switch {
+		case r.URL.Path == "/cluster/resources":
+			_, _ = w.Write([]byte(`{"data":[{"vmid":999,"node":"kitchenbox","status":"stopped"},{"vmid":150,"node":"kitchenbox","status":"running"}]}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/999/config":
+			_, _ = w.Write([]byte(`{"data":{"name":"mpd-template","sshkeys":"ssh-ed25519%20TTTT%20template"}}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/999/clone", r.URL.Path == "/nodes/kitchenbox/qemu/154/status/start":
+			_, _ = w.Write([]byte(`{"data":"UPID:kitchenbox:1:2:3:task:154:t:"}`))
+		case strings.HasPrefix(r.URL.Path, "/nodes/kitchenbox/tasks/"):
+			_, _ = w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"OK"}}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/154/config" && r.Method == http.MethodPut:
+			_, _ = w.Write([]byte(`{"data":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	writeProxmoxEnv(t, srv.URL+"/")
+	root := os.Getenv("MPD_VIRT_ROOT")
+	env := filepath.Join(root, "conf", "backends", "proxmox.env")
+	b, _ := os.ReadFile(env)
+	_ = os.WriteFile(env, append(b, []byte("POOL=mpd-test\nGATEWAY=10.1.1.1\n")...), 0o600)
+
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newProxmoxClient(cfg)
+	ip, err := c.cloneFromTemplate(context.Background(), io.Discard, 154, CreateOpts{User: "skodak", PubKey: "ssh-ed25519 AAAA+x/y me@host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip != "10.1.10.154" {
+		t.Errorf("ip = %q, want 10.1.10.154", ip)
+	}
+	if got := forms["POST /nodes/kitchenbox/qemu/999/clone"]; got != "full=1&name=mpd-154&newid=154&pool=mpd-test" {
+		t.Errorf("clone form = %q", got)
+	}
+	// sshkeys = the template's key plus ours, double-encoded: Proxmox's own
+	// %20 form, then the transport's form encoding of the percent signs.
+	want := "ciuser=skodak&delete=cipassword&ipconfig0=ip%3D10.1.10.154%2F24%2Cgw%3D10.1.1.1&sshkeys=ssh-ed25519%2520TTTT%2520template%250Assh-ed25519%2520AAAA%252Bx%252Fy%2520me%2540host"
+	if got := forms["PUT /nodes/kitchenbox/qemu/154/config"]; got != want {
+		t.Errorf("config form = %q\nwant %q", got, want)
+	}
+	if hits[len(hits)-2] != "POST /nodes/kitchenbox/qemu/154/status/start" {
+		t.Errorf("expected start before the final task poll, got %v", hits)
+	}
+
+	// An id that already exists is refused before anything is cloned.
+	if _, err := c.cloneFromTemplate(context.Background(), io.Discard, 150, CreateOpts{}); err == nil || !strings.Contains(err.Error(), "already has VM 150") {
+		t.Errorf("expected refusal for an existing VM, got %v", err)
+	}
+}
+
+func TestProxmoxAddKey(t *testing.T) {
+	if got := proxmoxAddKey("ssh-ed25519%20A%20one%0Assh-ed25519%20B%20two", "ssh-ed25519 B two"); got != "ssh-ed25519 A one\nssh-ed25519 B two" {
+		t.Errorf("present key duplicated: %q", got)
+	}
+	if got := proxmoxAddKey("", "ssh-ed25519 C three"); got != "ssh-ed25519 C three" {
+		t.Errorf("empty template keys: %q", got)
 	}
 }
