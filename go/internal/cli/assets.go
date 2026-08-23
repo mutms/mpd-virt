@@ -59,6 +59,16 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 	if err := t.MirrorTree(ctx, local, remoteAssetsDir); err != nil {
 		return false, err
 	}
+	// Everything directly in bin/ is a command, so it is made executable
+	// here regardless of the mode the Mac's copy has — files saved by an
+	// editor or copied around arrive without +x, and the Mac never runs
+	// them anyway. Files only, one level: bin/ holds commands, not trees.
+	chmod := fmt.Sprintf("[ -d %[1]s/bin ] && find %[1]s/bin -maxdepth 1 -type f -exec chmod u+x {} + || true", remoteAssetsDir)
+	if r, err := t.Run(ctx, chmod); err != nil {
+		return false, err
+	} else if r.Failed() {
+		return false, fmt.Errorf("chmod %s/bin: %s", remoteAssetsDir, strings.TrimSpace(r.Stderr))
+	}
 	// The PATH drop-in is written on every push rather than once at
 	// adoption: it is two cheap commands, and it means a VM that predates
 	// this (or had /etc wiped by a reinstall) heals on the next start.

@@ -182,8 +182,7 @@ MPD_VM_USER=skodak
 ```
 
 The whole tree is owner-only: every invocation re-asserts 0700 on
-directories and strips group/other bits from files (owner execute bits on
-`assets/` scripts survive). Nothing under `~/.mpd-virt` is another user's
+directories and strips group/other bits from files. Nothing under `~/.mpd-virt` is another user's
 to read — least of all the CA keys and the proxmox token.
 
 Two environment overrides exist, mostly for tests and dry-runs:
@@ -208,9 +207,10 @@ compromised VM can and cannot forge) and the trust model live in
 `~/.mpd-virt/assets/` is an optional directory of **your own** scripts and
 files — private hacks, experiments, site-specific wiring. `adopt`,
 `create`, `start` and `update` mirror it into every VM at
-`/opt/mpd-virt/assets/`, and if it contains a `bin/`, that directory is
-appended to `PATH` for interactive shells via
-`/etc/profile.d/mpd-virt-assets.sh`. Nothing else happens: mpd-virt carries
+`/opt/mpd-virt/assets/`, and if it contains a `bin/`, every file in it is
+made executable and the directory is appended to `PATH` for interactive
+shells via `/etc/profile.d/mpd-virt-assets.sh` — no `chmod +x` needed on
+the Mac. Nothing else happens: mpd-virt carries
 the files and never runs, reads, or interprets them.
 
 This exists so a one-off need does not become a feature here. Something
