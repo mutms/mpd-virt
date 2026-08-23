@@ -1,9 +1,9 @@
 # mpd-virt
 
-macOS host-side orchestrator for [mpd](https://github.com/mutms/mpd) — the
+Host-side (macOS or Linux) orchestrator for [mpd](https://github.com/mutms/mpd) — the
 Moodle development VMs. `mpd-virt` creates or adopts
 a Debian VM, bootstraps it over SSH, issues its certificates, and wires up
-reachability so `https://*.mpd.test` works from your Mac.
+reachability so `https://*.mpd.test` works from your machine.
 
 Siblings: [mpd](https://github.com/mutms/mpd) (runs inside the VM),
 [mpd-proxy](https://github.com/mutms/mpd-proxy) (optional root-only network
@@ -13,9 +13,10 @@ helper), [mudev](https://github.com/mutms/mudev) (Moodle recipes).
 
 You need Go (any version — go.mod picks the compiler) and an SSH keypair. What you *manage* is a Debian
 Trixie VM, and it can live **anywhere mpd-virt can reach over SSH** — a VM on
-your Mac (Apple `container`, UTM, Parallels), a Proxmox VM, a cloud instance,
-or bare metal. An Apple-Silicon Mac is not a requirement; the Apple
-`container` backend is just one of several.
+your Mac (Apple `container`, UTM, Parallels), a KVM VM on a Linux box, a
+Proxmox VM, a cloud instance, or bare metal. SSH (tcp/22) is all that is
+required; WireGuard (udp/51820) reachable too is recommended, it is what
+mpd-proxy's transparent `*.mpd.test` overlay uses.
 
 First, [download and install Go](https://go.dev/doc/install).
 
@@ -32,7 +33,7 @@ make install                                        # builds bin/mpd-virt → ~/
 `PATH` (`export PATH="$HOME/.local/bin:$PATH"` in your shell profile) so
 `mpd-virt` is found. Check with `mpd-virt --version`.
 
-**Simplest path — adopt a plain Debian VM (works anywhere).** Install stock
+**Simplest path — adopt a plain Debian VM (any hypervisor, any host).** Install stock
 Debian Trixie (the minimal netinst is ideal — no desktop needed) with an SSH
 server and your key, and set its hostname to `mpd-141`. Then, *on the VM*,
 run mpd's one-shot prep — it converts the network stack, sets up mDNS + the
@@ -43,7 +44,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prep
 ```
 
 It may ask for one reboot; re-run it until every check is green, then on your
-Mac run the command it printed:
+host run the command it printed:
 
 ```bash
 mpd-virt adopt 141 --backend=generic                # IP found by mDNS
@@ -60,46 +61,26 @@ UTM, Parallels, or an adopted Debian VM are the steadier choices:
 mpd-virt create 141 --backend=container   # pulls the published base image, creates + provisions mpd-141
 ```
 
-Either way you now have a running mpd VM. SSH into **the VM** and create your
-first Moodle project — from here the in-VM `mpd` takes over; follow
-[mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md). Until a
-project exists there is no site to open — and no runtime container yet, so the
-bare `mpd-141` alias (which jumps into the runtime, where you actually work)
-only starts resolving once `mpd start` has brought a project up.
+Either way you now have a running mpd VM. `ssh mpd-141` lands in the
+runtime, where you work — follow
+[mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md) from
+there.
+
+All your projects are listed in the portal at `https://141.mpd.test/`. To
+reach it, either open a SOCKS5 tunnel and point a dedicated Firefox at
+`127.0.0.1:1080` (SOCKS v5, proxy DNS on, the root CA imported — it has
+its own proxy setting and certificate store, so nothing else changes):
 
 ```bash
-ssh mpd-141-vm                                       # the VM: where mpd, mudev, and podman live
-# … assemble a tree with `mudev`, then `mpd init` + `mpd start` (see mpd's USAGE)
+ssh -N mpd-141-socks
 ```
 
-With a project running, view its `*.mpd.test` site from a browser on your Mac.
-Open a SOCKS tunnel to the VM:
+or run [mpd-proxy](https://github.com/mutms/mpd-proxy), which makes every
+`*.mpd.test` name work in every app on your host:
 
 ```bash
-ssh -N mpd-141-socks                                # SOCKS5 on 127.0.0.1:1080
-```
-
-Use a **dedicated** browser so your everyday one is untouched — Firefox is
-ideal, since it has its own proxy setting *and* its own certificate store.
-Install Firefox, then in its Settings → Network Settings set a manual SOCKS v5
-proxy `127.0.0.1:1080` and tick "Proxy DNS when using SOCKS v5"; import the
-root CA (`~/.mpd-virt/conf/caroot/rootCA.pem`) under Settings → Privacy &
-Security → Certificates → View Certificates → Authorities → Import. Now open
-your project's site — the VM's portal at `https://141.mpd.test` lists them —
-with no `sudo`, no system changes, your main browser and system proxy left
-alone.
-
-The SOCKS tunnel reaches **one VM at a time** (a single `:1080`). Once you run
-VMs regularly — or several at once — [mpd-proxy](https://github.com/mutms/mpd-proxy)
-is the usability upgrade: one `sudo mpd-proxy up` sets up a WireGuard tunnel
-plus split DNS so **every** `*.mpd.test` name across **all** your VMs resolves
-transparently, for every app, with no SOCKS proxy to configure anywhere. Pair
-it with trusting the CA system-wide once (the one step that needs `sudo`) and
-your everyday browser just works:
-
-```bash
-sudo security add-trusted-cert -d -r trustRoot \
-    -k /Library/Keychains/System.keychain ~/.mpd-virt/conf/caroot/rootCA.pem
+sudo mpd-proxy up
+mpd-virt start 141
 ```
 
 Verbs: `adopt create start stop update remove list server ca uninstall` —
@@ -118,7 +99,6 @@ find it:
   machines
 - [container/README.md](container/README.md) — the base image
 
-macOS-only for now; Linux host support may come later in this same codebase.
 
 ## AI disclosure
 
