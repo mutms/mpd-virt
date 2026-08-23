@@ -11,7 +11,7 @@ helper), [mudev](https://github.com/mutms/mudev) (Moodle recipes).
 
 ## Quickstart
 
-You need Go 1.24+ to build and an SSH keypair. What you *manage* is a Debian
+You need Go (any version — go.mod picks the compiler) and an SSH keypair. What you *manage* is a Debian
 Trixie VM, and it can live **anywhere mpd-virt can reach over SSH** — a VM on
 your Mac (Apple `container`, UTM, Parallels), a Proxmox VM, a cloud instance,
 or bare metal. An Apple-Silicon Mac is not a requirement; the Apple

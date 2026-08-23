@@ -5,7 +5,7 @@
 FROM debian:13.6
 
 # Change after 20-install-software.sh is updated in mpd repository.
-ARG MPD_BOOTSTRAP_REF=30af81d01a54fb41f200df29a64c7b9263264b55
+ARG MPD_BOOTSTRAP_REF=cdc14a14cc829d7f7a484306eb85ae97fecbdd60
 
 ARG VERSION
 LABEL org.opencontainers.image.version="${VERSION}" \

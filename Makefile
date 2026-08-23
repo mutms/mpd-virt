@@ -6,12 +6,9 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 BIN    := $(BINDIR)/mpd-virt
 
-# Build with the locally installed Go and nothing else. Go's default
-# GOTOOLCHAIN=auto silently downloads a whole toolchain over the network
-# when a go.mod names a newer version than the installed one; `local`
-# turns that into an immediate, legible build failure instead. If you hit
-# it, lower the `go` directive in go/go.mod rather than raising the floor.
-export GOTOOLCHAIN = local
+# The `go` directive in go/go.mod picks the compiler: the go command
+# fetches that toolchain itself when the installed one is older
+# (GOTOOLCHAIN=auto, the default). Bump the directive to move to a newer Go.
 
 .PHONY: build install uninstall build-static clean test vet fmt fmt-check tidy lint-shell fmt-shell
 
