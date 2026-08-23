@@ -10,6 +10,10 @@ files.
 
 ## One-time host prep
 
+On an mpd VM, `libvirt-install` (in mpd's `bin/`, on PATH) does all of
+this, checks nested virtualisation first, pins KVM's `nested=1` for the
+guests, and clones + builds this repo into `~/Developer/mpd-virt`. By hand:
+
 ```sh
 sudo apt-get install -y --no-install-recommends qemu-system-x86 libvirt-daemon-system libvirt-clients qemu-utils genisoimage
 sudo adduser "$USER" libvirt          # then log in again
