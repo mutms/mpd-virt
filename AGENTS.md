@@ -239,8 +239,8 @@ a scratch tool — is a script in your own tree, not a flag in this repo.
 ## Developer env
 
 `~/.mpd-virt/mpd-virt.env` is an optional file of **your own** `MPD_*`
-defaults — PHP version, Moodle admin password, Behat preferences, the
-`MPD_RUNTIME_CONTROL` switch. `adopt`, `create`, `start` and `update`
+defaults — PHP version, Moodle admin password, Behat preferences.
+`adopt`, `create`, `start` and `update`
 push it into every VM at `/var/lib/mpd/env/mpd-virt.env`, where mpd layers
 it under each project's own `mpd.env`. The keys and their meanings belong
 to mpd, not here — see its `assets/vm/mpd-virt.env` template and
