@@ -28,7 +28,7 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// proxmoxConfig is conf/backends/proxmox.env: where the API lives, which LAN
+// proxmoxConfig is ~/.mpd-virt/proxmox.env: where the API lives, which LAN
 // the VMs sit on, and the API token exactly as the Proxmox UI shows it.
 type proxmoxConfig struct {
 	apiURL      string // https://<host>:8006/api2/json/

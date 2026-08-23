@@ -12,18 +12,14 @@ import (
 )
 
 // writeProxmoxEnv points MPD_VIRT_ROOT at a scratch root holding a
-// conf/backends/proxmox.env aimed at apiURL — the same isolation trick the
+// proxmox.env aimed at apiURL — the same isolation trick the
 // whole test suite uses to stay out of the developer's real ~/.mpd-virt.
 func writeProxmoxEnv(t *testing.T, apiURL string) {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("MPD_VIRT_ROOT", root)
-	dir := filepath.Join(root, "conf", "backends")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	env := "API_URL=" + apiURL + "\nNETWORK=10.1.10.0\nTOKEN_ID=mpd-virt@pam!test\nTOKEN_SECRET=sekret\n"
-	if err := os.WriteFile(filepath.Join(dir, "proxmox.env"), []byte(env), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -167,12 +163,8 @@ func TestProxmoxUnconfigured(t *testing.T) {
 func TestProxmoxConfigMissingKey(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("MPD_VIRT_ROOT", root)
-	dir := filepath.Join(root, "conf", "backends")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	env := "API_URL=https://x:8006/api2/json/\nNETWORK=10.1.10.0\nTOKEN_ID=a@b!c\n" // no TOKEN_SECRET
-	if err := os.WriteFile(filepath.Join(dir, "proxmox.env"), []byte(env), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := loadProxmoxConfig()
@@ -225,7 +217,7 @@ func TestProxmoxCloneFromTemplate(t *testing.T) {
 	defer srv.Close()
 	writeProxmoxEnv(t, srv.URL+"/")
 	root := os.Getenv("MPD_VIRT_ROOT")
-	env := filepath.Join(root, "conf", "backends", "proxmox.env")
+	env := filepath.Join(root, "proxmox.env")
 	b, _ := os.ReadFile(env)
 	_ = os.WriteFile(env, append(b, []byte("POOL=mpd-test\nGATEWAY=10.1.1.1\n")...), 0o600)
 

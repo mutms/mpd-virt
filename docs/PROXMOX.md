@@ -23,7 +23,7 @@ cloud-init IP config.
 3. Put the VMs, the template and the storage in a pool (`mpd`) and grant the
    token the role on `/pool/mpd` and on the bridge
    (`/sdn/zones/localnetwork/vmbr0`), both with propagate
-4. Create ~/.mpd-virt/conf/backends/proxmox.env file with the following content
+4. Create `~/.mpd-virt/proxmox.env` file with the following content
 ```
 API_URL=https://<proxmoxserverurl>:8006/api2/json/
 NETWORK=<local_network_prefix>.0/24

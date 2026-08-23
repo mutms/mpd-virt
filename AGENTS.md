@@ -50,7 +50,7 @@ VM — there is deliberately no default. Once a VM is registered, every verb
 | `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first.                                                                                                                                                                                                |
 | `utm`       | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off.                                                                                                                           |
 | `libvirt`   | a Linux host         | A KVM VM on the Linux VM mpd-virt runs on, driven by `virsh` against `qemu:///system`. `create` downloads the amd64 Debian cloud qcow2 once, seeds cloud-init, pins the VM to `192.168.122.<NNN>` on the `default` NAT network; power on/off; `remove --full` deletes it. One-time host prep in [`docs/LIBVIRT.md`](docs/LIBVIRT.md). |
-| `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)). `create` full-clones the `mpd-template` VM (`TEMPLATE_VMID`) and sets the clone's cloud-init hostname, static IP, user and key.                      |
+| `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)). `create` full-clones the `mpd-template` VM (`TEMPLATE_VMID`) and sets the clone's cloud-init hostname, static IP, user and key.                      |
 
 The `proxmox` backend talks to the Proxmox REST API for VM state, start,
 graceful shutdown, and — once a VM is adopted — its live IP through the
@@ -59,7 +59,7 @@ its cloud-init; a VM made by hand is adopted with `adopt --backend=proxmox`.
 The VM number is the Proxmox VMID. For the VM's LAN
 address there are two sources, in order: at first adoption, before the VM
 runs a guest agent, the address is derived by convention — `NETWORK` in
-`~/.mpd-virt/conf/backends/proxmox.env` with the last octet replaced by the
+`~/.mpd-virt/proxmox.env` with the last octet replaced by the
 number — so the cloud-init assigns a static address matching that rule.
 After adoption the VM runs `qemu-guest-agent` (the prep script and
 bootstrap install it), so `start` asks the API for its real address, which
@@ -167,6 +167,7 @@ MPD_VM_USER=skodak
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every VM (see Developer assets)
 ├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every VM — SURVIVES `uninstall` (see Developer env)
+├── proxmox.env                    ← OPTIONAL: the Proxmox API endpoint + token, hand-written (see docs/PROXMOX.md)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
