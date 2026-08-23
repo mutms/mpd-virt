@@ -1,9 +1,9 @@
-// Package sshconfig maintains one managed block per box in ~/.ssh/config,
+// Package sshconfig maintains one managed block per VM in ~/.ssh/config,
 // so `ssh mpd-<NNN>` reaches the runtime container the developer works in.
 //
-// The block sits between name-stamped markers so several boxes coexist in
+// The block sits between name-stamped markers so several VMs coexist in
 // one config and each can be found and stripped cleanly. One fence holds
-// every stanza for a box — the runtime, the box itself, and the SOCKS tier:
+// every stanza for a VM — the runtime, the VM itself, and the SOCKS tier:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
 //	Host mpd-<NNN>
@@ -22,7 +22,7 @@
 // The bare name is the runtime because that is where the developer (and
 // their IDE, and their agent) actually works; the VM that manages the
 // containers is the occasional destination, so it takes the `-vm` suffix.
-// `ssh mpd-<NNN>` jumps through the box, which resolves the bare
+// `ssh mpd-<NNN>` jumps through the VM, which resolves the bare
 // `runtime` from the alias mpd keeps on the runtime's line in its
 // /etc/hosts.
 //
@@ -31,11 +31,11 @@
 // bare `mpd-<NNN>` is the VM's own hostname and cannot mean the runtime.
 //
 // The `-socks` alias is the SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a
-// SOCKS5 proxy on 127.0.0.1:1080 tunnelled through the box, so a browser
-// pointed at it (with remote DNS) reaches *.mpd.test using the box's
+// SOCKS5 proxy on 127.0.0.1:1080 tunnelled through the VM, so a browser
+// pointed at it (with remote DNS) reaches *.mpd.test using the VM's
 // resolver.
 //
-// Both paths ride plain SSH to the box's direct IP, so they work even when
+// Both paths ride plain SSH to the VM's direct IP, so they work even when
 // the mpd-proxy WireGuard overlay is offline — that is the whole point of
 // keeping them here. The "mpd Root CA" already in the Keychain makes the TLS
 // trust work regardless of path.
@@ -56,21 +56,21 @@ import (
 )
 
 // SocksPort is the local SOCKS5 port the `-socks` alias forwards through the
-// box. Fixed (not per-VM) so a browser's proxy setting is configured once and
-// only the `ssh -N mpd-<NNN>-socks` target changes between boxes.
+// VM. Fixed (not per-VM) so a browser's proxy setting is configured once and
+// only the `ssh -N mpd-<NNN>-socks` target changes between VMs.
 const SocksPort = 1080
 
-// SocksAlias is the ssh Host name of a box's SOCKS alias.
+// SocksAlias is the ssh Host name of a VM's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 
-// VMAlias is the ssh Host name of the box itself, as opposed to the bare
+// VMAlias is the ssh Host name of the VM itself, as opposed to the bare
 // name, which reaches the runtime container running on it.
 func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 
 // runtimeHostName is what the runtime stanza connects to. Deliberately
-// the bare `runtime`, not the FQDN: with ProxyJump the *box* resolves the
+// the bare `runtime`, not the FQDN: with ProxyJump the *VM* resolves the
 // target, and mpd publishes `runtime` as a hosts alias on the runtime's
-// line in the box's /etc/hosts, so libc there answers it directly. Works
+// line in the VM's /etc/hosts, so libc there answers it directly. Works
 // over plain SSH with the mpd-proxy overlay down.
 //
 // The bare form is also the documentation: this block is what a developer
@@ -95,20 +95,20 @@ func beginMarker(id vmid.ID) string {
 
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
-// render is the self-contained managed block for one box: the bare alias
-// for the runtime container, the `-vm` alias for the box itself, and the
+// render is the self-contained managed block for one VM: the bare alias
+// for the runtime container, the `-vm` alias for the VM itself, and the
 // `-socks` alias (see the package doc). The `-vm` and `-socks` stanzas
-// target the box's direct IP, and the runtime alias jumps through it — all
+// target the VM's direct IP, and the runtime alias jumps through it — all
 // over plain SSH, independent of the mpd-proxy overlay, which is exactly
 // why they still work when it is down.
 //
-// Host keys are pinned, never ignored: every stanza points at the box's own
+// Host keys are pinned, never ignored: every stanza points at the VM's own
 // known_hosts file (~/.mpd-virt/<NNN>/known_hosts — adoption records the key
 // on first contact) with a stable HostKeyAlias, so the pin survives DHCP
-// churn and a changed key is refused instead of silently accepted. The box
+// churn and a changed key is refused instead of silently accepted. The VM
 // key is stored under the bare name (mpd-<NNN>) and the runtime container's
-// under mpd-<NNN>-runtime; both live in the same per-box file, which
-// `remove` retires with the box.
+// under mpd-<NNN>-runtime; both live in the same per-VM file, which
+// `remove` retires with the VM.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)
@@ -128,7 +128,7 @@ func render(id vmid.ID, ip, user string) string {
 		// above names it literally and ssh matches Host patterns against
 		// the string it was given. Without the second pattern the jump
 		// would fall back to the default known_hosts while `ssh <alias>`
-		// used the pin — same box, two behaviours.
+		// used the pin — same VM, two behaviours.
 		"Host " + VMAlias(id) + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
@@ -152,7 +152,7 @@ func render(id vmid.ID, ip, user string) string {
 	return strings.Join(lines, "\n")
 }
 
-// knownHostsValue is the per-box known_hosts path as an ssh-config value,
+// knownHostsValue is the per-VM known_hosts path as an ssh-config value,
 // quoted if the path carries whitespace.
 func knownHostsValue(id vmid.ID) string {
 	p := paths.KnownHosts(id)
@@ -162,7 +162,7 @@ func knownHostsValue(id vmid.ID) string {
 	return p
 }
 
-// Write inserts (or replaces) the managed block for a box, creating ~/.ssh
+// Write inserts (or replaces) the managed block for a VM, creating ~/.ssh
 // and the config file if missing. Idempotent.
 //
 // The ip and user are validated here at the sink, not only at their
@@ -194,7 +194,7 @@ func Write(id vmid.ID, ip, user string) error {
 	return os.WriteFile(Path(), []byte(rebuilt), 0o600)
 }
 
-// Strip removes a box's managed block. No-op if absent.
+// Strip removes a VM's managed block. No-op if absent.
 func Strip(id vmid.ID) error {
 	cur, err := os.ReadFile(Path())
 	if os.IsNotExist(err) {
@@ -210,7 +210,7 @@ func Strip(id vmid.ID) error {
 	return os.WriteFile(Path(), []byte(stripped), 0o600)
 }
 
-// Contains reports whether a managed block for the box exists.
+// Contains reports whether a managed block for the VM exists.
 func Contains(id vmid.ID) bool {
 	cur, err := os.ReadFile(Path())
 	if err != nil {

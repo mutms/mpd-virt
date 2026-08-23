@@ -13,7 +13,7 @@ import (
 )
 
 // Root is ~/.mpd-virt (or $MPD_VIRT_ROOT) — everything mpd-virt owns on
-// the host. Holds conf/ (identity, survives remove) and per-box dirs.
+// the host. Holds conf/ (identity, survives remove) and per-VM dirs.
 func Root() string {
 	if r := os.Getenv("MPD_VIRT_ROOT"); r != "" {
 		return r
@@ -35,8 +35,8 @@ func ProxmoxEnv() string { return filepath.Join(Conf(), "backends", "proxmox.env
 func Servers() string { return filepath.Join(Root(), "servers") }
 
 // Assets is ~/.mpd-virt/assets — the developer's own scripts and files,
-// mirrored into every box at /opt/mpd-virt/assets. Optional: absent means
-// mpd-virt pushes nothing and leaves whatever a box already has. This Mac
+// mirrored into every VM at /opt/mpd-virt/assets. Optional: absent means
+// mpd-virt pushes nothing and leaves whatever a VM already has. This Mac
 // is the source of truth; the in-VM copy is root-owned and read-only.
 func Assets() string { return filepath.Join(Root(), "assets") }
 
@@ -45,9 +45,9 @@ func Assets() string { return filepath.Join(Root(), "assets") }
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }
 
 // MpdEnv is ~/.mpd-virt/mpd-virt.env — the developer's own MPD_* defaults,
-// pushed into every box at /var/lib/mpd/env/mpd-virt.env, where mpd layers
+// pushed into every VM at /var/lib/mpd/env/mpd-virt.env, where mpd layers
 // it beneath each project's own mpd.env. Optional, like Assets: absent
-// means mpd-virt pushes nothing and leaves whatever a box already has.
+// means mpd-virt pushes nothing and leaves whatever a VM already has.
 //
 // At the root rather than under conf/ because it is the developer's file
 // to write, not identity mpd-virt generates and manages on their behalf.
@@ -61,7 +61,7 @@ func CloudImages() string { return filepath.Join(Conf(), "cloud-images") }
 // + cidata seed are built before UTM imports them into its own bundle.
 func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging", name) }
 
-// LibvirtDir is /var/lib/mpd-virt/<name> — a libvirt box's disk + cidata
+// LibvirtDir is /var/lib/mpd-virt/<name> — a libvirt VM's disk + cidata
 // seed. Not under ~/.mpd-virt: qemu runs as libvirt-qemu and a Debian home
 // is 0700, so it could not open anything there. Created once by hand
 // (docs/LIBVIRT.md), dev-user-owned.
@@ -74,22 +74,22 @@ func LibvirtDir(name string) string { return filepath.Join("/var/lib/mpd-virt", 
 // there is simply no proxy. The socket is ephemeral: it dies with the proxy.
 func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
 
-// VMDir is ~/.mpd-virt/<NNN> — per-box bookkeeping.
+// VMDir is ~/.mpd-virt/<NNN> — per-VM bookkeeping.
 func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 
-// VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a box.
+// VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a VM.
 func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }
 
-// KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the box's pinned ssh host
+// KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the VM's pinned ssh host
 // key, recorded on first contact (adopt/create) under the stable
-// HostKeyAlias mpd-<NNN> and refused if it ever changes. Per-box so
-// `remove` retires the pin with the box and a re-created box at the same
+// HostKeyAlias mpd-<NNN> and refused if it ever changes. Per-VM so
+// `remove` retires the pin with the VM and a re-created VM at the same
 // id starts a fresh first-contact.
 func KnownHosts(id vmid.ID) string { return filepath.Join(VMDir(id), "known_hosts") }
 
-// EnsureKnownHosts is KnownHosts with the box directory created: ssh
+// EnsureKnownHosts is KnownHosts with the VM directory created: ssh
 // records a first-contact key into the file but never creates parent
-// directories, and the box dir does not exist yet at the very first
+// directories, and the VM dir does not exist yet at the very first
 // connection of an adoption or create.
 func EnsureKnownHosts(id vmid.ID) string {
 	_ = os.MkdirAll(VMDir(id), 0o700)
@@ -98,7 +98,7 @@ func EnsureKnownHosts(id vmid.ID) string {
 
 // EnsurePrivate walks ~/.mpd-virt and drops group/other permission bits
 // everywhere: directories to 0700, regular files to owner-only (keeping the
-// owner's execute bit — assets/bin scripts carry it into the boxes). Nothing
+// owner's execute bit — assets/bin scripts carry it into the VMs). Nothing
 // under the root is meant to be readable by another user — the CA keys and
 // the proxmox token outright must not be. Run on every invocation; errors
 // are ignored (a root-owned stray should not brick the CLI) and non-regular

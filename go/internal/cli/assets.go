@@ -11,14 +11,14 @@ import (
 )
 
 // The developer's own scripts and files — private hacks, experiments, site
-// wiring — mirrored from ~/.mpd-virt/assets into every box mpd-virt owns.
+// wiring — mirrored from ~/.mpd-virt/assets into every VM mpd-virt owns.
 // mpd-virt carries them and nothing more: it never runs them, never reads
 // them, and has no opinion on what is in there. That is the point — a
 // one-off fix belongs in the developer's own tree, not as a feature here.
 //
 // Deliberately NOT under /opt/mpd: that is mpd's git checkout, which
 // `mpd --vm-upgrade` pulls, so anything dropped in there fights the
-// update. /opt/mpd-virt is mpd-virt's own FHS slot on the box.
+// update. /opt/mpd-virt is mpd-virt's own FHS slot on the VM.
 //
 // mpd bind-mounts /opt/mpd read-only into every runtime container but knows
 // nothing about /opt/mpd-virt, so these stay VM-only and do not appear
@@ -43,13 +43,13 @@ if [ -d ` + remoteAssetsDir + `/bin ]; then
 fi
 `
 
-// pushAssets mirrors the developer's assets onto one box and puts their
+// pushAssets mirrors the developer's assets onto one VM and puts their
 // bin/ on PATH. It reports whether anything was pushed.
 //
 // No assets directory on the Mac is "nothing to do" — not "remove them
-// from the box". Absence is the default state for every VM that never
+// from the VM". Absence is the default state for every VM that never
 // wanted any, and making it destructive would mean a Mac that lost
-// ~/.mpd-virt/assets silently wiping every box on the next start.
+// ~/.mpd-virt/assets silently wiping every VM on the next start.
 func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 	local := paths.Assets()
 	fi, err := os.Stat(local)
@@ -60,7 +60,7 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 		return false, err
 	}
 	// The PATH drop-in is written on every push rather than once at
-	// adoption: it is two cheap commands, and it means a box that predates
+	// adoption: it is two cheap commands, and it means a VM that predates
 	// this (or had /etc wiped by a reinstall) heals on the next start.
 	if err := t.WriteRemote(ctx, assetsProfileBody, assetsStagedPath, "0644"); err != nil {
 		return false, err

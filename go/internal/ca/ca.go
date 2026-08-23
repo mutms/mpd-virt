@@ -6,13 +6,13 @@
 // certs for *.mpd.test — that constraint is what makes trusting it safe.
 //
 //	mpd Root CA                         (key: this Mac, and only this Mac)
-//	└── mpd VM <NNN> CA                 (key: pushed into the box)
+//	└── mpd VM <NNN> CA                 (key: pushed into the VM)
 //	      permitted DNS:<NNN>.mpd.test
-//	      └── <NNN>.mpd.test, …         signed inside the box
+//	      └── <NNN>.mpd.test, …         signed inside the VM
 //
-// The root's private key NEVER leaves the Mac. Each box instead gets its
+// The root's private key NEVER leaves the Mac. Each VM instead gets its
 // own intermediate under ~/.mpd-virt/<NNN>/ca/, signed by the root and
-// constrained to that box's zone alone — so a compromised box can forge
+// constrained to that VM's zone alone — so a compromised VM can forge
 // *.<NNN>.mpd.test and nothing else. This implementation uses
 // crypto/x509 rather than shelling to openssl: name constraints are
 // first-class here, so there is no temp conf file and nothing to parse
@@ -47,7 +47,7 @@ const (
 	leafKeyBits    = 2048 // leaves live on other machines; 2048 is plenty and cheaper.
 )
 
-// RootCertPath is the root CA's public cert, pushed to every box and
+// RootCertPath is the root CA's public cert, pushed to every VM and
 // trusted in the System Keychain.
 func RootCertPath() string { return filepath.Join(paths.CARoot(), "rootCA.pem") }
 
@@ -103,7 +103,7 @@ func LoadOrGenerateRoot() error {
 	return writeKeyPEM(rootKeyPath(), key)
 }
 
-// LoadOrGenerateVM ensures the per-box intermediate exists, signed by the
+// LoadOrGenerateVM ensures the per-VM intermediate exists, signed by the
 // root and name-constrained to <NNN>.mpd.test. Idempotent.
 func LoadOrGenerateVM(id vmid.ID) error {
 	if fileExists(VMCertPath(id)) && fileExists(VMKeyPath(id)) {
@@ -293,7 +293,7 @@ func writePEM(path, blockType string, der []byte, mode os.FileMode) error {
 }
 
 // writeKeyPEM writes an RSA private key as PKCS#8 ("PRIVATE KEY"), mode
-// 0600. This key is meant to travel into the box — that is the point.
+// 0600. This key is meant to travel into the VM — that is the point.
 func writeKeyPEM(path string, key *rsa.PrivateKey) error {
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {

@@ -8,7 +8,7 @@ func TestParse(t *testing.T) {
 		wantErr bool
 	}{
 		{"100", false}, // bottom of the range
-		{"127", false}, // no reserved gaps — any 100-254 is a box
+		{"127", false}, // no reserved gaps — any 100-254 is a VM
 		{"135", false},
 		{"200", false},
 		{"254", false}, // top of the octet range
@@ -16,8 +16,8 @@ func TestParse(t *testing.T) {
 		{"5", true},
 		{"005", true}, // padding is not a thing: ids have no other spelling
 		{"0150", true},
-		{"0", true},   // network address, not a box
-		{"255", true}, // broadcast, not a box
+		{"0", true},   // network address, not a VM
+		{"255", true}, // broadcast, not a VM
 		{"256", true}, // above an octet
 		{"-1", true},  // negative
 		{"abc", true}, // not digits

@@ -39,49 +39,49 @@ same range — there are no special ids.
 ## Backends
 
 `--backend=<name>` is required on `create` and on the first `adopt` of a
-box — there is deliberately no default. Once a box is registered, every verb
+VM — there is deliberately no default. Once a VM is registered, every verb
 (including a re-adoption) reads the backend recorded in the registry; passing
 `--backend` to a re-adoption changes the record.
 
-| Backend | Host | What it does |
-|---|---|---|
-| `generic` | anywhere | Adopt an **already-running** Debian box by IP — a cloud VM, bare metal. No power control (it stays up). The path for anything not on the laptop. |
-| `parallels` | macOS laptop | Parallels Desktop Pro (`prlctl`): power on/off + find the box's current DHCP IP. |
-| `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first. |
-| `utm` | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off. |
-| `libvirt` | a Linux host | A KVM VM on the Linux box mpd-virt runs on, driven by `virsh` against `qemu:///system`. `create` downloads the amd64 Debian cloud qcow2 once, seeds cloud-init, pins the VM to `192.168.122.<NNN>` on the `default` NAT network; power on/off; `remove --full` deletes it. One-time host prep in [`docs/LIBVIRT.md`](docs/LIBVIRT.md). |
-| `proxmox` | a Proxmox host | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)). `create` full-clones the `mpd-template` VM (`TEMPLATE_VMID`) and sets the clone's cloud-init hostname, static IP, user and key. |
+| Backend     | Host                 | What it does                                                                                                                                                                                                                                                                                                                         |
+|-------------|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `generic`   | anywhere             | Adopt an **already-running** Debian VM by IP — a cloud VM, bare metal. No power control (it stays up). The path for anything not on the laptop.                                                                                                                                                                                      |
+| `parallels` | macOS laptop         | Parallels Desktop Pro (`prlctl`): power on/off + find the VM's current DHCP IP.                                                                                                                                                                                                                                                      |
+| `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first.                                                                                                                                                                                                |
+| `utm`       | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off.                                                                                                                           |
+| `libvirt`   | a Linux host         | A KVM VM on the Linux VM mpd-virt runs on, driven by `virsh` against `qemu:///system`. `create` downloads the amd64 Debian cloud qcow2 once, seeds cloud-init, pins the VM to `192.168.122.<NNN>` on the `default` NAT network; power on/off; `remove --full` deletes it. One-time host prep in [`docs/LIBVIRT.md`](docs/LIBVIRT.md). |
+| `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/conf/backends/proxmox.env` — see [`docs/PROXMOX.md`](docs/PROXMOX.md)). `create` full-clones the `mpd-template` VM (`TEMPLATE_VMID`) and sets the clone's cloud-init hostname, static IP, user and key.                      |
 
 The `proxmox` backend talks to the Proxmox REST API for VM state, start,
-graceful shutdown, and — once a box is adopted — its live IP through the
+graceful shutdown, and — once a VM is adopted — its live IP through the
 guest agent. `create --backend=proxmox` clones the template VM and drives
 its cloud-init; a VM made by hand is adopted with `adopt --backend=proxmox`.
-The VM number is the Proxmox VMID. For the box's LAN
-address there are two sources, in order: at first adoption, before the box
+The VM number is the Proxmox VMID. For the VM's LAN
+address there are two sources, in order: at first adoption, before the VM
 runs a guest agent, the address is derived by convention — `NETWORK` in
 `~/.mpd-virt/conf/backends/proxmox.env` with the last octet replaced by the
 number — so the cloud-init assigns a static address matching that rule.
-After adoption the box runs `qemu-guest-agent` (the prep script and
+After adoption the VM runs `qemu-guest-agent` (the prep script and
 bootstrap install it), so `start` asks the API for its real address, which
-is authoritative and finds a box that sits off the convention on a
+is authoritative and finds a VM that sits off the convention on a
 non-standard lease. Create/delete of the VM itself stay manual on the
 Proxmox side — [`docs/PROXMOX.md`](docs/PROXMOX.md) walks through both
 installation flavors and the API token setup.
 
 ## Verbs
 
-| Verb | Args | Role |
-|---|---|---|
-| `adopt <NNN> [IP]` | `--backend= --username=` | Adopt a reachable Debian box: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container, or the proxmox guest agent once adopted), or mDNS for a box that advertises itself (cloud-init or the prep script sets up avahi); pass it explicitly when neither reaches the box. **Preconditions:** a reachable sshd with key auth and passwordless sudo on Debian Trixie — nothing about the network stack is gated; mpd's DNS works on whatever the box has (it keeps its records in `/etc/hosts` and forwards through the box's own `/etc/resolv.conf`). avahi (mDNS discovery) and qemu-guest-agent (the proxmox IP query) are conveniences, not requirements: the cloud-init image ships them and the bootstrap installs them regardless. Proxmox VMs (their cloud-init seed) and `create`-made boxes (utm/container) are adoptable as they are. mpd's `setup/mpd-prepare-adopt.sh` (run on the box) standardises a box that did **not** come from cloud-init onto the systemd-networkd + systemd-resolved stack and adds the same avahi + qemu-guest-agent conveniences. The two cases that want it are an already-running generic/bare-metal box, and a sandbox VM (the intended upgrade path from trying mpd to the daily managed workflow, projects intact): a sandbox deliberately ships without sshd, and the prep script installs it idempotently on top of the sandbox's own network conversion. |
-| `create <NNN>` | `--backend=<utm\|container\|proxmox\|libvirt> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default the published `ghcr.io/mutms/mpd-virt-container-apple:<tag>` from `backend.DefaultContainerImage()`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `adopt`. |
-| `start <NNN>` | `--username=` | Bring an adopted box into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live box — the backend's state is read first, so an already-running box is not started again. |
-| `stop <NNN>` | — | Detach from the overlay and power the box off (a no-op for generic, and for a box already stopped). |
-| `update <NNN>` | `--username=` | Refresh the LAN service names + developer assets + env, then run mpd's bootstrap step 20 over SSH (apt dist-upgrade + the package set, so a stale template or image converges) and `mpd --vm-upgrade` (pull + rebuild + re-run `mpd --vm-setup`), then re-wire reachability. |
-| `remove <NNN>` | `--yes --full` | Un-adopt a box (aliases `delete`, `rm`): detach it from the overlay, strip its ssh-config block, and delete `~/.mpd-virt/<NNN>/` — registry entry, pinned host key, per-VM CA. **Powers the box off** (a no-op for generic) so its hypervisor object can be deleted right after — a running Apple container refuses `container rm` — but **never deletes the box itself** unless `--full` (Apple containers only — the inverse of `create`; other backends delete in their hypervisor), and a stopped box stays re-adoptable. Keeps the root CA. A rebuilt box comes back via `remove` + `adopt`: the new host key is recorded as a deliberate first contact and its certs are reissued under a fresh per-VM CA. |
-| `list` (`ls`) | `--json` | Registered VMs, with a live `:22` reachability probe. |
-| `server …` | `add / list / delete / cert / sync` | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md). |
-| `ca [export]` | `--path=` | Print the root CA's public certificate (to install in another host's trust store). |
-| `uninstall` | `--yes` | Stop every box (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA and your `mpd-virt.env`**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary). |
+| Verb               | Args                                                                                            | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+|--------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `adopt <NNN> [IP]` | `--backend= --username=`                                                                        | Adopt a reachable Debian VM: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container, or the proxmox guest agent once adopted), or mDNS for a VM that advertises itself (cloud-init or the prep script sets up avahi); pass it explicitly when neither reaches the VM. **Preconditions:** a reachable sshd with key auth and passwordless sudo on Debian Trixie — nothing about the network stack is gated; mpd's DNS works on whatever the VM has (it keeps its records in `/etc/hosts` and forwards through the VM's own `/etc/resolv.conf`). avahi (mDNS discovery) and qemu-guest-agent (the proxmox IP query) are conveniences, not requirements: the cloud-init image ships them and the bootstrap installs them regardless. Proxmox VMs (their cloud-init seed) and `create`-made VMs (utm/container) are adoptable as they are. mpd's `setup/mpd-prepare-adopt.sh` (run on the VM) standardises a VM that did **not** come from cloud-init onto the systemd-networkd + systemd-resolved stack and adds the same avahi + qemu-guest-agent conveniences. The two cases that want it are an already-running generic/bare-metal VM, and a sandbox VM (the intended upgrade path from trying mpd to the daily managed workflow, projects intact): a sandbox deliberately ships without sshd, and the prep script installs it idempotently on top of the sandbox's own network conversion. |
+| `create <NNN>`     | `--backend=<utm\|container\|proxmox\|libvirt> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default the published `ghcr.io/mutms/mpd-virt-container-apple:<tag>` from `backend.DefaultContainerImage()`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `adopt`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `start <NNN>`      | `--username=`                                                                                   | Bring an adopted VM into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env, register the mpd-proxy overlay, verify. Safe to re-run on a live VM — the backend's state is read first, so an already-running VM is not started again.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `stop <NNN>`       | —                                                                                               | Detach from the overlay and power the VM off (a no-op for generic, and for a VM already stopped).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `update <NNN>`     | `--username=`                                                                                   | Refresh the LAN service names + developer assets + env, then run mpd's bootstrap step 20 over SSH (apt dist-upgrade + the package set, so a stale template or image converges) and `mpd --vm-upgrade` (pull + rebuild + re-run `mpd --vm-setup`), then re-wire reachability.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `remove <NNN>`     | `--yes --full`                                                                                  | Un-adopt a VM (aliases `delete`, `rm`): detach it from the overlay, strip its ssh-config block, and delete `~/.mpd-virt/<NNN>/` — registry entry, pinned host key, per-VM CA. **Powers the VM off** (a no-op for generic) so its hypervisor object can be deleted right after — a running Apple container refuses `container rm` — but **never deletes the VM itself** unless `--full` (Apple containers only — the inverse of `create`; other backends delete in their hypervisor), and a stopped VM stays re-adoptable. Keeps the root CA. A rebuilt VM comes back via `remove` + `adopt`: the new host key is recorded as a deliberate first contact and its certs are reissued under a fresh per-VM CA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `list` (`ls`)      | `--json`                                                                                        | Registered VMs, with a live `:22` reachability probe.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `server …`         | `add / list / delete / cert / sync`                                                             | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/LAN_SERVERS.md`](docs/LAN_SERVERS.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ca [export]`      | `--path=`                                                                                       | Print the root CA's public certificate (to install in another host's trust store).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `uninstall`        | `--yes`                                                                                         | Stop every VM (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA and your `mpd-virt.env`**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## Reachability: two tiers
 
@@ -114,18 +114,18 @@ instructions whenever mpd-proxy isn't running.
 `adopt`/`start` write one managed block per VM into `~/.ssh/config`:
 
 - `mpd-<NNN>` — the unified runtime container, via `ProxyJump` through the
-  box (works with or without the overlay, since the jump rides the box's
+  VM (works with or without the overlay, since the jump rides the VM's
   sshd). The bare name goes here because it is where the developer, their
   IDE (PhpStorm Gateway, VS Code Remote-SSH) and their agent actually work.
-- `mpd-<NNN>-vm` — the box itself: `mpd`, podman, the assets tree.
+- `mpd-<NNN>-vm` — the VM itself: `mpd`, podman, the assets tree.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
 The runtime stanza's `HostName` is the bare `runtime`, not the FQDN: with
-`ProxyJump` the *box* resolves the target, and mpd publishes `runtime` as
-an alias on the runtime's line in the box's `/etc/hosts`. That makes the
+`ProxyJump` the *VM* resolves the target, and mpd publishes `runtime` as
+an alias on the runtime's line in the VM's `/etc/hosts`. That makes the
 block directly transcribable into an SSH app that offers a jump-host field
 but reads no config file (Terminus on an iPad, say) — **jump =
-`mpd-<NNN>-vm` at the box's address, host = `runtime`**.
+`mpd-<NNN>-vm` at the VM's address, host = `runtime`**.
 
 Host side only. Inside the VM the bare `mpd-<NNN>` is that machine's own
 hostname, so mpd's in-VM aliases for the runtime stay `runtime` and
@@ -134,13 +134,13 @@ runtime's prompt renders `mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, so the
 prompt always echoes the alias you typed — cosmetic only, no hostname is
 changed.
 
-All ride plain SSH to the box, so they work even when mpd-proxy is down.
+All ride plain SSH to the VM, so they work even when mpd-proxy is down.
 
-Every stanza pins the box's ssh host key: first contact (adopt/create)
+Every stanza pins the VM's ssh host key: first contact (adopt/create)
 records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
 `mpd-<NNN>` (`HostKeyAlias`, so DHCP churn does not reset the pin), and a
 changed key is refused — by the aliases and by mpd-virt's own verbs alike.
-See `docs/SECURITY.md` for why that pin is the identity of the box.
+See `docs/SECURITY.md` for why that pin is the identity of the VM.
 
 ## Registry
 
@@ -165,8 +165,8 @@ MPD_VM_USER=skodak
 │   ├── lan-hosts                  ← rendered hosts(5) file pushed into VMs (adopt/create/start/update, `server sync`)
 │   ├── cloud-images/              ← cached Debian cloud-image archive (utm `create`)
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
-├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every box (see Developer assets)
-├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every box — SURVIVES `uninstall` (see Developer env)
+├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every VM (see Developer assets)
+├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/LAN_SERVERS.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
@@ -174,7 +174,7 @@ MPD_VM_USER=skodak
 │   └── sans                       ← issued SAN list, so a re-issue reproduces it
 └── <NNN>/                         ← per-VM, removed by `remove`
     ├── env                        ← registry entry (see Registry above)
-    ├── known_hosts                ← the box's pinned ssh host key (alias mpd-<NNN>)
+    ├── known_hosts                ← the VM's pinned ssh host key (alias mpd-<NNN>)
     └── ca/
         ├── vmCA.pem               ← this VM's signing CA, signed by the root
         └── vmCA-key.pem           ← 0600. Pushed to the VM
@@ -206,7 +206,7 @@ compromised VM can and cannot forge) and the trust model live in
 
 `~/.mpd-virt/assets/` is an optional directory of **your own** scripts and
 files — private hacks, experiments, site-specific wiring. `adopt`,
-`create`, `start` and `update` mirror it into every box at
+`create`, `start` and `update` mirror it into every VM at
 `/opt/mpd-virt/assets/`, and if it contains a `bin/`, that directory is
 appended to `PATH` for interactive shells via
 `/etc/profile.d/mpd-virt-assets.sh`. Nothing else happens: mpd-virt carries
@@ -216,13 +216,13 @@ This exists so a one-off need does not become a feature here. Something
 that applies to one developer's LAN — a static route to an office gateway,
 a scratch tool — is a script in your own tree, not a flag in this repo.
 
-- **The Mac is the source of truth.** The push is a *mirror*: the box's copy
+- **The Mac is the source of truth.** The push is a *mirror*: the VM's copy
   is removed and replaced, so a file deleted on the Mac disappears from the
-  box on the next lifecycle verb. Edit on the Mac and re-push, never in the
+  VM on the next lifecycle verb. Edit on the Mac and re-push, never in the
   VM — an in-VM edit is overwritten on the next push anyway. The in-VM copy
   is **owned by the dev user**, like `/opt/mpd`: root ownership would protect
   nothing on a passwordless-sudo VM and only gets in the way.
-- **No assets directory means no action**, not "remove them from the box" —
+- **No assets directory means no action**, not "remove them from the VM" —
   absence is the normal state for a VM that never wanted any.
 - **Best-effort.** A failed push warns and points at `mpd-virt start <NNN>`;
   it never fails an adoption, start, or update.
@@ -240,20 +240,20 @@ a scratch tool — is a script in your own tree, not a flag in this repo.
 `~/.mpd-virt/mpd-virt.env` is an optional file of **your own** `MPD_*`
 defaults — PHP version, Moodle admin password, Behat preferences, the
 `MPD_RUNTIME_CONTROL` switch. `adopt`, `create`, `start` and `update`
-push it into every box at `/var/lib/mpd/env/mpd-virt.env`, where mpd layers
+push it into every VM at `/var/lib/mpd/env/mpd-virt.env`, where mpd layers
 it under each project's own `mpd.env`. The keys and their meanings belong
 to mpd, not here — see its `assets/vm/mpd-virt.env` template and
 `docs/ARCHITECTURE.md` §8; mpd-virt only carries the file.
 
-The layer it feeds is scoped to *you*, not to a box. A VM runs one runtime,
+The layer it feeds is scoped to *you*, not to a VM. A VM runs one runtime,
 so per-VM defaults were a distinction without a difference — while a
-developer routinely runs several boxes that should agree on how they
+developer routinely runs several VMs that should agree on how they
 behave. Holding the file on the Mac is what makes one edit reach all of
 them.
 
 - **The Mac is the source of truth**, as with assets: an edit made inside a
   VM survives only until the next lifecycle verb.
-- **No file on the Mac means no action.** Absence leaves whatever the box
+- **No file on the Mac means no action.** Absence leaves whatever the VM
   has, which matters for a sandbox VM adopted later: its hand-written file
   survives until you actually put one on the Mac.
 - **Digest-guarded.** Every lifecycle verb calls it, and the common case
@@ -266,7 +266,7 @@ them.
   from mpd's template when nothing is there. A root-owned file would leave
   mpd unable to seed a replacement if the Mac's copy later went away.
 - **Survives `uninstall`**, alongside the root CA. It is yours, and unlike
-  `assets/` there is no copy on a box worth restoring from.
+  `assets/` there is no copy on a VM worth restoring from.
 
 ## Code layout
 
@@ -276,11 +276,11 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 - `go/internal/cli/` — the cobra command tree; one file per verb
 - `go/internal/backend/` — power and address through each backend's CLI
 - `go/internal/ca/` — the local CA: root, per-VM intermediates, server leaves
-- `go/internal/registry/` — which boxes are adopted (`~/.mpd-virt/<NNN>/env`)
+- `go/internal/registry/` — which VMs are adopted (`~/.mpd-virt/<NNN>/env`)
 - `go/internal/server/` — LAN service hosts and their certs (`server …`)
 - `go/internal/sshconfig/` — the managed `~/.ssh/config` blocks
 - `go/internal/proxy/` — client for a running mpd-proxy's control socket
-- `go/internal/host/` — drives a box over SSH from the Mac
+- `go/internal/host/` — drives a VM over SSH from the Mac
 - `go/internal/paths/` — the host-side filesystem locations mpd-virt owns
 - `go/internal/vmid/` — id parsing and everything derived from `NNN`
 - `go/internal/exec/` — the ONLY package that runs external commands

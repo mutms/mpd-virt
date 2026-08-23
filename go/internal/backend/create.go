@@ -18,14 +18,14 @@ type CreateOpts struct {
 	PubKey string // the public key to authorize, one line ("ssh-ed25519 …")
 }
 
-// Create provisions a fresh box for the id through its backend and returns the
+// Create provisions a fresh VM for the id through its backend and returns the
 // IP it came up on, ready for adoption. Container runs the base image, waits
 // for systemd, seeds the dev account + sudo + key, and reads the leased IP;
 // utm materializes a fresh VM from the Debian cloud image (utm.go); proxmox
-// clones the mpd-template VM and points its cloud-init at the box's address
+// clones the mpd-template VM and points its cloud-init at the VM's address
 // (proxmox.go); libvirt defines a KVM VM from the amd64 cloud image on a
 // Linux host (libvirt.go). Parallels needs a template clone (not yet). A
-// generic box is adopted, not created.
+// generic VM is adopted, not created.
 func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts CreateOpts) (string, error) {
 	switch be {
 	case Container:
@@ -45,7 +45,7 @@ func Create(ctx context.Context, out io.Writer, id vmid.ID, be Backend, opts Cre
 
 // DefaultContainerImage is the published, pre-baked base image
 // `create --backend=container` runs (built from container/Containerfile):
-// `container run` pulls it, so a fresh box costs a pull rather than the
+// `container run` pulls it, so a fresh VM costs a pull rather than the
 // apt run adoption would otherwise do. The tag is <debian point
 // release>.<build>; bump the build number here when the image is
 // republished because Debian has drifted far enough to slow adoption's
@@ -58,7 +58,7 @@ func DefaultContainerImage() string {
 
 // The guest's DNS needs no help from here. The container runtime writes
 // /etc/resolv.conf (the vmnet resolver) on every boot; mpd's dnsmasq on the
-// box forwards to whatever that file says, and the box resolves *.mpd.test
+// VM forwards to whatever that file says, and the VM resolves *.mpd.test
 // from mpd's block in its own /etc/hosts. Nothing routes through
 // systemd-resolved, so nothing has to be seeded into it.
 

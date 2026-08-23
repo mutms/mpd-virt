@@ -22,7 +22,7 @@ import (
 // like utm.go does on macOS; start/stop/state/delete are virsh verbs.
 //
 // Networking: libvirt's `default` NAT network is 192.168.122.0/24, so each
-// mpd-<NNN> box is pinned (via cloud-init) to 192.168.122.<NNN>, gateway .1
+// mpd-<NNN> VM is pinned (via cloud-init) to 192.168.122.<NNN>, gateway .1
 // — which is also how locate finds it.
 
 const (
@@ -32,7 +32,7 @@ const (
 	libvirtDefaultCPUs    = 4
 )
 
-// libvirtCanonicalIP is the pinned address for a libvirt box: 192.168.122.<NNN>.
+// libvirtCanonicalIP is the pinned address for a libvirt VM: 192.168.122.<NNN>.
 func libvirtCanonicalIP(id vmid.ID) string { return libvirtSubnet + "." + strconv.Itoa(int(id)) }
 
 func virsh(ctx context.Context, args ...string) (exec.Result, error) {
@@ -130,7 +130,7 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 	return ip, nil
 }
 
-// libvirtNetworkConfig pins the box's address on the default network. The
+// libvirtNetworkConfig pins the VM's address on the default network. The
 // interface is matched by driver, not name, so it works whatever name the
 // machine type gives it.
 func libvirtNetworkConfig(ip string) string {
@@ -153,7 +153,7 @@ ethernets:
 // stays even headless: libvirt launches qemu with -nodefaults, and without
 // a video device the kernel triple-faults under nested KVM before its
 // first message — GRUB loops on "Booting Debian GNU/Linux". The MAC is
-// derived from the number so the box keeps its address across re-creates.
+// derived from the number so the VM keeps its address across re-creates.
 func libvirtDomainXML(name string, id vmid.ID, memMiB, cpus int, diskPath, seedPath string) string {
 	return fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>

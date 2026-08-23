@@ -119,7 +119,7 @@ func TestUTMLivePlumbing(t *testing.T) {
 		t.Skipf("UTM not installed: %v", err)
 	}
 	ctx := context.Background()
-	name := "mpd-199" // a test id unlikely to collide with a real box
+	name := "mpd-199" // a test id unlikely to collide with a real VM
 
 	// Clean any leftover from a previous run.
 	_, _ = runOsascript(ctx, utmKillScript(name))

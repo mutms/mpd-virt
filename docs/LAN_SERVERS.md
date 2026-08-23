@@ -66,7 +66,7 @@ registry holds; there is no field for what the machine runs.
 
 **Name it after the machine, not the software.** The name becomes the DNS
 name and the certificate's CN, so it should match the host's own hostname —
-a box called `kitchenbox` that happens to run Proxmox is `kitchenbox`, not
+a VM called `kitchenbox` that happens to run Proxmox is `kitchenbox`, not
 `proxmox`. Making the DNS name disagree with the node's hostname means
 keeping two names in step forever.
 
@@ -160,7 +160,7 @@ This writes `~/.mpd-virt/conf/lan-hosts`, scp's it to
 the VM's `/etc/hosts` — where both the VM's libc and its dnsmasq read
 them. VMs that are down are reported and skipped.
 
-`sync` is how you publish a *changed* registry to boxes that are already
+`sync` is how you publish a *changed* registry to VMs that are already
 running. It is not the only path: `adopt` and `create` push the file
 before their first `mpd --vm-setup`, `update` pushes it before
 `mpd --vm-upgrade` (which re-runs vm-setup), and `start` pushes it and

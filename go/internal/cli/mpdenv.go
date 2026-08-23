@@ -12,11 +12,11 @@ import (
 
 // The developer's MPD_* defaults — PHP version, Moodle admin password,
 // Behat preferences, the runtime-control switch — carried from
-// ~/.mpd-virt/mpd-virt.env into every box mpd-virt owns.
+// ~/.mpd-virt/mpd-virt.env into every VM mpd-virt owns.
 //
-// The layer mpd reads this as is scoped to the *developer*, not the box:
+// The layer mpd reads this as is scoped to the *developer*, not the VM:
 // a VM runs one runtime, so "per-VM defaults" was a distinction without a
-// difference, while a developer routinely runs several boxes that should
+// difference, while a developer routinely runs several VMs that should
 // agree on how they behave. Holding the file here and pushing it is what
 // makes one edit reach all of them.
 //
@@ -27,12 +27,12 @@ import (
 // there, and never overwrites, so the two writers do not fight.
 const remoteMpdEnvPath = "/var/lib/mpd/env/mpd-virt.env"
 
-// pushMpdEnv copies the developer's env file to one box, reporting whether
+// pushMpdEnv copies the developer's env file to one VM, reporting whether
 // it changed anything.
 //
-// No file on the Mac is "nothing to do", not "remove it from the box" —
+// No file on the Mac is "nothing to do", not "remove it from the VM" —
 // the same rule the assets mirror follows, and here it also protects a
-// sandbox box that was adopted later: its own hand-written file survives
+// sandbox VM that was adopted later: its own hand-written file survives
 // until the developer actually puts one on the Mac.
 //
 // Digest-guarded for the same reason as the LAN hosts file: this runs on
@@ -68,7 +68,7 @@ func pushMpdEnv(ctx context.Context, t host.Target) (bool, error) {
 //
 // Nothing needs to be restarted or re-run afterwards. mpd re-reads the
 // file per invocation, and the runtime sees it through a directory mount,
-// so the next command inside the box already has the new values.
+// so the next command inside the VM already has the new values.
 func syncMpdEnv(ctx context.Context, t host.Target, idPad string) {
 	pushed, err := pushMpdEnv(ctx, t)
 	if err != nil {

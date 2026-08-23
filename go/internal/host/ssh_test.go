@@ -6,7 +6,7 @@ import (
 )
 
 // A pinned target must carry its pin on every ssh and scp invocation —
-// the managed ~/.ssh/config block matches the box's bare IP, so without
+// the managed ~/.ssh/config block matches the VM's bare IP, so without
 // the explicit options the block's file would win and the pin would not.
 func TestArgsCarryHostKeyPin(t *testing.T) {
 	pinned := Target{
@@ -38,7 +38,7 @@ func TestArgsCarryHostKeyPin(t *testing.T) {
 }
 
 // The stderr blobs below are real ssh output, captured from OpenSSH on
-// Debian Trixie against a live box. They are verbatim on purpose: the
+// Debian Trixie against a live VM. They are verbatim on purpose: the
 // classification keys off substrings ssh prints, so a paraphrase would
 // pin nothing.
 func TestClassify(t *testing.T) {
@@ -73,7 +73,7 @@ Host key verification failed.`
 			reject: []string{"ssh-keygen -R"},
 		},
 		{
-			name:   "no route reads as an unreachable box",
+			name:   "no route reads as an unreachable VM",
 			detail: "ssh: connect to host 10.1.1.161 port 22: No route to host",
 			want:   []string{"no ssh answer", "10.1.1.161"},
 			reject: []string{"ssh-keygen -R", "authorized_keys"},
@@ -90,7 +90,7 @@ Host key verification failed.`
 		},
 	}
 
-	// A pinned target's remedy names the per-box file and the stable alias,
+	// A pinned target's remedy names the per-VM file and the stable alias,
 	// so the paste-able command edits the pin and not ~/.ssh/known_hosts.
 	t.Run("changed key on a pinned target names the pin", func(t *testing.T) {
 		pinned := Target{

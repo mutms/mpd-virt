@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// Terminal-output sanitizer. Remote commands run on a box mpd-virt's own
+// Terminal-output sanitizer. Remote commands run on a VM mpd-virt's own
 // threat model calls compromised, and their output lands on the developer's
 // terminal — which interprets escape sequences. OSC 52 writes the clipboard,
 // title sequences dress up a later phish, and terminal emulators have a

@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// uninstallCmd removes mpd-virt from this Mac. It stops every adopted box
-// (without deleting it — boxes stay re-adoption-able) and wipes mpd-virt's host
+// uninstallCmd removes mpd-virt from this Mac. It stops every adopted VM
+// (without deleting it — VMs stay re-adoption-able) and wipes mpd-virt's host
 // state (the registry under ~/.mpd-virt and the ssh-config blocks). It does not
 // touch VM data, so it is fully recoverable.
 //
@@ -31,8 +31,8 @@ func uninstallCmd() *cobra.Command {
 	var assumeYes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove mpd-virt from this Mac: stop boxes (keep them) + wipe host state (keep the root CA + your mpd-virt.env)",
-		Long: "Stops every adopted box through its backend (container/parallels/utm;\n" +
+		Short: "Remove mpd-virt from this Mac: stop VMs (keep them) + wipe host state (keep the root CA + your mpd-virt.env)",
+		Long: "Stops every adopted VM through its backend (container/parallels/utm;\n" +
 			"generic/proxmox are left running) WITHOUT deleting any — they stay\n" +
 			"re-adoption-able. Then wipes mpd-virt's host state under ~/.mpd-virt/\n" +
 			"and every ~/.ssh/config managed block. No VM data is touched, so this\n" +
@@ -48,21 +48,21 @@ func uninstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("uninstall mpd-virt — stops %d box(es) (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA and mpd-virt.env) + ssh-config blocks.\n", len(entries))
+			fmt.Printf("uninstall mpd-virt — stops %d VM (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA and mpd-virt.env) + ssh-config blocks.\n", len(entries))
 			if !assumeYes && !confirmWord("uninstall") {
 				fmt.Println("aborted — nothing changed")
 				return nil
 			}
 
-			// 1. Stop every box (keep them), and strip its ssh-config block.
-			//    Best-effort per box — one failure must not strand the rest.
+			// 1. Stop every VM (keep them), and strip its ssh-config block.
+			//    Best-effort per VM — one failure must not strand the rest.
 			for _, e := range entries {
 				if err := backend.Stop(cmd.Context(), cmd.OutOrStdout(), e.ID, backend.Backend(e.Backend)); err != nil {
 					fmt.Printf("  ⚠ stop %s: %v\n", e.ID.Name(), err)
 				}
 				_ = sshconfig.Strip(e.ID)
 			}
-			pass(fmt.Sprintf("stopped %d box(es); ssh-config blocks stripped", len(entries)))
+			pass(fmt.Sprintf("stopped %d VM; ssh-config blocks stripped", len(entries)))
 
 			// 2. Wipe ~/.mpd-virt EXCEPT the root CA (conf/caroot) and
 			//    the dev's own mpd-virt.env.
@@ -83,7 +83,7 @@ func uninstallCmd() *cobra.Command {
 			reportCATrustStore(cmd.Context())
 			fmt.Print("  • mpd-proxy:  sudo mpd-proxy uninstall\n" +
 				"  • the binary:  rm ~/.local/bin/mpd-virt   (or `make uninstall`)\n\n" +
-				"The boxes are stopped, not deleted — re-adopt any later with `mpd-virt adopt <NNN> --backend <b>`.\n")
+				"The VMs are stopped, not deleted — re-adopt any later with `mpd-virt adopt <NNN> --backend <b>`.\n")
 			return nil
 		},
 	}
@@ -92,14 +92,14 @@ func uninstallCmd() *cobra.Command {
 }
 
 // wipeHostStateKeepingOwn removes everything under ~/.mpd-virt except the
-// root CA directory (conf/caroot) and the dev's own mpd-virt.env: all per-box
+// root CA directory (conf/caroot) and the dev's own mpd-virt.env: all per-VM
 // registry dirs and the rest of conf (servers, lan-hosts, service,
 // backend.env). Keeping caroot is what lets a re-adopt reuse the same trust
 // anchor; keeping mpd-virt.env is because mpd-virt never wrote it and cannot
 // reproduce it. A missing ~/.mpd-virt is a no-op.
 //
 // assets/ is NOT kept, and that is the older decision this one sits beside:
-// a mirror of it exists on every box that was ever started, so it survives
+// a mirror of it exists on every VM that was ever started, so it survives
 // elsewhere. mpd-virt.env has no such copy worth trusting — the in-VM ones
 // are overwritten by whatever this file said last.
 func wipeHostStateKeepingOwn() error {

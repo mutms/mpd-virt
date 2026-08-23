@@ -14,15 +14,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// listCmd prints one row per adopted box from the registry, with a live SSH
-// reachability probe. The probe is best-effort — a down box shows "down", it
+// listCmd prints one row per adopted VM from the registry, with a live SSH
+// reachability probe. The probe is best-effort — a down VM shows "down", it
 // does not fail the listing.
 func listCmd() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List adopted boxes (with a live SSH reachability probe)",
+		Short:   "List adopted VMs (with a live SSH reachability probe)",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entries, err := registry.List()
@@ -30,7 +30,7 @@ func listCmd() *cobra.Command {
 				return err
 			}
 			if len(entries) == 0 {
-				fmt.Fprintln(os.Stderr, "no boxes adopted — add one with `mpd-virt adopt` or `mpd-virt create`.")
+				fmt.Fprintln(os.Stderr, "no VMs adopted — add one with `mpd-virt adopt` or `mpd-virt create`.")
 				return nil
 			}
 			if jsonOut {
@@ -48,15 +48,15 @@ const listRow = "%-4s %-10s %-10s %-16s %-9s %s\n"
 
 // sshStates resolves every entry's SSH column concurrently, aligned to entries
 // by index. Serial probing stalled the whole listing by the dial timeout for
-// each unreachable box; done in parallel the listing is only as slow as the
+// each unreachable VM; done in parallel the listing is only as slow as the
 // single slowest probe.
 //
-// For a box whose backend can report power state (proxmox, and the laptop
-// hypervisors), that state is asked first: a box the hypervisor calls off shows
+// For a VM whose backend can report power state (proxmox, and the laptop
+// hypervisors), that state is asked first: a VM the hypervisor calls off shows
 // its power word and is never dialed, so a stopped proxmox VM costs one cheap
 // API answer instead of the full SSH dial timeout its dead IP would otherwise
-// blackhole for. Only a box reported running — or one whose backend cannot say,
-// which includes every `generic` box — falls through to the SSH dial, the
+// blackhole for. Only a VM reported running — or one whose backend cannot say,
+// which includes every `generic` VM — falls through to the SSH dial, the
 // connect-first behaviour as before.
 func sshStates(ctx context.Context, entries []registry.Entry) []string {
 	states := make([]string, len(entries))
@@ -72,8 +72,8 @@ func sshStates(ctx context.Context, entries []registry.Entry) []string {
 	return states
 }
 
-// entryState is the SSH column for one box: the hypervisor's power word when it
-// reports the box off, otherwise a live SSH dial. A box the backend calls
+// entryState is the SSH column for one VM: the hypervisor's power word when it
+// reports the VM off, otherwise a live SSH dial. A VM the backend calls
 // running is still dialed — running is not the same as reachable (it may be
 // booting or firewalled), and the dial is the true liveness signal.
 func entryState(ctx context.Context, e registry.Entry) string {
@@ -121,8 +121,8 @@ func printListJSON(ctx context.Context, entries []registry.Entry) error {
 	return nil
 }
 
-// sshState reports whether the box answers on ssh, as a quick liveness signal.
-// A short timeout keeps a down box from stalling the whole listing.
+// sshState reports whether the VM answers on ssh, as a quick liveness signal.
+// A short timeout keeps a down VM from stalling the whole listing.
 func sshState(ctx context.Context, ip string) string {
 	if ip == "" {
 		return "?"

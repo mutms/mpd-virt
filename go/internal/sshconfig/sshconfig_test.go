@@ -38,9 +38,9 @@ func useTempConfig(t *testing.T) string {
 }
 
 // The managed block carries exactly three stanzas: the bare name for the
-// runtime, `-vm` for the box, and `-socks`. The naive slice edit that
+// runtime, `-vm` for the VM, and `-socks`. The naive slice edit that
 // would render runtime.runtime.<zone> is what this test pins against, and
-// the bare name must never resolve to the box's IP again — that was the
+// the bare name must never resolve to the VM's IP again — that was the
 // old meaning and silently landing on the VM is the regression to catch.
 func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	path := useTempConfig(t)
@@ -61,8 +61,8 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		"Host mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
-		// Host keys are pinned per box, never ignored: every stanza binds
-		// to the box's known_hosts under a stable alias, refusing changed
+		// Host keys are pinned per VM, never ignored: every stanza binds
+		// to the VM's known_hosts under a stable alias, refusing changed
 		// keys (accept-new records first contact only).
 		"    StrictHostKeyChecking accept-new\n",
 		"    HostKeyAlias mpd-158\n",
@@ -78,7 +78,7 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		"Host mpd-158\n    HostName 10.1.10.158\n", // the pre-swap meaning
 		"Host mpd-158-runtime\n",
 		// The old disabled-verification block must never come back: it let
-		// anything that occupied the box's address impersonate it.
+		// anything that occupied the VM's address impersonate it.
 		"StrictHostKeyChecking no",
 		"/dev/null",
 	} {
@@ -87,7 +87,7 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		}
 	}
 	if !strings.Contains(got, filepath.Join("158", "known_hosts")) {
-		t.Errorf("known_hosts should live in the box's own dir:\n%s", got)
+		t.Errorf("known_hosts should live in the VM's own dir:\n%s", got)
 	}
 }
 

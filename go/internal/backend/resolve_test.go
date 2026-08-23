@@ -33,7 +33,7 @@ func stub(t *testing.T, dns []string, live ...string) {
 }
 
 // isolateRegistry points the registry at an empty temp root, so a test starts
-// with no boxes on file and cannot touch the developer's real ~/.mpd-virt.
+// with no VMs on file and cannot touch the developer's real ~/.mpd-virt.
 func isolateRegistry(t *testing.T) {
 	t.Helper()
 	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
@@ -46,7 +46,7 @@ func seedLastIP(t *testing.T, id vmid.ID, ip string) {
 	}
 }
 
-// The generic path: a name that resolves to a live box wins — no registry needed.
+// The generic path: a name that resolves to a live VM wins — no registry needed.
 func TestLocateName(t *testing.T) {
 	isolateRegistry(t)
 	stub(t, []string{"10.1.1.143"}, "10.1.1.143")

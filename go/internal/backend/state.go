@@ -9,17 +9,17 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// vmState is a box's power state as its backend reports it, normalized to the
+// vmState is a VM's power state as its backend reports it, normalized to the
 // words the power path reasons about. Knowing it first is what keeps `start`
 // from firing a power verb the hypervisor will only refuse — Parallels rejects
-// `prlctl start` on a box that is not stopped, and the resulting error read
+// `prlctl start` on a VM that is not stopped, and the resulting error read
 // like a failure when nothing was actually wrong.
 type vmState string
 
 const (
 	// stUnknown is the honest answer whenever the backend does not tell us:
-	// its CLI is not on this Mac (the box is powered elsewhere), it does not
-	// know the box, or it reports a transitional state (starting/stopping)
+	// its CLI is not on this Mac (the VM is powered elsewhere), it does not
+	// know the VM, or it reports a transitional state (starting/stopping)
 	// that no power decision should be made from. The power verb is then
 	// issued blind, exactly as it was before this check existed.
 	stUnknown   vmState = ""
@@ -33,26 +33,26 @@ const (
 // only so tests can substitute it.
 var probeState = queryState
 
-// PowerState reports the box's power state as its backend authoritatively knows
+// PowerState reports the VM's power state as its backend authoritatively knows
 // it — "running", "stopped", "suspended", "paused" — or "" when the backend
-// cannot say: its CLI/API is absent or misconfigured, the box is unknown to it,
+// cannot say: its CLI/API is absent or misconfigured, the VM is unknown to it,
 // or the backend is `generic` (no power model at all). Callers like `list` use
-// it to skip an SSH dial to a box the hypervisor already reports as off, and to
+// it to skip an SSH dial to a VM the hypervisor already reports as off, and to
 // fall back to dialing whenever the answer is "" — the connect-first behaviour
 // that `generic` gives you deliberately.
 func PowerState(ctx context.Context, id vmid.ID, be Backend) string {
 	return string(probeState(ctx, id, be))
 }
 
-// queryState asks the backend what state the box is in. Everything it runs is
-// read-only and best-effort: any failure — CLI absent, box unknown, output we
+// queryState asks the backend what state the VM is in. Everything it runs is
+// read-only and best-effort: any failure — CLI absent, VM unknown, output we
 // do not recognize — is stUnknown, never an error, because a state we cannot
 // read must not stop a power verb from being tried.
 func queryState(ctx context.Context, id vmid.ID, be Backend) vmState {
 	switch be {
 	case Parallels:
-		// -a so stopped boxes are listed too; without it Parallels reports
-		// only the running ones and every stopped box would look unknown.
+		// -a so stopped VMs are listed too; without it Parallels reports
+		// only the running ones and every stopped VM would look unknown.
 		res, err := exec.Capture(ctx, exec.Cmd{Name: "prlctl", Args: []string{"list", id.Name(), "-a", "--json"}})
 		if err != nil || res.Failed() {
 			return stUnknown
@@ -92,10 +92,10 @@ func normalizeState(word string) vmState {
 	return stUnknown
 }
 
-// parseParallelsState pulls one box's "status" out of `prlctl list <name> -a
+// parseParallelsState pulls one VM's "status" out of `prlctl list <name> -a
 // --json`. The name is matched rather than the first entry taken: the same
 // JSON shape comes back when Parallels lists every VM it knows, and reading
-// another box's state would be worse than reading none.
+// another VM's state would be worse than reading none.
 func parseParallelsState(stdout, name string) string {
 	var vms []struct {
 		Name   string `json:"name"`
@@ -116,15 +116,15 @@ func parseParallelsState(stdout, name string) string {
 // an array whose status.state is "running" or "stopped" (the same status
 // object parseContainerIP reads the address from).
 func parseContainerState(stdout string) string {
-	var boxes []struct {
+	var vms []struct {
 		Status struct {
 			State string `json:"state"`
 		} `json:"status"`
 	}
-	if err := json.Unmarshal([]byte(stdout), &boxes); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &vms); err != nil {
 		return ""
 	}
-	for _, b := range boxes {
+	for _, b := range vms {
 		if b.Status.State != "" {
 			return b.Status.State
 		}

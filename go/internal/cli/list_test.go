@@ -26,7 +26,7 @@ func stubPowerState(t *testing.T, state string) {
 	t.Cleanup(func() { powerState = orig })
 }
 
-// A box the backend reports off shows that power word verbatim and is never
+// A VM the backend reports off shows that power word verbatim and is never
 // dialed — the whole point is to skip the SSH timeout a dead IP would blackhole.
 // The blackhole IP proves it: were it dialed, the case would hang, not return
 // instantly with the power word.
@@ -40,18 +40,18 @@ func TestEntryStateOffSkipsDial(t *testing.T) {
 	}
 }
 
-// A box reported running is still dialed — running is not reachable. With no IP
+// A VM reported running is still dialed — running is not reachable. With no IP
 // the dial resolves instantly to "?", which proves the running branch fell
 // through to sshState rather than returning the power word.
 func TestEntryStateRunningFallsThroughToDial(t *testing.T) {
 	stubPowerState(t, "running")
 	e := registry.Entry{ID: mustID(t, "151"), IP: "", Backend: "proxmox"}
 	if got := entryState(context.Background(), e); got != "?" {
-		t.Errorf("running box should be dialed; with no IP entryState = %q, want %q", got, "?")
+		t.Errorf("running VM should be dialed; with no IP entryState = %q, want %q", got, "?")
 	}
 }
 
-// The backend that cannot report state — every generic box, or a failed probe —
+// The backend that cannot report state — every generic VM, or a failed probe —
 // reads as "" and falls through to the dial: the connect-first behaviour.
 func TestEntryStateUnknownFallsThroughToDial(t *testing.T) {
 	stubPowerState(t, "")

@@ -1,6 +1,6 @@
 # libvirt / KVM backend (Linux host)
 
-`mpd-virt create NNN --backend=libvirt` makes a KVM VM on the Linux box
+`mpd-virt create NNN --backend=libvirt` makes a KVM VM on the Linux VM
 mpd-virt runs on: the amd64 Debian Trixie cloud image (downloaded and
 SHA-512-verified once into `~/.mpd-virt/conf/cloud-images/`), a cidata
 seed with your user and key, pinned to `192.168.122.NNN` on libvirt's
@@ -17,11 +17,11 @@ sudo virsh net-start default && sudo virsh net-autostart default
 sudo install -d -o "$USER" -g "$USER" -m 0755 /var/lib/mpd-virt
 ```
 
-`/var/lib/mpd-virt/<box>/` holds each VM's disk and seed. It is not under
+`/var/lib/mpd-virt/<VM>/` holds each VM's disk and seed. It is not under
 `~/.mpd-virt` because qemu runs as `libvirt-qemu` and a Debian home
 directory is `0700`.
 
-Nested inside another VM (a Proxmox box with CPU type `host`), this is how
+Nested inside another VM (a Proxmox VM with CPU type `host`), this is how
 an agent gets a hypervisor of its own; `grep -c vmx /proc/cpuinfo` > 0 and
 `/dev/kvm` present means it will work. Keep the `<video>` device in the
 domain even though nothing displays it: libvirt starts qemu with
@@ -29,7 +29,7 @@ domain even though nothing displays it: libvirt starts qemu with
 GRUB ("Booting Debian GNU/Linux" loops on the serial console) — the same
 image boots fine with a VGA device present.
 
-## Reaching the box
+## Reaching the VM
 
 The VM is on the host only (`192.168.122.NNN`). `ssh mpd-NNN` works from
 the host right after adoption; `https://*.NNN.mpd.test` from the host's

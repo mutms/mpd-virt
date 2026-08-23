@@ -10,7 +10,7 @@ import (
 )
 
 // prlctlListFixture is real `prlctl list -a --json` output from a Mac running
-// several boxes at once — the shape a per-name query returns too.
+// several VMs at once — the shape a per-name query returns too.
 const prlctlListFixture = `[
     { "uuid": "b1c42d97", "status": "running",   "ip_configured": "-", "name": "macOS" },
     { "uuid": "bb586bcf", "status": "suspended", "ip_configured": "-", "name": "mpd-130" },
@@ -19,7 +19,7 @@ const prlctlListFixture = `[
     { "uuid": "edde6d3d", "status": "suspended", "ip_configured": "-", "name": "vscode" }
 ]`
 
-// The box's own status is read, not the first entry's — and a near-miss name
+// The VM's own status is read, not the first entry's — and a near-miss name
 // like mpd-130-copy must not answer for mpd-130.
 func TestParseParallelsState(t *testing.T) {
 	for _, tc := range []struct{ name, want string }{
@@ -77,9 +77,9 @@ func stubState(t *testing.T, st vmState) {
 	t.Cleanup(func() { probeState = orig })
 }
 
-// A box already running is not started again: no power command is issued, so
+// A VM already running is not started again: no power command is issued, so
 // there is no refusal to explain away.
-func TestPowerOnSkipsRunningBox(t *testing.T) {
+func TestPowerOnSkipsRunningVms(t *testing.T) {
 	stubState(t, stRunning)
 	id := mustID(t, "160")
 	var out bytes.Buffer
@@ -87,29 +87,29 @@ func TestPowerOnSkipsRunningBox(t *testing.T) {
 		t.Errorf("powerOn should report the prior state %q, got %q", stRunning, was)
 	}
 	if strings.Contains(out.String(), "prlctl") {
-		t.Errorf("a running box should not be started again, got: %s", out.String())
+		t.Errorf("a running VM should not be started again, got: %s", out.String())
 	}
 	if !strings.Contains(out.String(), "mpd-160 is already running") {
-		t.Errorf("output should say the box is already running, got: %s", out.String())
+		t.Errorf("output should say the VM is already running, got: %s", out.String())
 	}
 }
 
-// The mirror case: a box already off is not stopped again.
-func TestPowerOffSkipsStoppedBox(t *testing.T) {
+// The mirror case: a VM already off is not stopped again.
+func TestPowerOffSkipsStoppedVms(t *testing.T) {
 	stubState(t, stStopped)
 	id := mustID(t, "160")
 	var out bytes.Buffer
 	powerOff(context.Background(), &out, id, Parallels)
 	if strings.Contains(out.String(), "prlctl") {
-		t.Errorf("a stopped box should not be stopped again, got: %s", out.String())
+		t.Errorf("a stopped VM should not be stopped again, got: %s", out.String())
 	}
 	if !strings.Contains(out.String(), "mpd-160 is already stopped") {
-		t.Errorf("output should say the box is already stopped, got: %s", out.String())
+		t.Errorf("output should say the VM is already stopped, got: %s", out.String())
 	}
 }
 
 // An unreadable state must not stop the power verb from being tried — that is
-// the pre-existing blind behaviour, kept for boxes powered elsewhere.
+// the pre-existing blind behaviour, kept for VMs powered elsewhere.
 func TestPowerOnUnknownStateStillTries(t *testing.T) {
 	stubState(t, stUnknown)
 	id := mustID(t, "160")
@@ -120,7 +120,7 @@ func TestPowerOnUnknownStateStillTries(t *testing.T) {
 	}
 }
 
-// A refusal names the state the box was actually in, instead of guessing.
+// A refusal names the state the VM was actually in, instead of guessing.
 func TestRefusalNote(t *testing.T) {
 	id := mustID(t, "160")
 	if got := refusalNote(id, stSuspended, "stopped"); got != "mpd-160 is suspended" {

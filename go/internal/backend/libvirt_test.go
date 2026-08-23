@@ -20,7 +20,7 @@ func TestLibvirtNetworkConfig(t *testing.T) {
 	}
 }
 
-// The domain definition names the box, its memory, the two files and the
+// The domain definition names the VM, its memory, the two files and the
 // default network — what virsh define needs and nothing it would reject.
 func TestLibvirtDomainXML(t *testing.T) {
 	xml := libvirtDomainXML("mpd-170", 170, 4096, 4, "/var/lib/mpd-virt/mpd-170/disk.qcow2", "/var/lib/mpd-virt/mpd-170/seed.iso")

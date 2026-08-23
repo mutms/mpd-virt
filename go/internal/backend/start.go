@@ -11,10 +11,10 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// Start brings a box up through its backend and returns the IP it came up on.
-// It powers the box on (a no-op for backends mpd-virt does not control), then
-// finds its current address, waiting while it boots. A box with no reachable
-// address did not start — that is the returned error, since a running box
+// Start brings a VM up through its backend and returns the IP it came up on.
+// It powers the VM on (a no-op for backends mpd-virt does not control), then
+// finds its current address, waiting while it boots. A VM with no reachable
+// address did not start — that is the returned error, since a running VM
 // always has one. Progress and any power-command warnings go to out.
 func Start(ctx context.Context, out io.Writer, id vmid.ID, be Backend) (string, error) {
 	was := powerOn(ctx, out, id, be)
@@ -41,22 +41,22 @@ func Start(ctx context.Context, out io.Writer, id vmid.ID, be Backend) (string, 
 	}
 }
 
-// Stop powers a box off through its backend (a no-op for backends mpd-virt does
+// Stop powers a VM off through its backend (a no-op for backends mpd-virt does
 // not control). Detaching it from the overlay is the caller's job.
 func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 	powerOff(ctx, out, id, be)
 	return nil
 }
 
-// Delete destroys a box's hypervisor object — the inverse of Create, so
-// only for what Create makes. Apple container only for now: the box must
+// Delete destroys a VM's hypervisor object — the inverse of Create, so
+// only for what Create makes. Apple container only for now: the VM must
 // already be stopped (`container delete` refuses a running one).
 func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 	if be == Libvirt {
 		return libvirtDelete(ctx, out, id)
 	}
 	if be != Container {
-		return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; a %s box is deleted in its hypervisor", be)
+		return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; a %s VM is deleted in its hypervisor", be)
 	}
 	fmt.Fprintf(out, "  ▶ container delete %s\n", id.Name())
 	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"delete", id.Name()}})
@@ -74,19 +74,19 @@ func managed(be Backend) bool {
 	return be == Container || be == Parallels || be == UTM || be == Proxmox || be == Libvirt
 }
 
-// powerOn brings a box up, and returns the state it was in beforehand so Start
-// knows whether to wait out a boot. A box already running is left alone: its
+// powerOn brings a VM up, and returns the state it was in beforehand so Start
+// knows whether to wait out a boot. A VM already running is left alone: its
 // hypervisor would refuse the verb anyway, and the refusal read as an error in
-// what is the ordinary case of re-running `start` on a live box.
+// what is the ordinary case of re-running `start` on a live VM.
 func powerOn(ctx context.Context, out io.Writer, id vmid.ID, be Backend) vmState {
 	st := probeState(ctx, id, be)
 	if st == stRunning {
 		fmt.Fprintf(out, "  ✓ %s is already running\n", id.Name())
 		return st
 	}
-	// Parallels parks a box in two states its `start` refuses; `resume` is the
+	// Parallels parks a VM in two states its `start` refuses; `resume` is the
 	// verb for both. `start` stays as the fallback, since which of the two
-	// verbs takes a *suspended* box has differed between Parallels releases.
+	// verbs takes a *suspended* VM has differed between Parallels releases.
 	if be == Parallels && (st == stSuspended || st == stPaused) {
 		if power(ctx, out, id, be, "resume", st, "running") {
 			return st
@@ -96,7 +96,7 @@ func powerOn(ctx context.Context, out io.Writer, id vmid.ID, be Backend) vmState
 	return st
 }
 
-// powerOff powers a box down, skipping a box that is already off.
+// powerOff powers a VM down, skipping a VM that is already off.
 func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 	st := probeState(ctx, id, be)
 	if st == stStopped {
@@ -108,11 +108,11 @@ func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 
 // power runs one backend power verb for the backends whose CLI runs on this
 // Mac — Apple `container` and Parallels `prlctl` — and reports whether it
-// succeeded. It is best-effort: whether the box actually changed state is
+// succeeded. It is best-effort: whether the VM actually changed state is
 // decided by Start's reachability wait, not here. A non-zero exit means the
-// hypervisor refused the verb from the state the box is in (`was`, which is
+// hypervisor refused the verb from the state the VM is in (`was`, which is
 // what the warning names); a launch error means the CLI is not on this machine
-// (mpd-virt may be driving a box powered elsewhere) — both are reported to out
+// (mpd-virt may be driving a VM powered elsewhere) — both are reported to out
 // and swallowed. generic has no power at all and is skipped.
 func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb string, was vmState, want string) bool {
 	// UTM is driven through osascript, not a single-verb CLI.
@@ -134,7 +134,7 @@ func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb stri
 	fmt.Fprintf(out, "  ▶ %s\n", strings.Join(argv, " "))
 	r, err := exec.Capture(ctx, exec.Cmd{Name: argv[0], Args: argv[1:]})
 	if err != nil {
-		fmt.Fprintf(out, "    … %s unavailable here (%v) — assuming the box is managed elsewhere\n", argv[0], err)
+		fmt.Fprintf(out, "    … %s unavailable here (%v) — assuming the VM is managed elsewhere\n", argv[0], err)
 		return false
 	}
 	if r.Failed() {
@@ -144,18 +144,18 @@ func power(ctx context.Context, out io.Writer, id vmid.ID, be Backend, verb stri
 	return true
 }
 
-// refusalNote explains a refused power verb: the state we read the box in when
+// refusalNote explains a refused power verb: the state we read the VM in when
 // we have one, and the old guess when the backend told us nothing.
 func refusalNote(id vmid.ID, was vmState, want string) string {
 	if was == stUnknown {
-		return "the box may already be " + want
+		return "the VM may already be " + want
 	}
 	return fmt.Sprintf("%s is %s", id.Name(), was)
 }
 
 // powerArgv is the backend's CLI invocation for a power verb, or nil for a
 // backend mpd-virt does not power. The Apple `container` and Parallels `prlctl`
-// CLIs both take the box name (mpd-<NNN>).
+// CLIs both take the VM name (mpd-<NNN>).
 func powerArgv(id vmid.ID, be Backend, verb string) []string {
 	switch be {
 	case Container:

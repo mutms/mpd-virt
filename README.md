@@ -12,7 +12,7 @@ helper), [mudev](https://github.com/mutms/mudev) (Moodle recipes).
 ## Quickstart
 
 You need Go 1.24+ to build and an SSH keypair. What you *manage* is a Debian
-Trixie box, and it can live **anywhere mpd-virt can reach over SSH** — a VM on
+Trixie VM, and it can live **anywhere mpd-virt can reach over SSH** — a VM on
 your Mac (Apple `container`, UTM, Parallels), a Proxmox VM, a cloud instance,
 or bare metal. An Apple-Silicon Mac is not a requirement; the Apple
 `container` backend is just one of several.
@@ -32,9 +32,9 @@ make install                                        # builds bin/mpd-virt → ~/
 `PATH` (`export PATH="$HOME/.local/bin:$PATH"` in your shell profile) so
 `mpd-virt` is found. Check with `mpd-virt --version`.
 
-**Simplest path — adopt a plain Debian box (works anywhere).** Install stock
+**Simplest path — adopt a plain Debian VM (works anywhere).** Install stock
 Debian Trixie (the minimal netinst is ideal — no desktop needed) with an SSH
-server and your key, and set its hostname to `mpd-141`. Then, *on the box*,
+server and your key, and set its hostname to `mpd-141`. Then, *on the VM*,
 run mpd's one-shot prep — it converts the network stack, sets up mDNS + the
 guest agent, and prints the exact adopt command to run next:
 
@@ -52,15 +52,15 @@ mpd-virt adopt 141 10.0.0.141 --backend=generic     # …or given explicitly, if
 
 **Or, on Apple Silicon, create one locally (experimental).** The Apple
 `container` CLI lets `create` provision *and* adopt a fresh VM in a single
-step — no separate Debian install or prep. It is the quickest way to a box,
+step — no separate Debian install or prep. It is the quickest way to a VM,
 but the `container` runtime is young, so treat this backend as experimental;
-UTM, Parallels, or an adopted Debian box are the steadier choices:
+UTM, Parallels, or an adopted Debian VM are the steadier choices:
 
 ```bash
 mpd-virt create 141 --backend=container   # pulls the published base image, creates + provisions mpd-141
 ```
 
-Either way you now have a running mpd box. SSH into **the box** and create your
+Either way you now have a running mpd VM. SSH into **the VM** and create your
 first Moodle project — from here the in-VM `mpd` takes over; follow
 [mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md). Until a
 project exists there is no site to open — and no runtime container yet, so the
@@ -68,12 +68,12 @@ bare `mpd-141` alias (which jumps into the runtime, where you actually work)
 only starts resolving once `mpd start` has brought a project up.
 
 ```bash
-ssh mpd-141-vm                                       # the box: where mpd, mudev, and podman live
+ssh mpd-141-vm                                       # the VM: where mpd, mudev, and podman live
 # … assemble a tree with `mudev`, then `mpd init` + `mpd start` (see mpd's USAGE)
 ```
 
 With a project running, view its `*.mpd.test` site from a browser on your Mac.
-Open a SOCKS tunnel to the box:
+Open a SOCKS tunnel to the VM:
 
 ```bash
 ssh -N mpd-141-socks                                # SOCKS5 on 127.0.0.1:1080
@@ -85,7 +85,7 @@ Install Firefox, then in its Settings → Network Settings set a manual SOCKS v5
 proxy `127.0.0.1:1080` and tick "Proxy DNS when using SOCKS v5"; import the
 root CA (`~/.mpd-virt/conf/caroot/rootCA.pem`) under Settings → Privacy &
 Security → Certificates → View Certificates → Authorities → Import. Now open
-your project's site — the box's portal at `https://141.mpd.test` lists them —
+your project's site — the VM's portal at `https://141.mpd.test` lists them —
 with no `sudo`, no system changes, your main browser and system proxy left
 alone.
 

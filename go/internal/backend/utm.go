@@ -36,7 +36,7 @@ const (
 	utmDefaultCPUs    = 4
 )
 
-// utmCanonicalIP is the pinned vmnet address for a UTM box: 192.168.64.<NNN>.
+// utmCanonicalIP is the pinned vmnet address for a UTM VM: 192.168.64.<NNN>.
 func utmCanonicalIP(id vmid.ID) string { return utmSubnet + "." + strconv.Itoa(int(id)) }
 
 // utmCreate provisions a fresh UTM VM and returns its (pinned) IP, ready for
@@ -111,7 +111,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	}
 
 	// Pin the fresh VM's host key from the very first contact, in the same
-	// per-box file adoption will use — the key recorded while cloud-init's
+	// per-VM file adoption will use — the key recorded while cloud-init's
 	// output is still on the UTM console carries through the whole lifecycle.
 	t := host.Target{
 		User: opts.User, Host: canonIP,
@@ -148,7 +148,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) 
 	return canonIP, nil
 }
 
-// utmPower runs a start/stop power verb for a UTM box via osascript, matching
+// utmPower runs a start/stop power verb for a UTM VM via osascript, matching
 // the best-effort contract of the container/parallels power path.
 func utmPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) {
 	var script string
@@ -162,7 +162,7 @@ func utmPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) {
 	}
 	fmt.Fprintf(out, "  ▶ osascript UTM %s %s\n", verb, id.Name())
 	if _, err := runOsascript(ctx, script); err != nil {
-		fmt.Fprintf(out, "    … %v (continuing — the box may already be in that state)\n", err)
+		fmt.Fprintf(out, "    … %v (continuing — the VM may already be in that state)\n", err)
 	}
 }
 
@@ -221,7 +221,7 @@ func asQuote(s string) string {
 	return `"` + s + `"`
 }
 
-// utmNetworkConfig is the cloud-init v2 network-config pinning the box to its
+// utmNetworkConfig is the cloud-init v2 network-config pinning the VM to its
 // canonical vmnet address from boot one.
 func utmNetworkConfig(ip string) string {
 	gateway := utmSubnet + ".1"

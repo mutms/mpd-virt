@@ -26,10 +26,10 @@ var allowed = map[string]bool{
 	"ssh": true,
 	"scp": true,
 	// ssh-keygen renders the pinned host-key fingerprint at adoption, so the
-	// first-contact key is shown for comparison against the box's console.
+	// first-contact key is shown for comparison against the VM's console.
 	"ssh-keygen": true,
 	// Backend power control (start/stop): the native Apple container CLI and
-	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the box.
+	// the Parallels Desktop Pro CLI. Both run on the Mac hosting the VM.
 	"container": true,
 	"prlctl":    true,
 	// UTM backend: osascript drives UTM Desktop (no utmctl in the App Store
@@ -73,7 +73,7 @@ func (r Result) Failed() bool { return r.Code != 0 }
 // exit is not an error, only a failure to start (or a disallowed name).
 // Used for the long, verbose bootstrap steps a caller wants to watch.
 //
-// ssh output is remote output — a box this tool's own threat model calls
+// ssh output is remote output — a VM this tool's own threat model calls
 // compromised — so it streams through the terminal sanitizer (SGR colors
 // pass, every other escape sequence is dropped). Local tools (curl's
 // progress bar needs the real tty) stream untouched.

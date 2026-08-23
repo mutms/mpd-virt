@@ -270,7 +270,7 @@ func cidataMetaData(localHostname string) string {
 
 // cidataUserData is the #cloud-config: create only the dev user (no
 // `debian` default) with passwordless sudo and key-only auth, grow the
-// rootfs to fill the disk we extended, and start sshd, so the box comes
+// rootfs to fill the disk we extended, and start sshd, so the VM comes
 // up adoption-ready.
 func cidataUserData(username, sshPubKey, localHostname string) string {
 	return fmt.Sprintf(`#cloud-config

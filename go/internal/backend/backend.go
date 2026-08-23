@@ -5,15 +5,15 @@ import (
 	"strings"
 )
 
-// Backend names the platform a box runs on. It is supplied explicitly
+// Backend names the platform a VM runs on. It is supplied explicitly
 // (--backend), not derived from the id: reachability and IP resolution are
 // uniform now, so the id is a plain identifier that carries no platform
 // meaning. The value is recorded so lifecycle commands that DO need the
-// hypervisor — start, stop, delete — know which one owns the box.
+// hypervisor — start, stop, delete — know which one owns the VM.
 type Backend string
 
 const (
-	Generic   Backend = "generic"   // adopted / manually managed box (demos, LAN)
+	Generic   Backend = "generic"   // adopted / manually managed VM (demos, LAN)
 	Parallels Backend = "parallels" // Parallels VM
 	Container Backend = "container" // native Apple container
 	UTM       Backend = "utm"       // UTM Desktop VM (macOS, osascript-driven)

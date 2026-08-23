@@ -159,7 +159,7 @@ type vmResource struct {
 	Status string `json:"status"`
 }
 
-// findVM locates the box in the cluster listing by its number (the VM number
+// findVM locates the VM in the cluster listing by its number (the VM number
 // IS the Proxmox VMID — docs/PROXMOX.md). The token only sees VMs it was
 // granted, so an absent one means "not created, or not granted to the token".
 func (c *proxmoxClient) findVM(ctx context.Context, id vmid.ID) (vmResource, error) {
@@ -175,7 +175,7 @@ func (c *proxmoxClient) findVM(ctx context.Context, id vmid.ID) (vmResource, err
 	return vmResource{}, fmt.Errorf("proxmox does not list VM %d — not created, or the API token has no permission on it", int(id))
 }
 
-// proxmoxState reports the box's power state, stUnknown on any failure
+// proxmoxState reports the VM's power state, stUnknown on any failure
 // (backend unconfigured, API unreachable) so the power path falls back to
 // issuing its verb blind — the same contract as the other backends' probes.
 func proxmoxState(ctx context.Context, id vmid.ID) vmState {
@@ -192,7 +192,7 @@ func proxmoxState(ctx context.Context, id vmid.ID) vmState {
 
 // proxmoxPower issues one power verb. The package-wide "stop" is sent as the
 // API's graceful "shutdown" (ACPI). Failures are reported to out and
-// swallowed, like the other backends: whether the box actually moved is
+// swallowed, like the other backends: whether the VM actually moved is
 // decided by Start's reachability wait, not here.
 func proxmoxPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) bool {
 	if verb == "stop" {
@@ -219,18 +219,18 @@ func proxmoxPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) b
 }
 
 // overlayRange is the in-VM container/overlay subnet family (10.163.<NNN>.0/24
-// for every box). A box's guest agent reports addresses on it — the overlay
-// gateway .1, container bridges — that are not the box's LAN address and are
+// for every VM). A VM's guest agent reports addresses on it — the overlay
+// gateway .1, container bridges — that are not the VM's LAN address and are
 // not routable from the Mac without the tunnel, so they are filtered out of
 // address discovery.
 var overlayRange = netip.MustParsePrefix("10.163.0.0/16")
 
-// proxmoxAgentIPs asks the box's qemu-guest-agent, through the Proxmox API, for
-// its current LAN addresses. Adopted boxes run the agent (the prep script and
+// proxmoxAgentIPs asks the VM's qemu-guest-agent, through the Proxmox API, for
+// its current LAN addresses. Adopted VMs run the agent (the prep script and
 // bootstrap install it), so this is the authoritative address of a *running*
-// box — and unlike proxmoxDerivedIP it finds a box that sits off the cloud-init
+// VM — and unlike proxmoxDerivedIP it finds a VM that sits off the cloud-init
 // convention on a non-standard static lease. Empty on any failure (agent not up
-// yet, API unreachable, box off), so locate falls back to the derived IP.
+// yet, API unreachable, VM off), so locate falls back to the derived IP.
 //
 // Loopback, link-local and the overlay range are filtered out; only real LAN
 // candidates are returned, and locate's ssh probe has the final say among them.
@@ -279,7 +279,7 @@ func proxmoxAgentIPs(ctx context.Context, id vmid.ID) []string {
 	return ips
 }
 
-// proxmoxDerivedIP is the box's LAN address by convention: NETWORK with its
+// proxmoxDerivedIP is the VM's LAN address by convention: NETWORK with its
 // last octet replaced by the VM number (10.1.10.0 + 150 → 10.1.10.150). Used as
 // the fallback when the guest agent cannot be reached (see proxmoxAgentIPs).
 // locate's ssh probe has the final word, as for every candidate address.
@@ -293,13 +293,13 @@ func proxmoxDerivedIP(id vmid.ID) string {
 
 // --- create -----------------------------------------------------------------
 
-// proxmoxCreate makes a box by cloning the template VM: full clone under the
+// proxmoxCreate makes a VM by cloning the template VM: full clone under the
 // new VMID named mpd-<NNN>, cloud-init pointed at the derived static IP with
 // the dev user and the Mac's key, then start and wait for the first boot's
 // cloud-init to finish. The template never ran `mpd --vm-setup`, so its
 // cloud-init modules are all still enabled: the clone's first boot sets the
 // hostname, creates the user and generates fresh host keys. Returns the IP
-// the box is reachable at, ready for adoption.
+// the VM is reachable at, ready for adoption.
 func proxmoxCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {
 	cfg, err := loadProxmoxConfig()
 	if err != nil {
@@ -405,7 +405,7 @@ func (c *proxmoxClient) cloneFromTemplate(ctx context.Context, out io.Writer, id
 
 // proxmoxIPConfig is the clone's cloud-init ipconfig0 — "ip=<NETWORK with
 // .NNN>/<prefix>,gw=<GATEWAY>" — and the address in it, which is what the
-// box is waited for at. NETWORK may carry the prefix (10.1.10.0/16);
+// VM is waited for at. NETWORK may carry the prefix (10.1.10.0/16);
 // without one it is /24.
 func proxmoxIPConfig(network, gateway string, id vmid.ID) (string, string, error) {
 	ip := derivedIP(network, id)

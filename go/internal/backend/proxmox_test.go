@@ -117,7 +117,7 @@ func TestProxmoxDerivedIP(t *testing.T) {
 
 // The guest agent's real LAN address is returned, and only that: loopback,
 // link-local, IPv6, and overlay-range (10.163.x) addresses are filtered out.
-// This is the authoritative address that finds a box off the derived convention.
+// This is the authoritative address that finds a VM off the derived convention.
 func TestProxmoxAgentIPs(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "running", &hits)

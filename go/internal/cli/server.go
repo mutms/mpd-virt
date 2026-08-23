@@ -244,8 +244,8 @@ func serverSyncCmd() *cobra.Command {
 	return cmd
 }
 
-// pushLanHosts installs the rendered hosts file on one box and reports
-// whether the box's copy changed.
+// pushLanHosts installs the rendered hosts file on one VM and reports
+// whether the VM's copy changed.
 //
 // The digest comparison is what makes this callable from the lifecycle
 // verbs: LAN records are static facts that almost never move, so the
@@ -253,7 +253,7 @@ func serverSyncCmd() *cobra.Command {
 // caller that got true back needs to make mpd re-read the file.
 //
 // The push itself is unconditional once the digests differ — including
-// when the remote file is missing, which is every freshly adopted box.
+// when the remote file is missing, which is every freshly adopted VM.
 func pushLanHosts(ctx context.Context, t host.Target) (bool, error) {
 	path, err := server.WriteHostsFile()
 	if err != nil {
@@ -279,7 +279,7 @@ func pushLanHosts(ctx context.Context, t host.Target) (bool, error) {
 	return true, nil
 }
 
-// syncLanHosts pushes the hosts file to a box and, when it changed, has
+// syncLanHosts pushes the hosts file to a VM and, when it changed, has
 // mpd republish it through dnsmasq.
 //
 // `mpd --vm-setup` is the republish trigger because mpd reconciles the
@@ -303,12 +303,12 @@ func syncLanHosts(ctx context.Context, t host.Target) (bool, error) {
 
 // serverSync pushes the rendered hosts file into VMs and has each republish
 // it via `mpd --vm-setup`. It is the way to publish a *changed* registry to
-// boxes that are already running; adoption and the lifecycle verbs
+// vms that are already running; adoption and the lifecycle verbs
 // (`adopt`, `create`, `start`, `update`) push the current file on their
-// own, so a freshly adopted box is never blind to the LAN names.
+// own, so a freshly adopted VM is never blind to the LAN names.
 //
 // A VM that is down is reported, not fatal: the records are static LAN
-// facts, and the next `start` on that box picks them up even without a
+// facts, and the next `start` on that VM picks them up even without a
 // re-run here.
 func serverSync(ctx context.Context, only *vmid.ID) error {
 	if _, err := server.WriteHostsFile(); err != nil {
@@ -323,7 +323,7 @@ func serverSync(ctx context.Context, only *vmid.ID) error {
 		fmt.Printf("  %s → %s\n", e.Host(), e.IP)
 	}
 
-	boxes, err := registry.List()
+	vms, err := registry.List()
 	if err != nil {
 		return err
 	}
@@ -332,17 +332,17 @@ func serverSync(ctx context.Context, only *vmid.ID) error {
 		if err != nil {
 			return err
 		}
-		boxes = []registry.Entry{e}
+		vms = []registry.Entry{e}
 	}
-	if len(boxes) == 0 {
+	if len(vms) == 0 {
 		fmt.Println("  no VMs registered — nothing to publish to")
 		return nil
 	}
 
-	for _, b := range boxes {
+	for _, b := range vms {
 		fmt.Printf("\n▶ %s\n", b.ID.Name())
-		t := boxTarget(b.ID, b.User, b.IP)
-		// The reason matters here too: a box skipped on every sync
+		t := vmTarget(b.ID, b.User, b.IP)
+		// The reason matters here too: a VM skipped on every sync
 		// because its host key changed reads as "still booting" forever.
 		if err := t.CheckReachable(ctx); err != nil {
 			fmt.Printf("  ⚠ skipped: %v\n", err)

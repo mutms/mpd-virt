@@ -1,8 +1,8 @@
-// Package host drives a box over SSH from the Mac. It is a thin wrapper
+// Package host drives a VM over SSH from the Mac. It is a thin wrapper
 // over internal/exec's ssh, so the rest of mpd-virt gets reachability and
 // remote-command primitives without any other package touching ssh
-// directly. Every mpd-virt backend drives its box this way — the same
-// shape whether the box is a native container or an adopted VM.
+// directly. Every mpd-virt backend drives its VM this way — the same
+// shape whether the VM is a native container or an adopted VM.
 package host
 
 import (
@@ -15,18 +15,18 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/exec"
 )
 
-// Target identifies a box: a user at an address, plus where its ssh host
+// Target identifies a VM: a user at an address, plus where its ssh host
 // key is pinned.
 type Target struct {
 	User string
 	Host string
-	// KnownHostsFile pins the box's host key in a per-box file (recorded on
+	// KnownHostsFile pins the VM's host key in a per-VM file (recorded on
 	// first contact, refused if it ever changes). Empty falls back to the
 	// user's own ~/.ssh/known_hosts — only for targets that are not adopted
-	// boxes (a LAN probe, a not-yet-created VM).
+	// VMes (a LAN probe, a not-yet-created VM).
 	KnownHostsFile string
 	// HostKeyAlias stores and looks up the host key under a stable name
-	// (mpd-<NNN>) instead of the current address, so a box that moves to a
+	// (mpd-<NNN>) instead of the current address, so a VM that moves to a
 	// new DHCP lease keeps its key continuity instead of a fresh TOFU.
 	HostKeyAlias string
 }
@@ -38,7 +38,7 @@ func (t Target) addr() string { return t.User + "@" + t.Host }
 // contact but NEVER a changed one, and a short connect timeout. remote is
 // the command to run. The known-hosts file and alias are passed explicitly
 // so the pinning holds even though the managed ~/.ssh/config block matches
-// the box's bare IP (command-line options win over config-file ones).
+// the VM's bare IP (command-line options win over config-file ones).
 func (t Target) sshArgs(remote string) []string {
 	args := []string{
 		"-o", "BatchMode=yes",
@@ -88,13 +88,13 @@ func (t Target) Reachable(ctx context.Context) bool {
 //
 // Worth the classification because the failures are indistinguishable at
 // the exit code and their remedies are unrelated. A changed host key —
-// the routine consequence of rolling a snapshot back or rebuilding a box
+// the routine consequence of rolling a snapshot back or rebuilding a VM
 // on the same address — is refused by StrictHostKeyChecking=accept-new,
 // which accepts a host key on first contact but never a changed one. A
 // single "is the key authorized there?" sends the reader to
 // authorized_keys when the fix was one ssh-keygen away.
 //
-// The stale entry is named, never removed: what proves the box on this
+// The stale entry is named, never removed: what proves the VM on this
 // address is the intended one is its host key, and adoption pushes CA
 // material to whatever answers. Key auth does not stand in for that — a
 // rogue endpoint can accept an authentication it never verified — so the
@@ -112,7 +112,7 @@ func (t Target) CheckReachable(ctx context.Context) error {
 }
 
 // classify turns ssh's stderr into the error CheckReachable returns. Split
-// out so the mapping can be tested against real ssh output without a box
+// out so the mapping can be tested against real ssh output without a VM
 // to fail against.
 func (t Target) classify(detail string) error {
 	switch {
@@ -128,7 +128,7 @@ func (t Target) classify(detail string) error {
 		}
 		return fmt.Errorf(`the host key of %s does not match the one pinned in %s.
 
-Expected when the box was rolled back to a snapshot or rebuilt on the
+Expected when the VM was rolled back to a snapshot or rebuilt on the
 same address. If you did neither, do not clear it — that is the warning
 working.
 
@@ -137,19 +137,19 @@ working.
 then re-run this command.`, t.Host, where, name, file)
 
 	case strings.Contains(detail, "Permission denied"):
-		return fmt.Errorf("%s refused key auth — is this Mac's public key in ~/.ssh/authorized_keys on the box?", t.addr())
+		return fmt.Errorf("%s refused key auth — is this Mac's public key in ~/.ssh/authorized_keys on the VM?", t.addr())
 
 	case strings.Contains(detail, "Connection timed out"),
 		strings.Contains(detail, "No route to host"),
 		strings.Contains(detail, "Connection refused"),
 		strings.Contains(detail, "Name or service not known"):
-		return fmt.Errorf("no ssh answer from %s — is the box up, and is that its current address?", t.Host)
+		return fmt.Errorf("no ssh answer from %s — is the VM up, and is that its current address?", t.Host)
 	}
 	return fmt.Errorf("cannot ssh to %s: %s", t.addr(),
 		oneOf(strings.TrimSpace(detail), "ssh failed without output"))
 }
 
-// Install copies a local file into the box at remotePath with the given
+// Install copies a local file into the VM at remotePath with the given
 // octal mode, creating parent directories. It runs as the dev user with
 // no sudo: the CA lands under /var/lib/mpd, which 30-mpd-build leaves
 // owned by that user, and mpd --vm-setup — also that user — must own the
@@ -179,9 +179,9 @@ func (t Target) Install(ctx context.Context, localPath, remotePath, mode string)
 	return nil
 }
 
-// MirrorTree replaces a root-owned directory on the box with a copy of a
+// MirrorTree replaces a root-owned directory on the VM with a copy of a
 // local one. Unlike Install it is a *mirror*, not a merge: the remote copy
-// is removed first, so a file deleted on the Mac disappears from the box
+// is removed first, so a file deleted on the Mac disappears from the VM
 // and the two can never drift into a union of both histories.
 //
 // The destination is owned by the dev user, exactly like /opt/mpd. On a
@@ -231,7 +231,7 @@ func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) err
 	return nil
 }
 
-// WriteRemote writes content to a file on the box at remotePath with the
+// WriteRemote writes content to a file on the VM at remotePath with the
 // given octal mode, as the dev user (via a local temp file + Install).
 func (t Target) WriteRemote(ctx context.Context, content, remotePath, mode string) error {
 	tmp, err := os.CreateTemp("", "mpd-virt-*")

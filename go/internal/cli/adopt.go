@@ -20,14 +20,14 @@ import (
 
 // bootstrapRef pins mpd's bootstrap scripts — the three steps that are
 // piped straight from GitHub into bash with passwordless sudo behind them,
-// before any checkout exists on the box to audit. A commit hash, not a
+// before any checkout exists on the VM to audit. A commit hash, not a
 // branch: what runs is exactly what was reviewed when the pin was bumped,
 // not whatever `main` holds at that instant. Bump deliberately, like the
 // cloud-image pin, and together with MPD_BOOTSTRAP_REF in
 // container/Containerfile, which bakes step 20 into the Apple image at
 // the same ref. (The clone itself, and `update`, deliberately track mpd's
 // main — that is the platform's own trust decision, and the checkout at
-// least leaves auditable history on the box; see docs/SECURITY.md.)
+// least leaves auditable history on the VM; see docs/SECURITY.md.)
 const bootstrapRef = "30af81d01a54fb41f200df29a64c7b9263264b55"
 
 // bootstrapBaseURL is where the bootstrap steps are fetched from, at the
@@ -42,35 +42,35 @@ func bootstrapStep(script string) string {
 	return "f=$(mktemp) && wget -qO \"$f\" " + url + " && bash \"$f\"; rc=$?; rm -f \"$f\"; exit $rc"
 }
 
-// adoptCmd adopts a box as mpd-<NNN>, installing mpd from source.
+// adoptCmd adopts a VM as mpd-<NNN>, installing mpd from source.
 //
 // A adoption target is a stock Debian Trixie VM with only its *identity*
 // set up — hostname mpd-<NNN>, the dev user, this Mac's key authorized,
 // passwordless sudo. mpd itself is NOT required: adoption clones it from
 // GitHub and compiles it in place. What it verifies first is only that
-// the box at the given IP really is mpd-<NNN> — then it refuses to touch
+// the VM at the given IP really is mpd-<NNN> — then it refuses to touch
 // the wrong one, rather than remediating it.
 func adoptCmd() *cobra.Command {
 	var username, backendFlag string
 	cmd := &cobra.Command{
 		Use:   "adopt <NNN> [IP]",
-		Short: "Adopt a Debian box as mpd-<NNN> (IP resolved by name if omitted)",
-		Long: "With no IP, mpd-virt finds the box by name: it resolves mpd-<NNN>\n" +
+		Short: "Adopt a Debian VM as mpd-<NNN> (IP resolved by name if omitted)",
+		Long: "With no IP, mpd-virt finds the VM by name: it resolves mpd-<NNN>\n" +
 			"through the system resolver (how Parallels and Apple containers\n" +
-			"register a box, and how a box running mDNS advertises itself), and\n" +
+			"register a VM, and how a VM running mDNS advertises itself), and\n" +
 			"failing that falls back to the last address on file — which covers\n" +
 			"Proxmox and any re-adoption. An explicit <IP> always overrides, and\n" +
-			"is required for the first adoption of a box that neither resolves nor\n" +
-			"is on file. Either way mpd-virt verifies the box there really is\n" +
-			"mpd-<NNN> by its hostname before touching it. The box need only be\n" +
+			"is required for the first adoption of a VM that neither resolves nor\n" +
+			"is on file. Either way mpd-virt verifies the VM there really is\n" +
+			"mpd-<NNN> by its hostname before touching it. The VM need only be\n" +
 			"stock Debian Trixie with its identity set up (hostname, dev user,\n" +
 			"authorized key, passwordless sudo) — mpd is cloned from GitHub and\n" +
 			"built in place.\n\n" +
-			"--backend records which platform the box runs on\n" +
+			"--backend records which platform the VM runs on\n" +
 			"(" + backend.List() + ") for later lifecycle\n" +
-			"commands; it does not affect how the box is reached. It is\n" +
+			"commands; it does not affect how the VM is reached. It is\n" +
 			"required only for the first adoption: a re-adoption of a\n" +
-			"registered box reads it from the registry (pass it to change it).",
+			"registered VM reads it from the registry (pass it to change it).",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
@@ -97,7 +97,7 @@ func adoptCmd() *cobra.Command {
 				// ~/.ssh/config, even when typed by hand.
 				a, err := netip.ParseAddr(args[1])
 				if err != nil || !a.Is4() {
-					return fmt.Errorf("%q is not an IPv4 address — adopt takes the box's literal address", args[1])
+					return fmt.Errorf("%q is not an IPv4 address — adopt takes the VM's literal address", args[1])
 				}
 				ip = a.String()
 			} else if ip, err = backend.Start(cmd.Context(), cmd.OutOrStdout(), id, be); err != nil {
@@ -110,13 +110,13 @@ func adoptCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(),
-		"dev user on the box (defaults to the current macOS user)")
+		"dev user on the VM (defaults to the current macOS user)")
 	cmd.Flags().StringVar(&backendFlag, "backend", "",
-		"platform the box runs on ("+backend.List()+") — required for the first adoption, read from the registry after")
+		"platform the VM runs on ("+backend.List()+") — required for the first adoption, read from the registry after")
 	return cmd
 }
 
-// defaultUser mirrors the proposal's rule: the box's dev user defaults to
+// defaultUser mirrors the proposal's rule: the VM's dev user defaults to
 // `whoami`, which is what mpd's own identity detection uses.
 func defaultUser() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
@@ -131,18 +131,18 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 		// end, but failing after the full bootstrap would waste ten minutes.
 		return fmt.Errorf("invalid --username %q", username)
 	}
-	t := boxTarget(id, username, ip)
+	t := vmTarget(id, username, ip)
 	fmt.Printf("adopt %s at %s@%s  (backend=%s, zone=%s)\n\n",
 		id.Name(), username, ip, be, id.Zone())
 
 	// --- Identity conformance. Key auth + hostname are two independent
-	//     confirmations that the box here is the one meant; refuse on any
+	//     confirmations that the vm here is the one meant; refuse on any
 	//     mismatch. mpd need NOT be present — adoption installs it.
-	//     The first contact records the box's host key into
+	//     The first contact records the vm's host key into
 	//     ~/.mpd-virt/<NNN>/known_hosts (under the alias mpd-<NNN>); every
 	//     later connection — this run's and every verb after — refuses a
 	//     changed key. The fingerprint is printed so it can be compared
-	//     against the box's console while the adoption is fresh.
+	//     against the vm's console while the adoption is fresh.
 	if err := t.CheckReachable(ctx); err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 		return err
 	}
 	if got != id.Name() {
-		return fmt.Errorf("hostname mismatch: box at %s calls itself %q, expected %q — refusing", ip, got, id.Name())
+		return fmt.Errorf("hostname mismatch: vm at %s calls itself %q, expected %q — refusing", ip, got, id.Name())
 	}
 	pass("hostname " + got)
 
@@ -175,7 +175,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	pass("Debian Trixie")
 
 	// --- Per-VM CA generated on the Mac. Root key stays here; the
-	//     intermediate is name-constrained to this box's zone.
+	//     intermediate is name-constrained to this vm's zone.
 	if err := ca.LoadOrGenerateRoot(); err != nil {
 		return fmt.Errorf("root CA: %w", err)
 	}
@@ -221,7 +221,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 
 	// LAN service names, same trip and the same precondition. Only the push
 	// is needed here: the `mpd --vm-setup` below publishes the file into
-	// dnsmasq as part of its DNS reconcile, so an adopted box answers for
+	// dnsmasq as part of its DNS reconcile, so an adopted vm answers for
 	// forge.mpd.test from the start rather than only after a `server sync`.
 	if _, err := pushLanHosts(ctx, t); err != nil {
 		return fmt.Errorf("push LAN hosts: %w", err)
@@ -234,8 +234,8 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 
 	// Their MPD_* defaults, same deal — and before the `mpd --vm-setup`
 	// below, which seeds that same path from mpd's own template only when
-	// nothing is there. Pushing first means an adopted box starts out
-	// already agreeing with every other box this Mac owns.
+	// nothing is there. Pushing first means an adopted vm starts out
+	// already agreeing with every other vm this Mac owns.
 	syncMpdEnv(ctx, t, id.String())
 
 	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
@@ -244,7 +244,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 		return err
 	}
 
-	// --- Record the adopted box (host-side).
+	// --- Record the adopted vm (host-side).
 	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: username, Backend: string(be)}); err != nil {
 		return fmt.Errorf("registry: %w", err)
 	}

@@ -1,4 +1,4 @@
-# mpd-virt-container-apple — the Apple-container base image mpd-virt adopts as an mpd box.
+# mpd-virt-container-apple — the Apple-container base image mpd-virt adopts as an mpd VM.
 # Debian Trixie with systemd as PID 1 under plain `container run` (needs
 # `--cap-add ALL`; hostname comes from --name).
 

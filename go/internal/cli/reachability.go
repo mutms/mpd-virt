@@ -17,13 +17,13 @@ import (
 )
 
 // wgListenPort is the UDP port every VM's wg0 endpoint listens on. Fixed, so
-// mpd-virt can compose the endpoint from the box's IP alone.
+// mpd-virt can compose the endpoint from the VM's IP alone.
 const wgListenPort = 51820
 
-// setupReachability wires an adopted box into the WireGuard overlay through a
+// setupReachability wires an adopted VM into the WireGuard overlay through a
 // running mpd-proxy: it brings up a wg0 endpoint on the VM (authorized for
 // mpd-proxy's key), reads back the VM's key, and registers the peer + DNS route
-// with mpd-proxy. After it, this Mac reaches the box's 10.163.<NNN>.x services
+// with mpd-proxy. After it, this Mac reaches the VM's 10.163.<NNN>.x services
 // transparently, encrypted, with no per-VM route or resolver file.
 //
 // If mpd-proxy is not running it is skipped with a hint rather than failing —
@@ -46,7 +46,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 
 	// vm-setup has already brought up wg0 (its key, interface, ip_forward). Add
 	// mpd-proxy as its peer and persist it with `wg-quick save`, then read the
-	// VM's public key. The VM's private key never leaves the box.
+	// VM's public key. The VM's private key never leaves the VM.
 	//
 	// The `ip route` is not redundant with the peer's allowed-ips: `wg set`
 	// records 10.163.0.1 in WireGuard's crypto routing (which peer to encrypt
@@ -76,7 +76,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 	// whatever the daemon's own parsing does: exactly a WireGuard key, 32
 	// bytes of base64, nothing else rides along.
 	if err := validateWGKey(vmPub); err != nil {
-		return false, fmt.Errorf("box returned an invalid wg0 public key: %w", err)
+		return false, fmt.Errorf("VM returned an invalid wg0 public key: %w", err)
 	}
 	vm := proxy.VM{
 		ID:        id.String(),
@@ -85,7 +85,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 		// Route the whole 10.163.<NNN>.0/24 container subnet over the tunnel —
 		// that is the tunnel's entire purpose: the Mac browses project URLs
 		// served at runtime-container IPs, and reaches databases and service
-		// containers directly. DNS also lives on the gateway .1. The box-side
+		// containers directly. DNS also lives on the gateway .1. The VM-side
 		// nft rule (mpd vm-setup) exempts wg0 and seals the subnet only from
 		// the LAN/public interface.
 		AllowedIPs: []string{fmt.Sprintf("10.163.%d.0/24", octet)},
@@ -115,9 +115,9 @@ func validateWGKey(s string) error {
 	return nil
 }
 
-// printSocksHint tells the user how to reach the box without mpd-proxy: the
-// SOCKS-over-plain-SSH tier baked into the box's managed ssh-config block. The
-// box's direct IP is reachable independently of the overlay, so this path works
+// printSocksHint tells the user how to reach the VM without mpd-proxy: the
+// SOCKS-over-plain-SSH tier baked into the VM's managed ssh-config block. The
+// VM's direct IP is reachable independently of the overlay, so this path works
 // whenever the overlay does not.
 func printSocksHint(id vmid.ID) {
 	fmt.Printf(
@@ -130,23 +130,23 @@ func printSocksHint(id vmid.ID) {
 		sshconfig.SocksAlias(id), sshconfig.SocksPort, sshconfig.SocksPort)
 }
 
-// startCmd brings an adopted box into service and points the Mac at it: power
+// startCmd brings an adopted VM into service and points the Mac at it: power
 // it on through its backend, resolve its current IP, wire WireGuard
-// reachability, and verify the overlay. It re-resolves by name so a box that
+// reachability, and verify the overlay. It re-resolves by name so a VM that
 // moved (a restarted container's new lease) is found wherever it is now. This
-// is the one command to run after a box (re)starts or moves — there is no
+// is the one command to run after a VM (re)starts or moves — there is no
 // separate "sync".
 func startCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
 		Use:   "start <NNN>",
-		Short: "Bring an adopted box into service: resolve its IP, wire reachability, verify",
-		Long: "Brings an already-adopted box into service and points the Mac at\n" +
-			"it: powers the box on through its backend (container/parallels/utm;\n" +
+		Short: "Bring an adopted VM into service: resolve its IP, wire reachability, verify",
+		Long: "Brings an already-adopted VM into service and points the Mac at\n" +
+			"it: powers the VM on through its backend (container/parallels/utm;\n" +
 			"generic and proxmox are assumed already running), finds the IP it\n" +
 			"came up on, updates the registry and ~/.ssh/config if it moved,\n" +
 			"registers the mpd-proxy WireGuard endpoint + DNS, and verifies\n" +
-			"routing + DNS through the tunnel. Run it after a box (re)starts or\n" +
+			"routing + DNS through the tunnel. Run it after a VM (re)starts or\n" +
 			"moves, or after restarting mpd-proxy.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,9 +162,9 @@ func startCmd() *cobra.Command {
 			if user == "" {
 				user = e.User
 			}
-			// Bring the box up and find where it is: the backend powers it on
+			// Bring the VM up and find where it is: the backend powers it on
 			// (a no-op for generic/proxmox) and returns the IP it came up on,
-			// waiting while it boots. A moved/restarted box is found wherever it
+			// waiting while it boots. A moved/restarted VM is found wherever it
 			// is now — no reachable IP means it did not start.
 			ip, err := backend.Start(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend))
 			if err != nil {
@@ -181,7 +181,7 @@ func startCmd() *cobra.Command {
 			if err := sshconfig.Write(id, ip, user); err != nil {
 				return fmt.Errorf("ssh config: %w", err)
 			}
-			t := boxTarget(id, user, ip)
+			t := vmTarget(id, user, ip)
 			// Gate everything on one classified reachability check: a
 			// refused host key must stop the verb with the remedy in
 			// view, not degrade into a string of push warnings.
@@ -192,7 +192,7 @@ func startCmd() *cobra.Command {
 			// file republishes via `mpd --vm-setup`, which restarts wg0 and
 			// would drop the mpd-proxy peer added below. Unchanged — the
 			// usual case — this is one remote sha256sum and nothing else.
-			// Best-effort: a box that came up fine should not fail to start
+			// Best-effort: a VM that came up fine should not fail to start
 			// over a hosts file.
 			if changed, err := syncLanHosts(cmd.Context(), t); err != nil {
 				fmt.Printf("  ⚠ LAN hosts sync failed: %v\n    run `mpd-virt server sync %s`\n", err, id.String())
@@ -217,19 +217,19 @@ func startCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&username, "username", "", "dev user on the box (defaults to the registry entry)")
+	cmd.Flags().StringVar(&username, "username", "", "dev user on the VM (defaults to the registry entry)")
 	return cmd
 }
 
-// stopCmd takes an adopted box out of service: detach it from the overlay and
+// stopCmd takes an adopted VM out of service: detach it from the overlay and
 // power it off through its backend. The inverse of start.
 func stopCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop <NNN>",
-		Short: "Take an adopted box out of service: detach it from the WireGuard overlay",
-		Long: "Detaches the box from the overlay — removes its mpd-proxy peer, so\n" +
+		Short: "Take an adopted VM out of service: detach it from the WireGuard overlay",
+		Long: "Detaches the VM from the overlay — removes its mpd-proxy peer, so\n" +
 			"the Mac stops routing to its 10.163.<NNN>.x network — and powers the\n" +
-			"box off through its backend (container/parallels/utm; a no-op for\n" +
+			"VM off through its backend (container/parallels/utm; a no-op for\n" +
 			"generic/proxmox, which keep running so `start` re-attaches them).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -249,7 +249,7 @@ func stopCmd() *cobra.Command {
 			} else {
 				pass("detached from overlay (mpd-proxy peer removed)")
 			}
-			// Power the box off through its backend (a no-op for generic/proxmox).
+			// Power the VM off through its backend (a no-op for generic/proxmox).
 			return backend.Stop(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend))
 		},
 	}
@@ -257,8 +257,8 @@ func stopCmd() *cobra.Command {
 }
 
 // verifyReachable confirms the overlay actually works after wiring it, by
-// asking the box's own dnsmasq (10.163.<NNN>.1:53, reachable only through the
-// tunnel) to resolve the box's zone. Success proves both that the WireGuard
+// asking the VM's own dnsmasq (10.163.<NNN>.1:53, reachable only through the
+// tunnel) to resolve the VM's zone. Success proves both that the WireGuard
 // path routes and that the in-VM resolver answers. It is a health check, not a
 // gate: a failure warns rather than fails start, since the peer is registered
 // regardless and a fresh tunnel can take a moment to settle (hence the retry).
@@ -288,5 +288,5 @@ func verifyReachable(ctx context.Context, id vmid.ID) {
 		}
 	}
 	fmt.Printf("  ⚠ overlay check: could not resolve %s → %s through the tunnel yet.\n"+
-		"    Give it a moment and retry, or check `sudo mpd-proxy` and wg0 on the box.\n", id.Zone(), gateway)
+		"    Give it a moment and retry, or check `sudo mpd-proxy` and wg0 on the VM.\n", id.Zone(), gateway)
 }

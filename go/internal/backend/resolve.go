@@ -1,10 +1,10 @@
-// Package backend drives a box's power and address through its backend. IP
-// detection lives here, with the backend, because a running box always has an
+// Package backend drives a VM's power and address through its backend. IP
+// detection lives here, with the backend, because a running VM always has an
 // address and each backend knows how to find its own: Apple containers from
 // `container inspect`, Parallels VMs from `prlctl list` (when Parallels Tools
-// report one), and generic/adopted boxes from name resolution with the last
+// report one), and generic/adopted VMs from name resolution with the last
 // recorded address as a fallback. That is why Start returns the IP — no
-// reachable IP means the box did not come up.
+// reachable IP means the VM did not come up.
 package backend
 
 import (
@@ -22,7 +22,7 @@ import (
 )
 
 // sshPort is the door whose reachability tells us a candidate address is a live
-// box and not a stale record — the same door adopt and start walk through.
+// VM and not a stale record — the same door adopt and start walk through.
 const sshPort = "22"
 
 // probeTimeout bounds each name lookup and each ssh-port dial — short, so
@@ -37,12 +37,12 @@ var (
 	sshReachable = dialSSH
 )
 
-// locate finds the box's current IP for one backend in a single pass. It
+// locate finds the VM's current IP for one backend in a single pass. It
 // gathers candidates in priority order — the backend's own source first
 // (authoritative), then name resolution, then the last recorded IP — and
 // returns the first that answers on ssh. The managed backends' sources are how
 // a churned container/VM address is found; the name/last-IP fallback covers
-// generic boxes, Parallels without Tools, and a backend CLI absent on this
+// generic VMs, Parallels without Tools, and a backend CLI absent on this
 // machine. It errors when no candidate answers.
 func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 	type candidate struct{ ip, label string }
@@ -72,7 +72,7 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 	case Parallels:
 		add(parallelsIP(ctx, id.Name()), "prlctl")
 	case UTM:
-		// UTM exposes no clean guest-IP query, so the box is pinned to its
+		// UTM exposes no clean guest-IP query, so the VM is pinned to its
 		// canonical vmnet address; trust it only when the VM actually exists,
 		// and let the ssh probe below confirm it is up.
 		if utmVMExists(ctx, id.Name()) {
@@ -84,9 +84,9 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 			add(libvirtCanonicalIP(id), "libvirt")
 		}
 	case Proxmox:
-		// A running, adopted box runs qemu-guest-agent (the prep script and
+		// A running, adopted VM runs qemu-guest-agent (the prep script and
 		// bootstrap install it), so ask the API for its real address first —
-		// authoritative, and the only way to find a box that sits off the
+		// authoritative, and the only way to find a VM that sits off the
 		// cloud-init convention on a non-standard static lease. The derived
 		// convention (NETWORK's last octet = the number) stays as the fallback
 		// for the very first adoption, before the agent exists to answer.
@@ -99,9 +99,9 @@ func locate(ctx context.Context, id vmid.ID, be Backend) (string, error) {
 		add(ip, "dns")
 	}
 	// mDNS needs the .local suffix spelled out: macOS does not append it
-	// to a bare single-label name. A prepared box advertises itself via
+	// to a bare single-label name. A prepared VM advertises itself via
 	// avahi (the prep script and bootstrap set it up), so this is the
-	// discovery path for generic boxes never adopted before.
+	// discovery path for generic VMs never adopted before.
 	for _, ip := range resolveHost(ctx, id.Name()+".local") {
 		add(ip, "mdns")
 	}
@@ -139,17 +139,17 @@ func containerIP(ctx context.Context, name string) string {
 // JSON — an array whose live address is at status.networks[].ipv4Address in
 // CIDR form ("192.168.64.26/24"). configuration.networks carries no address.
 func parseContainerIP(stdout string) (string, error) {
-	var boxes []struct {
+	var vms []struct {
 		Status struct {
 			Networks []struct {
 				IPv4Address string `json:"ipv4Address"`
 			} `json:"networks"`
 		} `json:"status"`
 	}
-	if err := json.Unmarshal([]byte(stdout), &boxes); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &vms); err != nil {
 		return "", fmt.Errorf("parsing container inspect JSON: %w", err)
 	}
-	for _, b := range boxes {
+	for _, b := range vms {
 		for _, n := range b.Status.Networks {
 			if ip := stripMask(n.IPv4Address); ip != "" {
 				return ip, nil
@@ -203,11 +203,11 @@ func stripMask(addr string) string {
 // systemLookup resolves a name through the system resolver (cgo getaddrinfo on
 // macOS: the resolver search list, and mDNS when the name ends in .local —
 // callers must spell that suffix out, as `ping` must). The query is IPv4-only,
-// and not just because the box's reachable address is v4: mpd boxes run with
+// and not just because the VM's reachable address is v4: mpd vms run with
 // IPv6 disabled, so an A+AAAA lookup over mDNS stalls ~5s waiting for the AAAA
 // answer that never comes — past probeTimeout — while an A-only query returns
 // in milliseconds. Errors are swallowed: an unresolvable name is the normal
-// case for a box that does not advertise one, and locate falls through to the
+// case for a VM that does not advertise one, and locate falls through to the
 // registry.
 func systemLookup(ctx context.Context, name string) []string {
 	r := &net.Resolver{PreferGo: false}
@@ -226,7 +226,7 @@ func systemLookup(ctx context.Context, name string) []string {
 
 // dialSSH reports whether ip accepts a TCP connection on the ssh port. A TCP
 // dial, not ICMP: unprivileged, and it confirms the thing we care about — that
-// ssh (and so adopt/start) can reach the box.
+// ssh (and so adopt/start) can reach the VM.
 func dialSSH(ctx context.Context, ip string) bool {
 	d := net.Dialer{Timeout: probeTimeout}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip, sshPort))

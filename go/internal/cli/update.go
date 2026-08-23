@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// updateCmd refreshes an adopted box over SSH: mpd's bootstrap step 20
+// updateCmd refreshes an adopted VM over SSH: mpd's bootstrap step 20
 // (apt dist-upgrade + the package set — the same script adoption and a
-// template pre-run use, so a stale box converges), then mpd's own
+// template pre-run use, so a stale VM converges), then mpd's own
 // `--vm-upgrade` (git pull → rebuild → mudev + catalogues → re-run
 // `mpd --vm-setup`), then verifies reachability. The update logic lives
 // in mpd, so this stays a thin orchestration verb.
@@ -18,8 +18,8 @@ func updateCmd() *cobra.Command {
 	var username string
 	cmd := &cobra.Command{
 		Use:   "update <NNN>",
-		Short: "Refresh an adopted box: OS packages, then mpd (pull + rebuild + vm-setup)",
-		Long: "SSHes into the box and runs mpd's bootstrap/20-install-software.sh\n" +
+		Short: "Refresh an adopted VM: OS packages, then mpd (pull + rebuild + vm-setup)",
+		Long: "SSHes into the VM and runs mpd's bootstrap/20-install-software.sh\n" +
 			"(apt dist-upgrade + every package mpd needs) followed by\n" +
 			"`mpd --vm-upgrade` (pull, rebuild, re-run `mpd --vm-setup`) — then\n" +
 			"verifies reachability.",
@@ -37,7 +37,7 @@ func updateCmd() *cobra.Command {
 			if user == "" {
 				user = e.User
 			}
-			t := boxTarget(id, user, e.IP)
+			t := vmTarget(id, user, e.IP)
 			// One classified check up front: a refused host key stops the
 			// update with the remedy, before anything is pushed or run.
 			if err := t.CheckReachable(cmd.Context()); err != nil {
@@ -46,7 +46,7 @@ func updateCmd() *cobra.Command {
 
 			// Refresh the LAN names before the update runs: --vm-upgrade
 			// re-runs `mpd --vm-setup`, which republishes whatever file is
-			// on the box by then — so the push costs nothing extra here.
+			// on the VM by then — so the push costs nothing extra here.
 			if _, err := pushLanHosts(cmd.Context(), t); err != nil {
 				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.String())
 			}
@@ -76,6 +76,6 @@ func updateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&username, "username", "", "dev user on the box (defaults to the registry entry)")
+	cmd.Flags().StringVar(&username, "username", "", "dev user on the VM (defaults to the registry entry)")
 	return cmd
 }
