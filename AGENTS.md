@@ -299,9 +299,9 @@ There is no `docs/proposals/` and none should be created — design notes go
 into `docs/` proper (or straight into code comments), and shipped behavior is
 documented only in the canonical files above. Hosts are macOS and Linux,
 in this one codebase (the `libvirt` backend is the Linux-only part; the
-overlay helper mpd-proxy is still macOS-only). Windows is not on the
-roadmap and never will be — WSL containers cannot run the mpd runtime's
-systemd, and mdl-demo covers Windows users.
+overlay helper mpd-proxy is still macOS-only). Proprietary Windows is not
+on the roadmap and never will be — WSL containers cannot run the mpd
+runtime's systemd, and mdl-demo covers Windows users.
 
 ## Validation
 
