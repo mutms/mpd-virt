@@ -73,8 +73,11 @@ Build the template once (VMID `TEMPLATE_VMID`, default 999):
    ```
 3. `sudo cloud-init clean --logs && sudo poweroff` — so every clone's first
    boot is a clean cloud-init run (new hostname, fresh host keys, your key)
-4. optionally convert it to a template in the UI; `create` does a full
-   clone either way
+4. leave it a plain, stopped VM — do **not** convert it to a template.
+   `create` does a full clone either way, so templating gains nothing,
+   and it costs the refresh path: a template cannot be started, and once
+   anything links to it, it cannot be converted back to a VM to be
+   upgraded
 
 `mpd-virt remove <NNN> --full` is the inverse: it stops the VM hard (its
 disks are going anyway) and destroys it with them — the `VM.Allocate` in
