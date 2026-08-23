@@ -7,7 +7,7 @@ AGENTS.md natively all see the same instructions.
 
 ## What mpd-virt is
 
-`mpd-virt` is the macOS host-side orchestrator for
+`mpd-virt` is the host-side (macOS or Linux) orchestrator for
 [mpd](https://github.com/mutms/mpd): it creates or adopts Debian Trixie VMs,
 bootstraps them over SSH, installs the in-VM `mpd` platform, issues their
 certificates from a local root CA, and wires host-side reachability. A single
@@ -297,11 +297,11 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 
 There is no `docs/proposals/` and none should be created — design notes go
 into `docs/` proper (or straight into code comments), and shipped behavior is
-documented only in the canonical files above. The only planned platform work
-is Linux host support, keyed on `GOOS` in this same codebase, much later.
-Windows is not on the roadmap — WSL containers cannot run the mpd runtime's
-systemd, and mdl-demo covers Windows users; if Windows ever happens it would
-ride on the Linux path via WSL, sharing that code rather than its own.
+documented only in the canonical files above. Hosts are macOS and Linux,
+in this one codebase (the `libvirt` backend is the Linux-only part; the
+overlay helper mpd-proxy is still macOS-only). Windows is not on the
+roadmap and never will be — WSL containers cannot run the mpd runtime's
+systemd, and mdl-demo covers Windows users.
 
 ## Validation
 
