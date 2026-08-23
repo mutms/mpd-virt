@@ -28,7 +28,7 @@ func Conf() string { return filepath.Join(Root(), "conf") }
 func CARoot() string { return filepath.Join(Conf(), "caroot") }
 
 // ProxmoxEnv is ~/.mpd-virt/proxmox.env — the Proxmox API endpoint + token
-// the proxmox backend drives power through (docs/PROXMOX.md).
+// the proxmox backend drives power through (docs/proxmox.md).
 //
 // At the root rather than under conf/ for the same reason as MpdEnv: the
 // developer writes this file by hand, and conf/ is for what mpd-virt
@@ -68,7 +68,7 @@ func UTMStaging(name string) string { return filepath.Join(Conf(), "utm-staging"
 // LibvirtDir is /var/lib/mpd-virt/<name> — a libvirt VM's disk + cidata
 // seed. Not under ~/.mpd-virt: qemu runs as libvirt-qemu and a Debian home
 // is 0700, so it could not open anything there. Created once by hand
-// (docs/LIBVIRT.md), dev-user-owned.
+// (docs/libvirt.md), dev-user-owned.
 func LibvirtDir(name string) string { return filepath.Join("/var/lib/mpd-virt", name) }
 
 // ProxySocket is ~/.mpd-virt/proxy/socket — mpd-proxy's control socket.

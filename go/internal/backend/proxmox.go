@@ -3,7 +3,7 @@ package backend
 // proxmox.go drives Proxmox VMs through the Proxmox REST API: power state,
 // start, graceful shutdown, and `create` — a full clone of the mpd-template
 // VM with the clone's hostname and static IP set through cloud-init
-// (docs/PROXMOX.md). The VM number is the Proxmox VMID, and the VM's LAN
+// (docs/proxmox.md). The VM number is the Proxmox VMID, and the VM's LAN
 // address is NETWORK with the last octet replaced by that number.
 
 import (
@@ -47,7 +47,7 @@ func loadProxmoxConfig() (proxmoxConfig, error) {
 	path := paths.ProxmoxEnv()
 	f, err := os.Open(path)
 	if err != nil {
-		return proxmoxConfig{}, fmt.Errorf("proxmox backend is not configured (%s) — see docs/PROXMOX.md", path)
+		return proxmoxConfig{}, fmt.Errorf("proxmox backend is not configured (%s) — see docs/proxmox.md", path)
 	}
 	defer f.Close()
 
@@ -79,7 +79,7 @@ func loadProxmoxConfig() (proxmoxConfig, error) {
 		"TOKEN_ID": cfg.tokenID, "TOKEN_SECRET": cfg.tokenSecret,
 	} {
 		if v == "" {
-			return proxmoxConfig{}, fmt.Errorf("%s: %s is missing — see docs/PROXMOX.md", path, k)
+			return proxmoxConfig{}, fmt.Errorf("%s: %s is missing — see docs/proxmox.md", path, k)
 		}
 	}
 	if !strings.HasSuffix(cfg.apiURL, "/") {
@@ -160,7 +160,7 @@ type vmResource struct {
 }
 
 // findVM locates the VM in the cluster listing by its number (the VM number
-// IS the Proxmox VMID — docs/PROXMOX.md). The token only sees VMs it was
+// IS the Proxmox VMID — docs/proxmox.md). The token only sees VMs it was
 // granted, so an absent one means "not created, or not granted to the token".
 func (c *proxmoxClient) findVM(ctx context.Context, id vmid.ID) (vmResource, error) {
 	var vms []vmResource
@@ -347,7 +347,7 @@ func (c *proxmoxClient) cloneFromTemplate(ctx context.Context, out io.Writer, id
 			}
 		}
 		if template.Node == "" {
-			return "", fmt.Errorf("template VM %s is not visible to the token — create it (docs/PROXMOX.md) and grant the token on it", c.cfg.template)
+			return "", fmt.Errorf("template VM %s is not visible to the token — create it (docs/proxmox.md) and grant the token on it", c.cfg.template)
 		}
 	}
 	node := url.PathEscape(template.Node)

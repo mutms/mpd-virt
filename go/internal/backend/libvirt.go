@@ -17,7 +17,7 @@ import (
 )
 
 // libvirt backend — a KVM VM on a Linux host, driven with virsh against the
-// system daemon (docs/LIBVIRT.md for the one-time host prep). `create`
+// system daemon (docs/libvirt.md for the one-time host prep). `create`
 // materializes a VM from the amd64 Debian cloud qcow2 plus a cidata seed,
 // like utm.go does on macOS; start/stop/state/delete are virsh verbs.
 //
@@ -48,7 +48,7 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 	}
 	dir := paths.LibvirtDir(name)
 	if st, err := os.Stat(filepath.Dir(dir)); err != nil || !st.IsDir() {
-		return "", fmt.Errorf("%s is missing — one-time host prep (docs/LIBVIRT.md):\n    sudo install -d -o $USER -g $USER -m 0755 %s", filepath.Dir(dir), filepath.Dir(dir))
+		return "", fmt.Errorf("%s is missing — one-time host prep (docs/libvirt.md):\n    sudo install -d -o $USER -g $USER -m 0755 %s", filepath.Dir(dir), filepath.Dir(dir))
 	}
 	memMiB := parseSizeMiB(opts.Memory)
 	if memMiB == 0 {

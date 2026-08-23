@@ -201,7 +201,7 @@ func makeCidataISO(ctx context.Context, outputPath, username, sshPubKey, localHo
 	}
 	_ = os.Remove(outputPath)
 
-	// macOS has hdiutil built in; Linux uses genisoimage (docs/LIBVIRT.md).
+	// macOS has hdiutil built in; Linux uses genisoimage (docs/libvirt.md).
 	cmd := exec.Cmd{Name: "hdiutil", Args: []string{
 		"makehybrid", "-o", outputPath, "-iso", "-joliet", "-default-volume-name", "cidata", work,
 	}}

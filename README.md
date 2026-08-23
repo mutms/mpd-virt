@@ -63,7 +63,7 @@ mpd-virt create 141 --backend=container   # pulls the published base image, crea
 
 Either way you now have a running mpd VM. `ssh mpd-141` lands in the
 runtime, where you work — follow
-[mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/USAGE.md) from
+[mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/usage.md) from
 there.
 
 All your projects are listed in the portal at `https://141.mpd.test/`. To
@@ -94,8 +94,8 @@ find it:
 
 - [AGENTS.md](AGENTS.md) — the detailed reference: verbs, backends, VM
   identity, registry and state layout, code map
-- [docs/SECURITY.md](docs/SECURITY.md) — trust model, why two CAs, CA backup
-- [docs/LAN_SERVERS.md](docs/LAN_SERVERS.md) — certificates for non-VM LAN
+- [docs/security.md](docs/security.md) — trust model, why two CAs, CA backup
+- [docs/lan-servers.md](docs/lan-servers.md) — certificates for non-VM LAN
   machines
 - [container/README.md](container/README.md) — the base image
 

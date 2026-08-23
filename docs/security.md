@@ -23,7 +23,7 @@ literal IPv4 address before it may enter the registry or `~/.ssh/config`
 
 This is the host-side half of the boundary only. The VM-side reachability
 boundary is documented where it is implemented (the mpd repo's
-`docs/SECURITY.md` and mpd-proxy).
+`docs/security.md` and mpd-proxy).
 
 ## Host key continuity
 
@@ -105,7 +105,7 @@ left, since nothing may outlive its issuer.
 
 LAN machines that are not VMs — `forge.mpd.test`, `runner.mpd.test`, … — get
 leaves signed directly by the root on the Mac; see
-[`LAN_SERVERS.md`](LAN_SERVERS.md).
+[`lan-servers.md`](lan-servers.md).
 
 ## Backing up the CA
 
@@ -115,7 +115,7 @@ export/import-identity flow: Time Machine catches `~/.mpd-virt/conf/` by
 default when enabled, and that is the backup. It matters more than the VMs
 themselves — the LAN-server certificates under `~/.mpd-virt/servers/` are
 installed on machines that cannot be rebuilt from a script (see
-[`LAN_SERVERS.md`](LAN_SERVERS.md)).
+[`lan-servers.md`](lan-servers.md)).
 
 ## Known gaps
 

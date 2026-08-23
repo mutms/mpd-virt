@@ -225,4 +225,4 @@ already installed on the server; do that there.
 - **Back up `~/.mpd-virt/conf/`.** Losing it costs more than rebuilding
   VMs: these certificates are installed on machines that cannot be
   rebuilt from a script. Time Machine catches it by default when
-  enabled — see `SECURITY.md`.
+  enabled — see `security.md`.
