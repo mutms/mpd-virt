@@ -17,8 +17,8 @@ import (
 // removeCmd un-adopts a VM: it wipes the host-side bookkeeping — overlay
 // peer, ssh-config block, registry entry, pinned host key, per-VM CA — and
 // powers the VM off, but never deletes it — unless --full, which also
-// destroys the hypervisor object (Apple containers only: the inverse of
-// what `create` makes). Powering off is a convenience:
+// destroys the hypervisor object (what `create` makes: Apple containers,
+// libvirt and proxmox VMs — the inverse of create). Powering off is a convenience:
 // a running Apple container refuses `container rm`, so leaving it up just
 // forces a `stop` before the delete. Destroying the VM stays the
 // hypervisor's call (UTM, `container delete`, the Proxmox UI) — a stopped
@@ -46,7 +46,8 @@ func removeCmd() *cobra.Command {
 			"(UTM, `container delete`, the Proxmox UI), and a stopped VM stays\n" +
 			"re-adoptable. The root CA under ~/.mpd-virt/conf/ survives too\n" +
 			"(uninstall's job). --full goes one step further and deletes the VM\n" +
-			"itself (Apple containers only) — the inverse of `create`.\n\n" +
+			"itself (Apple containers, libvirt and proxmox VMs, disks included)\n" +
+			"— the inverse of `create`.\n\n" +
 			"This is how a rebuilt VM comes back: re-image it, `remove`, then\n" +
 			"`adopt` — the new host key is recorded as a deliberate first\n" +
 			"contact and the certificates are reprovisioned under a fresh per-VM\n" +
@@ -65,8 +66,8 @@ func removeCmd() *cobra.Command {
 			if full && loadErr != nil {
 				return fmt.Errorf("%s has no registry entry, so its backend is unknown — --full needs one", id.Name())
 			}
-			if full && backend.Backend(e.Backend) != backend.Container && backend.Backend(e.Backend) != backend.Libvirt {
-				return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; %s is a %s VM — delete it in its hypervisor after `remove`", id.Name(), e.Backend)
+			if full && !backend.Deletable(backend.Backend(e.Backend)) {
+				return fmt.Errorf("--full can delete Apple containers, libvirt and proxmox VMs only; %s is a %s VM — delete it in its hypervisor after `remove`", id.Name(), e.Backend)
 			}
 			if loadErr == nil && full {
 				fmt.Printf("remove --full %s  (backend=%s, ip=%s) — DELETES the VM and its disk\n",
@@ -93,7 +94,11 @@ func removeCmd() *cobra.Command {
 			//    proxmox); it stays *stopped*, never deleted, so a re-adopt
 			//    can still bring it back. Needs the backend from the registry,
 			//    so it is skipped when there is no entry left to read it from.
-			if loadErr == nil {
+			//    Skipped under --full too, except for Apple containers: libvirt
+			//    and proxmox deletes hard-stop the VM themselves, and a
+			//    graceful shutdown of disks about to be destroyed is a wait
+			//    for nothing.
+			if loadErr == nil && (!full || backend.Backend(e.Backend) == backend.Container) {
 				if err := backend.Stop(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend)); err != nil {
 					fmt.Printf("  ⚠ could not power %s off: %v (continuing)\n", id.Name(), err)
 				}
@@ -131,7 +136,7 @@ func removeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "skip the typed confirmation")
-	cmd.Flags().BoolVar(&full, "full", false, "also delete the VM itself (Apple containers and libvirt VMs)")
+	cmd.Flags().BoolVar(&full, "full", false, "also delete the VM itself (Apple containers, libvirt and proxmox VMs)")
 	return cmd
 }
 

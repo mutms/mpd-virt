@@ -76,6 +76,11 @@ Build the template once (VMID `TEMPLATE_VMID`, default 999):
 4. optionally convert it to a template in the UI; `create` does a full
    clone either way
 
+`mpd-virt remove <NNN> --full` is the inverse: it stops the VM hard (its
+disks are going anyway) and destroys it with them — the `VM.Allocate` in
+the role, which the clone holds through the pool. The template itself is
+never touched.
+
 Never run `mpd --vm-setup` on the template: it would install the cloud-init
 drop-in that freezes identity, and clones would keep the template's
 hostname. Refresh the template by starting it and re-running step 20,

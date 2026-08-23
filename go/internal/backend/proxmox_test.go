@@ -260,3 +260,77 @@ func TestProxmoxAddKey(t *testing.T) {
 		t.Errorf("empty template keys: %q", got)
 	}
 }
+
+// The API half of remove --full: hard-stop a running VM, then destroy it
+// with its disks. A VM the API no longer lists is already gone and must
+// not be an error.
+func TestProxmoxDestroyVM(t *testing.T) {
+	var hits []string
+	status := "running"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.Method+" "+r.URL.RequestURI())
+		switch {
+		case r.URL.Path == "/cluster/resources":
+			_, _ = w.Write([]byte(`{"data":[{"vmid":154,"node":"kitchenbox","status":"` + status + `"}]}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/154/status/stop":
+			status = "stopped"
+			_, _ = w.Write([]byte(`{"data":"UPID:kitchenbox:1:2:3:qmstop:154:t:"}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/154" && r.Method == http.MethodDelete:
+			_, _ = w.Write([]byte(`{"data":"UPID:kitchenbox:1:2:3:qmdestroy:154:t:"}`))
+		case strings.HasPrefix(r.URL.Path, "/nodes/kitchenbox/tasks/"):
+			_, _ = w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"OK"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	writeProxmoxEnv(t, srv.URL+"/")
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newProxmoxClient(cfg)
+
+	// Running: stopped hard, then destroyed.
+	var out strings.Builder
+	if err := c.destroyVM(context.Background(), &out, 154); err != nil {
+		t.Fatalf("destroyVM: %v\n%s", err, out.String())
+	}
+	want := []string{
+		"POST /nodes/kitchenbox/qemu/154/status/stop",
+		"DELETE /nodes/kitchenbox/qemu/154?purge=1&destroy-unreferenced-disks=1",
+	}
+	for _, w := range want {
+		found := false
+		for _, h := range hits {
+			if h == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing call %q in %q", w, hits)
+		}
+	}
+
+	// Already gone: no DELETE, no error.
+	hits = nil
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv2.Close()
+	writeProxmoxEnv(t, srv2.URL+"/")
+	cfg, _ = loadProxmoxConfig()
+	out.Reset()
+	if err := newProxmoxClient(cfg).destroyVM(context.Background(), &out, 154); err != nil {
+		t.Fatalf("destroyVM on an absent VM: %v", err)
+	}
+	for _, h := range hits {
+		if strings.HasPrefix(h, "DELETE") {
+			t.Errorf("DELETE issued for a VM the API does not list: %q", hits)
+		}
+	}
+	if !strings.Contains(out.String(), "nothing to delete") {
+		t.Errorf("absent VM not reported: %q", out.String())
+	}
+}

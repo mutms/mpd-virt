@@ -49,14 +49,18 @@ func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 }
 
 // Delete destroys a VM's hypervisor object — the inverse of Create, so
-// only for what Create makes. Apple container only for now: the VM must
-// already be stopped (`container delete` refuses a running one).
+// only for what Create makes: Apple containers, libvirt and proxmox VMs.
+// The container must already be stopped (`container delete` refuses a
+// running one); libvirt and proxmox force it off themselves.
 func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
-	if be == Libvirt {
+	switch be {
+	case Libvirt:
 		return libvirtDelete(ctx, out, id)
+	case Proxmox:
+		return proxmoxDelete(ctx, out, id)
 	}
 	if be != Container {
-		return fmt.Errorf("--full can delete Apple containers and libvirt VMs only; a %s VM is deleted in its hypervisor", be)
+		return fmt.Errorf("--full can delete Apple containers, libvirt and proxmox VMs only; a %s VM is deleted in its hypervisor", be)
 	}
 	fmt.Fprintf(out, "  ▶ container delete %s\n", id.Name())
 	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"delete", id.Name()}})
@@ -67,6 +71,13 @@ func Delete(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 		return fmt.Errorf("`container delete %s` failed: %s", id.Name(), shortErr(r))
 	}
 	return nil
+}
+
+// Deletable reports whether Delete can destroy a VM on this backend — the
+// backends `create` makes VMs on, minus utm, whose AppleScript bridge has
+// no delete.
+func Deletable(be Backend) bool {
+	return be == Container || be == Libvirt || be == Proxmox
 }
 
 // managed reports whether mpd-virt can power a backend from this Mac.

@@ -403,6 +403,54 @@ func (c *proxmoxClient) cloneFromTemplate(ctx context.Context, out io.Writer, id
 	return ip, nil
 }
 
+// proxmoxDelete destroys the VM on the Proxmox side — the inverse of
+// proxmoxCreate. A VM that is no longer listed counts as deleted, so a
+// re-run after a half-finished remove is clean. Proxmox refuses to destroy
+// a running VM, so a running one is hard-stopped first — not shut down:
+// the disks are about to be destroyed, so there is nothing for a graceful
+// shutdown to keep consistent, and no reason to wait on the guest. The
+// destroy purges the VM from backup/replication jobs and drops every disk
+// it owned, the cloud-init drive included.
+func proxmoxDelete(ctx context.Context, out io.Writer, id vmid.ID) error {
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		return err
+	}
+	c := newProxmoxClient(cfg)
+	return c.destroyVM(ctx, out, id)
+}
+
+// destroyVM is the API half of proxmoxDelete, split off like
+// cloneFromTemplate so it can be exercised against a fake API.
+func (c *proxmoxClient) destroyVM(ctx context.Context, out io.Writer, id vmid.ID) error {
+	vm, err := c.findVM(ctx, id)
+	if err != nil {
+		fmt.Fprintf(out, "  ▶ proxmox does not list VM %d — nothing to delete\n", int(id))
+		return nil
+	}
+	node := url.PathEscape(vm.Node)
+	if normalizeState(vm.Status) != stStopped {
+		fmt.Fprintf(out, "  ▶ proxmox stop %s (hard — its disks go next)\n", id.Name())
+		var upid string
+		if err := c.callForm(ctx, http.MethodPost, fmt.Sprintf("nodes/%s/qemu/%d/status/stop", node, int(id)), url.Values{}, &upid); err != nil {
+			return err
+		}
+		if err := c.waitTask(ctx, vm.Node, upid, 2*time.Minute); err != nil {
+			return fmt.Errorf("stop: %w", err)
+		}
+	}
+	fmt.Fprintf(out, "  ▶ proxmox destroy %d %s (node %s, with its disks)\n", int(id), id.Name(), vm.Node)
+	var upid string
+	path := fmt.Sprintf("nodes/%s/qemu/%d?purge=1&destroy-unreferenced-disks=1", node, int(id))
+	if err := c.call(ctx, http.MethodDelete, path, &upid); err != nil {
+		return err
+	}
+	if err := c.waitTask(ctx, vm.Node, upid, 5*time.Minute); err != nil {
+		return fmt.Errorf("destroy: %w", err)
+	}
+	return nil
+}
+
 // proxmoxIPConfig is the clone's cloud-init ipconfig0 — "ip=<NETWORK with
 // .NNN>/<prefix>,gw=<GATEWAY>" — and the address in it, which is what the
 // VM is waited for at. NETWORK may carry the prefix (10.1.10.0/16);
