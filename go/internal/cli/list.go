@@ -239,14 +239,16 @@ func headerLine() string {
 	return fmt.Sprintf(listRow, "NNN", padNotes("NOTES"), "NAME", "BACKEND", "IP", "USER", "SSH")
 }
 
-// renderRow formats one VM's row and, when it is live on the overlay and colour
-// is on, paints it green — the at-a-glance answer to "which VMs can I actually
-// reach?". A green row that reads SSH `up` is fully reachable; an `up` row that
-// is *not* green is the confusing case (VM powered, services unreachable)
-// explained: it is not on the mpd-proxy overlay.
+// renderRow formats one VM's row and paints it green only when the VM is both
+// reachable right now (SSH `up`) and live on the mpd-proxy overlay — the
+// at-a-glance answer to "which VMs can I actually reach?". Reachability is half
+// of it: a stopped or down VM still sitting in mpd-proxy's peer list is not
+// reachable, so it stays plain. The remaining confusing case — an `up` row that
+// is *not* green — is a VM powered but off the overlay, whose 10.163.<NNN>.x
+// services are therefore unreachable.
 func renderRow(e registry.Entry, p probe, onOverlay, color bool) string {
 	row := fmt.Sprintf(listRow, e.ID.String(), padNotes(p.notes), e.ID.Name(), e.Backend, e.IP, e.User, p.ssh)
-	if color && onOverlay {
+	if color && onOverlay && p.ssh == sshUp {
 		return ansiGreen + strings.TrimSuffix(row, "\n") + ansiReset + "\n"
 	}
 	return row
@@ -299,5 +301,10 @@ func sshState(ctx context.Context, ip string) string {
 		return "down"
 	}
 	_ = c.Close()
-	return "up"
+	return sshUp
 }
+
+// sshUp is the SSH column's one "reachable now" value — the dial answered.
+// Every other value (down, ?, or a hypervisor power word) means not reachable,
+// and only a reachable VM earns the overlay-green highlight.
+const sshUp = "up"

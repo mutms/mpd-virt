@@ -87,16 +87,16 @@ func TestCachedNotes(t *testing.T) {
 	}
 }
 
-// renderRow paints a row green only when the VM is on the overlay AND colour is
-// on; either condition off leaves the row plain. This is the at-a-glance
-// reachability cue, so the wrapping must be exactly right.
+// renderRow paints a row green only when the VM is reachable now (SSH up) AND
+// on the overlay AND colour is on; any one off leaves the row plain. This is
+// the at-a-glance reachability cue, so the wrapping must be exactly right.
 func TestRenderRow(t *testing.T) {
 	e := registry.Entry{ID: mustID(t, "150"), IP: "10.1.10.150", User: "skodak", Backend: "proxmox"}
-	p := probe{ssh: "up", notes: "acme"}
+	up := probe{ssh: "up", notes: "acme"}
 
-	green := renderRow(e, p, true, true)
+	green := renderRow(e, up, true, true)
 	if !strings.HasPrefix(green, ansiGreen) || !strings.HasSuffix(green, ansiReset+"\n") {
-		t.Errorf("on-overlay coloured row is not wrapped in green/reset: %q", green)
+		t.Errorf("reachable on-overlay row is not wrapped in green/reset: %q", green)
 	}
 	// The reset precedes the newline, so the colour never bleeds past the row.
 	if strings.Contains(strings.TrimSuffix(green, "\n"), "\n") {
@@ -104,13 +104,18 @@ func TestRenderRow(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name              string
+		p                 probe
 		onOverlay, colour bool
 	}{
-		{"not on overlay", false, true},
-		{"colour off", true, false},
-		{"neither", false, false},
+		{"not on overlay", up, false, true},
+		{"colour off", up, true, false},
+		{"neither", up, false, false},
+		// The bug this guards: a stopped (or down) VM still in mpd-proxy's peer
+		// list is NOT reachable, so it must stay plain however it is registered.
+		{"stopped but registered", probe{ssh: "stopped", notes: "acme"}, true, true},
+		{"down but registered", probe{ssh: "down", notes: "acme"}, true, true},
 	} {
-		if got := renderRow(e, p, tc.onOverlay, tc.colour); strings.Contains(got, "\033[") {
+		if got := renderRow(e, tc.p, tc.onOverlay, tc.colour); strings.Contains(got, "\033[") {
 			t.Errorf("%s: row should be uncoloured, got %q", tc.name, got)
 		}
 	}
