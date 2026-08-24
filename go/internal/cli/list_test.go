@@ -2,9 +2,15 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
@@ -78,6 +84,78 @@ func TestCachedNotes(t *testing.T) {
 	// Never cached, and nothing live, is empty — never an error.
 	if got := cachedNotes(mustID(t, "151"), ""); got != "" {
 		t.Errorf("no cache and no live = %q, want empty", got)
+	}
+}
+
+// renderRow paints a row green only when the VM is on the overlay AND colour is
+// on; either condition off leaves the row plain. This is the at-a-glance
+// reachability cue, so the wrapping must be exactly right.
+func TestRenderRow(t *testing.T) {
+	e := registry.Entry{ID: mustID(t, "150"), IP: "10.1.10.150", User: "skodak", Backend: "proxmox"}
+	p := probe{ssh: "up", notes: "acme"}
+
+	green := renderRow(e, p, true, true)
+	if !strings.HasPrefix(green, ansiGreen) || !strings.HasSuffix(green, ansiReset+"\n") {
+		t.Errorf("on-overlay coloured row is not wrapped in green/reset: %q", green)
+	}
+	// The reset precedes the newline, so the colour never bleeds past the row.
+	if strings.Contains(strings.TrimSuffix(green, "\n"), "\n") {
+		t.Errorf("coloured row has an interior newline: %q", green)
+	}
+	for _, tc := range []struct {
+		name              string
+		onOverlay, colour bool
+	}{
+		{"not on overlay", false, true},
+		{"colour off", true, false},
+		{"neither", false, false},
+	} {
+		if got := renderRow(e, p, tc.onOverlay, tc.colour); strings.Contains(got, "\033[") {
+			t.Errorf("%s: row should be uncoloured, got %q", tc.name, got)
+		}
+	}
+}
+
+// The default overlayVMs asks a running mpd-proxy over its control socket and
+// folds the reply into a membership set; an absent proxy is "none", not an error.
+func TestOverlayVMsDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("MPD_VIRT_ROOT", root)
+
+	// No proxy socket yet — the overlay is simply down.
+	if got := overlayVMs(); len(got) != 0 {
+		t.Errorf("no proxy should mean no overlay members, got %v", got)
+	}
+
+	// A mock mpd-proxy answering `list` with two tunnelled VMs.
+	if err := os.MkdirAll(filepath.Dir(paths.ProxySocket()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.ProxySocket(), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				var req map[string]any
+				if json.NewDecoder(c).Decode(&req) != nil {
+					return
+				}
+				_, _ = c.Write([]byte(`{"ok":true,"vms":[{"id":"150"},{"id":"152"}]}` + "\n"))
+			}(conn)
+		}
+	}()
+
+	got := overlayVMs()
+	if !got["150"] || !got["152"] || got["151"] {
+		t.Errorf("overlay set = %v, want {150,152} and not 151", got)
 	}
 }
 

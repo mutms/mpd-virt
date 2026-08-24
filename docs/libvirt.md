@@ -38,5 +38,5 @@ image boots fine with a VGA device present.
 The VM is on the host only (`192.168.122.NNN`). `ssh mpd-NNN` works from
 the host right after adoption; `https://*.NNN.mpd.test` from the host's
 browser needs the host to route `10.163.NNN.0/24` via the VM and resolve
-`*.mpd.test` at `10.163.NNN.1` — mpd-proxy's job on macOS, not wired on
-Linux yet. The SOCKS path (`ssh -D`) works everywhere.
+`*.mpd.test` at `10.163.NNN.1` — mpd-proxy's job, and it now runs on Linux
+as well as macOS. The SOCKS path (`ssh -D`) works everywhere.

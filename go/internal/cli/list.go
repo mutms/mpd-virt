@@ -13,6 +13,7 @@ import (
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/paths"
+	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
@@ -196,19 +197,74 @@ func entryState(ctx context.Context, e registry.Entry) string {
 // without a live hypervisor.
 var powerState = backend.PowerState
 
+// ANSI green for a row whose VM is live on the mpd-proxy overlay, and the reset
+// that ends it. Foreground only, so the padding spaces stay invisible.
+const (
+	ansiGreen = "\033[32m"
+	ansiReset = "\033[0m"
+)
+
+// overlayVMs is the set of VM ids mpd-proxy currently tunnels — the VMs whose
+// 10.163.<NNN>.x services this host actually reaches. A var so tests can
+// substitute it; the default asks a running mpd-proxy over its control socket
+// and treats an absent one (the overlay simply not up — the common case) as
+// "none connected", never an error. One socket round trip for the whole
+// listing, not one per VM.
+var overlayVMs = func() map[string]bool {
+	vms, err := proxy.New(proxy.DefaultSocket()).List()
+	if err != nil {
+		return nil
+	}
+	set := make(map[string]bool, len(vms))
+	for _, vm := range vms {
+		set[vm.ID] = true
+	}
+	return set
+}
+
+// colorEnabled reports whether to emit ANSI colour: stdout is a real terminal
+// and NO_COLOR is unset (https://no-color.org). A var so a test can force it;
+// piping `ls` to a file or another program gets clean, uncoloured text.
+var colorEnabled = func() bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// headerLine is the table header, printed before the probes so the table's
+// shape appears immediately rather than after the slowest dial.
+func headerLine() string {
+	return fmt.Sprintf(listRow, "NNN", padNotes("NOTES"), "NAME", "BACKEND", "IP", "USER", "SSH")
+}
+
+// renderRow formats one VM's row and, when it is live on the overlay and colour
+// is on, paints it green — the at-a-glance answer to "which VMs can I actually
+// reach?". A green row that reads SSH `up` is fully reachable; an `up` row that
+// is *not* green is the confusing case (VM powered, services unreachable)
+// explained: it is not on the mpd-proxy overlay.
+func renderRow(e registry.Entry, p probe, onOverlay, color bool) string {
+	row := fmt.Sprintf(listRow, e.ID.String(), padNotes(p.notes), e.ID.Name(), e.Backend, e.IP, e.User, p.ssh)
+	if color && onOverlay {
+		return ansiGreen + strings.TrimSuffix(row, "\n") + ansiReset + "\n"
+	}
+	return row
+}
+
 func printListTable(ctx context.Context, entries []registry.Entry) {
-	// Header first, then the probes: everything but the SSH column is known
-	// up front, so the table's shape appears immediately while the parallel
-	// probe runs, rather than after the dial timeout.
-	fmt.Printf(listRow, "NNN", padNotes("NOTES"), "NAME", "BACKEND", "IP", "USER", "SSH")
+	fmt.Print(headerLine())
 	probes := probeRows(ctx, entries)
+	onOverlay := overlayVMs()
+	color := colorEnabled()
 	for i, e := range entries {
-		fmt.Printf(listRow, e.ID.String(), padNotes(probes[i].notes), e.ID.Name(), e.Backend, e.IP, e.User, probes[i].ssh)
+		fmt.Print(renderRow(e, probes[i], onOverlay[e.ID.String()], color))
 	}
 }
 
 func printListJSON(ctx context.Context, entries []registry.Entry) error {
 	probes := probeRows(ctx, entries)
+	onOverlay := overlayVMs()
 	type row struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
@@ -217,10 +273,11 @@ func printListJSON(ctx context.Context, entries []registry.Entry) error {
 		IP      string `json:"ip"`
 		User    string `json:"user"`
 		SSH     string `json:"ssh"`
+		Overlay bool   `json:"overlay"`
 	}
 	rows := make([]row, 0, len(entries))
 	for i, e := range entries {
-		rows = append(rows, row{e.ID.String(), e.ID.Name(), probes[i].notes, e.Backend, e.IP, e.User, probes[i].ssh})
+		rows = append(rows, row{e.ID.String(), e.ID.Name(), probes[i].notes, e.Backend, e.IP, e.User, probes[i].ssh, onOverlay[e.ID.String()]})
 	}
 	b, err := json.MarshalIndent(rows, "", "  ")
 	if err != nil {
