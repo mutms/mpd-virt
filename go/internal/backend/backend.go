@@ -37,6 +37,20 @@ func Parse(s string) (Backend, error) {
 	return "", fmt.Errorf("unknown backend %q — must be one of %s", s, List())
 }
 
+// DefaultBackend reports the backend to assume when --backend is omitted on a
+// first adopt/create, and whether one is configured at all. Only proxmox can
+// claim it today: it is the only backend with a config file, and the one where
+// you routinely stand up (or re-adopt) many VMs at once — `DEFAULT=YES` in
+// proxmox.env opts in. With nothing configured there is no default and the
+// caller requires the flag, exactly as before. The single return point keeps
+// the "which backend is the default" policy here, not scattered across verbs.
+func DefaultBackend() (Backend, bool) {
+	if proxmoxIsDefault() {
+		return Proxmox, true
+	}
+	return "", false
+}
+
 // List renders the valid backends for flag help and error messages.
 func List() string {
 	names := make([]string, len(backends))

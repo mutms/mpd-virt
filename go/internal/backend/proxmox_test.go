@@ -137,6 +137,38 @@ func TestProxmoxNotesUnconfigured(t *testing.T) {
 	}
 }
 
+// DEFAULT=YES in proxmox.env makes proxmox the default backend; anything else
+// (absent, unset, a non-truthy value, no file at all) leaves no default.
+func TestDefaultBackend(t *testing.T) {
+	writeEnv := func(t *testing.T, extra string) {
+		root := t.TempDir()
+		t.Setenv("MPD_VIRT_ROOT", root)
+		env := "API_URL=https://x/\nNETWORK=10.1.10.0\nTOKEN_ID=a@b!c\nTOKEN_SECRET=s\n" + extra
+		if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, v := range []string{"YES", "yes", "1", "true", "on"} {
+		writeEnv(t, "DEFAULT="+v+"\n")
+		if be, ok := DefaultBackend(); !ok || be != Proxmox {
+			t.Errorf("DEFAULT=%s: got (%q,%v), want (proxmox,true)", v, be, ok)
+		}
+	}
+	for _, v := range []string{"", "DEFAULT=no\n", "DEFAULT=0\n", "DEFAULT=maybe\n"} {
+		writeEnv(t, v)
+		if be, ok := DefaultBackend(); ok {
+			t.Errorf("%q: got (%q,%v), want no default", v, be, ok)
+		}
+	}
+
+	// No proxmox.env at all: no default, no panic.
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	if _, ok := DefaultBackend(); ok {
+		t.Error("no proxmox.env should mean no default")
+	}
+}
+
 // The derived address is NETWORK's last octet replaced by the VM number.
 func TestProxmoxDerivedIP(t *testing.T) {
 	writeProxmoxEnv(t, "https://example.invalid/")

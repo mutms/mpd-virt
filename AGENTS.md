@@ -39,9 +39,17 @@ same range — there are no special ids.
 ## Backends
 
 `--backend=<name>` is required on `create` and on the first `adopt` of a
-VM — there is deliberately no default. Once a VM is registered, every verb
-(including a re-adoption) reads the backend recorded in the registry; passing
-`--backend` to a re-adoption changes the record.
+VM — there is no default unless you set one. Once a VM is registered, every
+verb (including a re-adoption) reads the backend recorded in the registry;
+passing `--backend` to a re-adoption changes the record.
+
+To make the first adopt/create default to proxmox — so a purged fleet of
+proxmox VMs re-adopts one flag lighter per VM — set `DEFAULT=YES` in
+`~/.mpd-virt/proxmox.env`. The resolution order when `--backend` is omitted is:
+the backend recorded in the registry (a re-adoption), then that configured
+default, then the "required" error. Only proxmox can be the default today (it
+is the only backend with a config file, and the multi-VM case that wants one);
+`--backend` on the command line always wins.
 
 | Backend     | Host                 | What it does                                                                                                                                                                                                                                                                                                                         |
 |-------------|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -196,7 +204,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every VM (see Developer assets)
 ├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every VM — SURVIVES `uninstall` (see Developer env)
-├── proxmox.env                    ← OPTIONAL: the Proxmox API endpoint + token, hand-written (see docs/proxmox.md)
+├── proxmox.env                    ← OPTIONAL: the Proxmox API endpoint + token + optional DEFAULT=YES, hand-written (see docs/proxmox.md)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/lan-servers.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}

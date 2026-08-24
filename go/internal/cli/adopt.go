@@ -78,13 +78,20 @@ func adoptCmd() *cobra.Command {
 				return err
 			}
 			if backendFlag == "" {
-				e, err := registry.Load(id)
-				if err != nil {
+				// A re-adoption reads the backend recorded at first adoption;
+				// a first adoption falls back to a configured default
+				// (DEFAULT=YES in proxmox.env), which is what lets a purged
+				// fleet be re-adopted without --backend on every VM.
+				if e, err := registry.Load(id); err == nil {
+					backendFlag = e.Backend
+					fmt.Printf("backend %s (from the registry)\n", backendFlag)
+				} else if def, ok := backend.DefaultBackend(); ok {
+					backendFlag = string(def)
+					fmt.Printf("backend %s (default from proxmox.env)\n", backendFlag)
+				} else {
 					return fmt.Errorf("--backend is required for the first adoption of %s (one of %s)",
 						id.Name(), backend.List())
 				}
-				backendFlag = e.Backend
-				fmt.Printf("backend %s (from the registry)\n", backendFlag)
 			}
 			be, err := backend.Parse(backendFlag)
 			if err != nil {

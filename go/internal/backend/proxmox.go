@@ -88,6 +88,36 @@ func loadProxmoxConfig() (proxmoxConfig, error) {
 	return cfg, nil
 }
 
+// proxmoxIsDefault reports whether proxmox.env opts this host into treating
+// proxmox as the default backend — DEFAULT=YES (also 1/true/on/y) — so
+// `adopt`/`create` need no --backend when it is omitted. This is the switch
+// that makes re-adopting a fleet of proxmox VMs after a purge one flag lighter
+// per VM. Read directly rather than through loadProxmoxConfig: declaring the
+// default is the developer's stated intent and must not depend on the token or
+// the rest of the config being present yet.
+func proxmoxIsDefault() bool {
+	f, err := os.Open(paths.ProxmoxEnv())
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok && strings.EqualFold(strings.TrimSpace(k), "DEFAULT") {
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "yes", "y", "1", "true", "on":
+				return true
+			}
+			return false
+		}
+	}
+	return false
+}
+
 // proxmoxClient is one authenticated hold of the API. TLS trusts the system
 // roots plus the mpd root CA, so a Proxmox host serving an mpd-CA-signed
 // certificate verifies without any extra configuration.

@@ -31,6 +31,15 @@ func createCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Fall back to the configured default (DEFAULT=YES in proxmox.env)
+			// when --backend is omitted, matching adopt; Parse still rejects an
+			// empty backend when none is configured.
+			if backendFlag == "" {
+				if def, ok := backend.DefaultBackend(); ok {
+					backendFlag = string(def)
+					fmt.Printf("backend %s (default from proxmox.env)\n", backendFlag)
+				}
+			}
 			be, err := backend.Parse(backendFlag)
 			if err != nil {
 				return err
@@ -50,12 +59,11 @@ func createCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", defaultUser(), "dev user to create on the VM")
-	cmd.Flags().StringVar(&backendFlag, "backend", "", "platform to create on ("+backend.List()+") — required")
+	cmd.Flags().StringVar(&backendFlag, "backend", "", "platform to create on ("+backend.List()+") — required unless DEFAULT=YES in proxmox.env")
 	cmd.Flags().StringVar(&image, "image", backend.DefaultContainerImage(), "base image to run — container backend")
 	cmd.Flags().StringVar(&memory, "memory", "10g", "memory: container --memory, or VM RAM (utm, libvirt)")
 	cmd.Flags().StringVar(&disk, "disk", "", "VM disk size for utm/libvirt, e.g. 80g (default 80g; ignored by container)")
 	cmd.Flags().StringVar(&pubkeyPath, "pubkey", "", "public key to authorize (default ~/.ssh/id_ed25519.pub, then id_rsa.pub)")
-	_ = cmd.MarkFlagRequired("backend")
 	return cmd
 }
 

@@ -32,7 +32,15 @@ TOKEN_ID=<copy_from_dialog>
 TOKEN_SECRET=<copy_from_dialog>
 TEMPLATE_VMID=999
 POOL=mpd
+DEFAULT=YES
 ```
+`DEFAULT=YES` (optional) makes proxmox the default backend, so `adopt` and
+`create` need no `--backend` when it is omitted — handy when re-adopting a
+fleet of proxmox VMs. A `--backend` on the command line still wins, and a
+re-adoption still uses the backend already recorded for that VM; the default
+only fills in a first adopt/create. Drop the line (or set it to `no`) to keep
+`--backend` required.
+
 `NETWORK` with `.NNN` is the VM's address; its prefix (`/24` when omitted)
 and `GATEWAY` make up the clone's cloud-init IP line
 (`ip=10.1.10.154/16,gw=10.1.1.1`). The template itself stays on DHCP.
