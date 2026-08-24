@@ -14,6 +14,7 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
 
@@ -111,6 +112,29 @@ func probeRows(ctx context.Context, entries []registry.Entry) []probe {
 // vmNotes is the backend notes lookup as a var, so tests can substitute it
 // without a live hypervisor — the same trick as powerState.
 var vmNotes = backend.Notes
+
+// syncNotes fetches the VM's backend note and persists it to the record, so
+// vm.json carries a human-readable label from adoption onward — useful when
+// hand-editing the file to know which VM you are looking at — rather than only
+// after the first `list`. It reloads the record to compare against and to keep
+// the other fields (identity, notes, keys) intact, writes only on a change, and
+// is best-effort throughout: proxmox-only in practice (backend.Notes is "" for
+// every other backend and on any API failure), and a fetch that comes back
+// empty leaves whatever note the record already had.
+func syncNotes(ctx context.Context, id vmid.ID, be backend.Backend) {
+	live := vmNotes(ctx, id, be)
+	if live == "" {
+		return
+	}
+	e, err := registry.Load(id)
+	if err != nil || live == e.Notes {
+		return
+	}
+	e.Notes = live
+	if registry.Save(e) == nil {
+		pass("notes: " + shortNotes(live))
+	}
+}
 
 // cachedNotes is a write-through cache over the backend's live notes, kept in
 // the VM's vm.json record: a non-empty live value is returned and, when it

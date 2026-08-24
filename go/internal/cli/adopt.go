@@ -256,6 +256,9 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 		return fmt.Errorf("registry: %w", err)
 	}
 	pass("registry " + paths.VMRecord(id))
+	// Populate the note now so the fresh record already reads like something,
+	// not only after the first `list`. Best-effort and proxmox-only in practice.
+	syncNotes(ctx, id, be)
 	if err := sshconfig.Write(id, ip, username); err != nil {
 		return fmt.Errorf("ssh config: %w", err)
 	}

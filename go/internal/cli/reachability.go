@@ -209,6 +209,9 @@ func startCmd() *cobra.Command {
 			// And the extra ssh keys the developer authorized in vm.json — a
 			// bastion, a second device. e carries them from the Load above.
 			syncAuthorizedKeys(cmd.Context(), t, e, id.String())
+			// Refresh the cached backend note too, so vm.json stays current
+			// without waiting for a `list`.
+			syncNotes(cmd.Context(), id, backend.Backend(e.Backend))
 			wired, err := setupReachability(cmd.Context(), t, id, ip)
 			if err != nil {
 				return err

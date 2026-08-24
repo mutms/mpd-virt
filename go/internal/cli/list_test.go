@@ -102,6 +102,38 @@ func TestCachedNotes(t *testing.T) {
 	}
 }
 
+// syncNotes persists a fetched backend note to the record (so adopt/start fill
+// vm.json without waiting for a list), writes only on a change, never clobbers a
+// note when the backend comes back empty, and leaves the other fields intact.
+func TestSyncNotes(t *testing.T) {
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	id := mustID(t, "150")
+	if err := registry.Save(registry.Entry{ID: id, IP: "10.1.10.150", User: "skodak", Backend: "proxmox", AuthorizedKeys: []string{"ssh-ed25519 AAAA k"}}); err != nil {
+		t.Fatal(err)
+	}
+	stub := func(s string) func() {
+		orig := vmNotes
+		vmNotes = func(context.Context, vmid.ID, backend.Backend) string { return s }
+		return func() { vmNotes = orig }
+	}
+
+	// A fetched note is written, and the keys survive (sticky Save).
+	restore := stub("customer acme")
+	syncNotes(context.Background(), id, "proxmox")
+	restore()
+	if e, _ := registry.Load(id); e.Notes != "customer acme" || len(e.AuthorizedKeys) != 1 {
+		t.Fatalf("after sync: notes=%q keys=%v", e.Notes, e.AuthorizedKeys)
+	}
+
+	// An empty fetch (API down / no note / another backend) never clobbers.
+	restore = stub("")
+	syncNotes(context.Background(), id, "proxmox")
+	restore()
+	if e, _ := registry.Load(id); e.Notes != "customer acme" {
+		t.Errorf("empty fetch clobbered notes: %q", e.Notes)
+	}
+}
+
 // renderRow paints a row green only when the VM is reachable now (SSH up) AND
 // on the overlay AND colour is on; any one off leaves the row plain. This is
 // the at-a-glance reachability cue, so the wrapping must be exactly right.
