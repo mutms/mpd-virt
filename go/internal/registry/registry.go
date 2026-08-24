@@ -24,25 +24,31 @@ import (
 
 // Entry is one VM's registry record. Name derives from ID; the non-derivable
 // facts are IP, User, and Backend. Notes is the cached first-line-ish backend
-// note (proxmox Notes/description) `list` shows — a display cache, not
-// identity, which is why Save treats it as sticky (see Save).
+// note (proxmox Notes/description) `list` shows. AuthorizedKeys is the
+// developer's own list of extra ssh public keys to authorize on the VM (a
+// bastion, a second device, a CI runner). Neither Notes (a display cache) nor
+// AuthorizedKeys (edited by hand in vm.json) is identity, so Save treats both
+// as sticky — a lifecycle verb that only means to update the address must not
+// wipe them (see Save).
 type Entry struct {
-	ID      vmid.ID
-	IP      string
-	User    string
-	Backend string
-	Notes   string
+	ID             vmid.ID
+	IP             string
+	User           string
+	Backend        string
+	Notes          string
+	AuthorizedKeys []string
 }
 
 // record is the on-disk shape of vm.json — Entry rendered with the id and the
 // derived name as strings, field order fixed for a stable, readable file.
 type record struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Backend string `json:"backend"`
-	IP      string `json:"ip"`
-	User    string `json:"user"`
-	Notes   string `json:"notes"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Backend        string   `json:"backend"`
+	IP             string   `json:"ip"`
+	User           string   `json:"user"`
+	Notes          string   `json:"notes"`
+	AuthorizedKeys []string `json:"authorized_keys"`
 }
 
 // Save writes (or overwrites) vm.json for a VM, creating the <NNN>/ directory
@@ -50,28 +56,43 @@ type record struct {
 // holds no secret, but the directory beside it holds the VM's CA key and
 // pinned host key.
 //
-// Notes is sticky: the lifecycle verbs (adopt, start) Save an Entry that
-// carries no notes, and it would be wrong for them to wipe the cache `list`
-// maintains. So an empty e.Notes preserves whatever the file already had;
-// only a non-empty value (from `list`'s refresh) overwrites it.
+// Notes and AuthorizedKeys are sticky: the lifecycle verbs (adopt, start) Save
+// an Entry that carries neither — they mean only to record the identity fields
+// — and it would be wrong for them to wipe the cache `list` maintains or the
+// keys the developer hand-edited into vm.json. So an empty Notes and a nil
+// AuthorizedKeys each preserve whatever the file already had; a non-empty
+// Notes (from `list`'s refresh) or a non-nil AuthorizedKeys overwrites. The
+// keys are only ever written to vm.json by hand, so in practice nothing in Go
+// passes a non-nil slice — the field is edited in the file and merely carried.
 func Save(e Entry) error {
 	dir := paths.VMDir(e.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	notes := e.Notes
-	if notes == "" {
+	notes, keys := e.Notes, e.AuthorizedKeys
+	if notes == "" || keys == nil {
 		if prev, err := Load(e.ID); err == nil {
-			notes = prev.Notes
+			if notes == "" {
+				notes = prev.Notes
+			}
+			if keys == nil {
+				keys = prev.AuthorizedKeys
+			}
 		}
 	}
+	// Render an empty key list as [] rather than null, so the field is always
+	// present in the file as a visible, ready-to-edit placeholder.
+	if keys == nil {
+		keys = []string{}
+	}
 	rec := record{
-		ID:      e.ID.String(),
-		Name:    e.ID.Name(),
-		Backend: e.Backend,
-		IP:      e.IP,
-		User:    e.User,
-		Notes:   notes,
+		ID:             e.ID.String(),
+		Name:           e.ID.Name(),
+		Backend:        e.Backend,
+		IP:             e.IP,
+		User:           e.User,
+		Notes:          notes,
+		AuthorizedKeys: keys,
 	}
 	body, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -119,9 +140,15 @@ func Load(id vmid.ID) (Entry, error) {
 	if strings.ContainsAny(user, " \t\"") {
 		return Entry{}, fmt.Errorf("registry entry for %s: user %q is not a valid username", id.Name(), user)
 	}
+	// An empty key list normalizes to nil so an Entry with no keys round-trips
+	// identically whether the file said [] or null.
+	keys := rec.AuthorizedKeys
+	if len(keys) == 0 {
+		keys = nil
+	}
 	// Backend is metadata for lifecycle commands, not needed to reach the VM,
 	// so it is optional.
-	return Entry{ID: id, IP: ip, User: user, Backend: strings.TrimSpace(rec.Backend), Notes: rec.Notes}, nil
+	return Entry{ID: id, IP: ip, User: user, Backend: strings.TrimSpace(rec.Backend), Notes: rec.Notes, AuthorizedKeys: keys}, nil
 }
 
 // Remove deletes a VM's <NNN>/ dir entirely. It does not touch

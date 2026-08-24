@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != in {
+	if !reflect.DeepEqual(got, in) {
 		t.Errorf("round-trip = %+v, want %+v", got, in)
 	}
 
@@ -42,15 +43,44 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rec struct{ ID, Name, Backend, IP, User, Notes string }
+	var rec struct {
+		ID, Name, Backend, IP, User, Notes string
+		AuthorizedKeys                     []string `json:"authorized_keys"`
+	}
 	if err := json.Unmarshal(body, &rec); err != nil {
 		t.Fatalf("vm.json is not valid JSON: %v", err)
 	}
 	if rec.ID != "150" || rec.Name != "mpd-150" {
 		t.Errorf("id/name in file = %q/%q, want 150/mpd-150", rec.ID, rec.Name)
 	}
+	// An entry with no keys still writes the field as [] (a ready-to-edit
+	// placeholder), not null or absent.
+	if rec.AuthorizedKeys == nil {
+		t.Errorf("authorized_keys should render as [] when empty:\n%s", body)
+	}
 	if !strings.Contains(string(body), "\n  ") {
 		t.Errorf("vm.json is not pretty-printed:\n%s", body)
+	}
+}
+
+// authorized_keys round-trip, and its stickiness: a start-shaped Save (no keys)
+// preserves the hand-edited list, exactly like notes.
+func TestAuthorizedKeys(t *testing.T) {
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	id := mustID(t, "153")
+	keys := []string{"ssh-ed25519 AAAAC3Nz warpgate", "ssh-rsa AAAAB3Nz laptop"}
+	if err := Save(Entry{ID: id, IP: "10.1.10.153", User: "skodak", Backend: "proxmox", AuthorizedKeys: keys}); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := Load(id); !reflect.DeepEqual(e.AuthorizedKeys, keys) {
+		t.Errorf("keys round-trip = %v, want %v", e.AuthorizedKeys, keys)
+	}
+	// A note-less, key-less Save (as start does on an IP change) keeps them.
+	if err := Save(Entry{ID: id, IP: "10.1.10.153", User: "skodak", Backend: "proxmox"}); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := Load(id); !reflect.DeepEqual(e.AuthorizedKeys, keys) {
+		t.Errorf("keys after key-less Save = %v, want %v (sticky)", e.AuthorizedKeys, keys)
 	}
 }
 

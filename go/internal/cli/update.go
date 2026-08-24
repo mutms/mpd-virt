@@ -52,6 +52,7 @@ func updateCmd() *cobra.Command {
 			}
 			syncAssets(cmd.Context(), t, id.String())
 			syncMpdEnv(cmd.Context(), t, id.String())
+			syncAuthorizedKeys(cmd.Context(), t, e, id.String())
 
 			fmt.Printf("update %s at %s\n", id.Name(), e.IP)
 			if err := step(cmd.Context(), t, "20-install-software (OS upgrade + package set)",
