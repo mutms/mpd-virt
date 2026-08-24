@@ -190,6 +190,31 @@ func proxmoxState(ctx context.Context, id vmid.ID) vmState {
 	return normalizeState(vm.Status)
 }
 
+// proxmoxNotes returns the VM's Notes — the config "description" field, which
+// the Proxmox UI edits under the "Notes" heading. Empty on any failure, the
+// same best-effort contract as proxmoxState: a listing shows a blank cell
+// rather than break. The value is stored as markdown and may span several
+// lines; the caller takes and tidies its first line for display.
+func proxmoxNotes(ctx context.Context, id vmid.ID) string {
+	cfg, err := loadProxmoxConfig()
+	if err != nil {
+		return ""
+	}
+	c := newProxmoxClient(cfg)
+	vm, err := c.findVM(ctx, id)
+	if err != nil {
+		return ""
+	}
+	var data struct {
+		Description string `json:"description"`
+	}
+	path := fmt.Sprintf("nodes/%s/qemu/%d/config", url.PathEscape(vm.Node), int(id))
+	if err := c.call(ctx, http.MethodGet, path, &data); err != nil {
+		return ""
+	}
+	return data.Description
+}
+
 // proxmoxPower issues one power verb. The package-wide "stop" is sent as the
 // API's graceful "shutdown" (ACPI). Failures are reported to out and
 // swallowed, like the other backends: whether the VM actually moved is

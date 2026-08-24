@@ -39,6 +39,10 @@ func fakeProxmox(t *testing.T, status string, hits *[]string) *httptest.Server {
 			_, _ = w.Write([]byte(`{"data":[{"vmid":150,"node":"kitchenbox","status":"` + status + `"},{"vmid":151,"node":"kitchenbox","status":"stopped"}]}`))
 		case strings.HasPrefix(r.URL.Path, "/nodes/kitchenbox/qemu/150/status/"):
 			_, _ = w.Write([]byte(`{"data":"UPID:kitchenbox:0:0:0:qmstart:150:t:"}`))
+		case r.URL.Path == "/nodes/kitchenbox/qemu/150/config":
+			// The Notes field is the config "description"; markdown, and here
+			// several lines, so the caller's first-line/trim job is exercised.
+			_, _ = w.Write([]byte(`{"data":{"description":"# prod db\nsecond line"}}`))
 		case r.URL.Path == "/nodes/kitchenbox/qemu/150/agent/network-get-interfaces":
 			// lo (loopback), ens18 (the real LAN address + link-local +
 			// ipv6), and an overlay-range address on the container bridge —
@@ -100,6 +104,36 @@ func TestProxmoxPower(t *testing.T) {
 	}
 	if strings.Join(posts, ",") != strings.Join(want, ",") {
 		t.Errorf("posted %v, want %v", posts, want)
+	}
+}
+
+// Notes come back raw from the config "description" field (multi-line markdown
+// and all); tidying them for display is the caller's job, so proxmoxNotes
+// returns the value verbatim. A VM the token cannot see is honestly empty,
+// never an error — the same best-effort contract as proxmoxState.
+func TestProxmoxNotes(t *testing.T) {
+	var hits []string
+	ts := fakeProxmox(t, "running", &hits)
+	defer ts.Close()
+	writeProxmoxEnv(t, ts.URL+"/")
+
+	if got := proxmoxNotes(context.Background(), mustID(t, "150")); got != "# prod db\nsecond line" {
+		t.Errorf("notes(150) = %q, want the raw description", got)
+	}
+	if got := proxmoxNotes(context.Background(), mustID(t, "152")); got != "" {
+		t.Errorf("notes(152) = %q, want empty for a VM the token cannot see", got)
+	}
+	if got := Notes(context.Background(), mustID(t, "150"), Generic); got != "" {
+		t.Errorf("Notes for a non-proxmox backend = %q, want empty (no API call)", got)
+	}
+}
+
+// An unconfigured backend yields empty notes, never an error — a blank cell,
+// like every other proxmox probe with no env file.
+func TestProxmoxNotesUnconfigured(t *testing.T) {
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir()) // empty root — no proxmox.env
+	if got := proxmoxNotes(context.Background(), mustID(t, "150")); got != "" {
+		t.Errorf("notes = %q, want empty without configuration", got)
 	}
 }
 

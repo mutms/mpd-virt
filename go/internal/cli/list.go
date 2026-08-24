@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/registry"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
 
@@ -44,12 +48,41 @@ func listCmd() *cobra.Command {
 	return cmd
 }
 
-const listRow = "%-4s %-10s %-10s %-16s %-9s %s\n"
+// NOTES sits second, right after NNN: the customer name lives there, and the
+// NNN beside it is what you type into `start`/`stop` — so the two columns you
+// read together are adjacent, not at opposite ends of the row.
+const listRow = "%-4s %s %-10s %-10s %-16s %-9s %s\n"
 
-// sshStates resolves every entry's SSH column concurrently, aligned to entries
-// by index. Serial probing stalled the whole listing by the dial timeout for
-// each unreachable VM; done in parallel the listing is only as slow as the
-// single slowest probe.
+// notesWidth caps the NOTES column — enough of a VM's Notes to tell it apart at
+// a glance (the whole point of the column) without letting one long note push
+// the table wide.
+const notesWidth = 20
+
+// padNotes right-pads a NOTES cell to notesWidth *display columns*, counting
+// runes rather than bytes: shortNotes truncates to notesWidth runes, but a
+// multibyte rune (the "…" ellipsis, an accented customer name) is several
+// bytes, so Go's byte-counting "%-20s" would under-pad exactly the rows that
+// hold one and jag the column. Since NOTES is no longer last, that padding has
+// to be right.
+func padNotes(s string) string {
+	if gap := notesWidth - len([]rune(s)); gap > 0 {
+		return s + strings.Repeat(" ", gap)
+	}
+	return s
+}
+
+// probe is the per-VM data a live listing gathers: the SSH column and, for a
+// backend that carries a per-VM note (proxmox), the tidied first line of it.
+// Both are best-effort — a failure leaves the field its zero value.
+type probe struct {
+	ssh   string
+	notes string
+}
+
+// probeRows resolves every entry's live columns concurrently, aligned to
+// entries by index. Serial probing stalled the whole listing by the dial
+// timeout for each unreachable VM; done in parallel the listing is only as slow
+// as the single slowest VM.
 //
 // For a VM whose backend can report power state (proxmox, and the laptop
 // hypervisors), that state is asked first: a VM the hypervisor calls off shows
@@ -57,19 +90,94 @@ const listRow = "%-4s %-10s %-10s %-16s %-9s %s\n"
 // API answer instead of the full SSH dial timeout its dead IP would otherwise
 // blackhole for. Only a VM reported running — or one whose backend cannot say,
 // which includes every `generic` VM — falls through to the SSH dial, the
-// connect-first behaviour as before.
-func sshStates(ctx context.Context, entries []registry.Entry) []string {
-	states := make([]string, len(entries))
+// connect-first behaviour as before. The Notes lookup is asked in the same
+// goroutine (only proxmox VMs actually reach the API; every other backend
+// answers "" without a round trip), so it adds no goroutines and, for a VM
+// listed at all, at most one extra API call to the listing's wall-clock.
+func probeRows(ctx context.Context, entries []registry.Entry) []probe {
+	rows := make([]probe, len(entries))
 	var wg sync.WaitGroup
 	for i, e := range entries {
 		wg.Add(1)
 		go func(i int, e registry.Entry) {
 			defer wg.Done()
-			states[i] = entryState(ctx, e)
+			rows[i].ssh = entryState(ctx, e)
+			rows[i].notes = shortNotes(cachedNotes(e.ID, vmNotes(ctx, e.ID, backend.Backend(e.Backend))))
 		}(i, e)
 	}
 	wg.Wait()
-	return states
+	return rows
+}
+
+// vmNotes is the backend notes lookup as a var, so tests can substitute it
+// without a live hypervisor — the same trick as powerState.
+var vmNotes = backend.Notes
+
+// cachedNotes is a write-through cache over the backend's live notes: a
+// non-empty live value is returned and persisted to ~/.mpd-virt/<NNN>/notes,
+// and an empty one (the Proxmox host unreachable, the API down, the backend
+// carrying no notes at all) falls back to the last value cached there. That is
+// what keeps a listing legible when the box is off or off-network — the case
+// where knowing which VM is which matters most. Best-effort throughout: a cache
+// that cannot be written or read simply leaves the live value to stand.
+//
+// The trade-off is that notes deliberately *cleared* on a reachable VM keep
+// showing their last value until something else is set — an acceptable price
+// for surviving an unreachable one, and the raw text is cached (not the trimmed
+// cell) so a later width change re-trims it correctly.
+func cachedNotes(id vmid.ID, live string) string {
+	if live != "" {
+		if err := os.WriteFile(paths.VMNotes(id), []byte(live), 0o600); err != nil {
+			// A missing VM dir is the only expected failure; create it and retry
+			// once, else give up and just use the live value.
+			if os.MkdirAll(paths.VMDir(id), 0o700) == nil {
+				_ = os.WriteFile(paths.VMNotes(id), []byte(live), 0o600)
+			}
+		}
+		return live
+	}
+	b, err := os.ReadFile(paths.VMNotes(id))
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// shortNotes renders raw VM notes as one tidy table cell: the first non-blank
+// line, with a leading markdown heading/quote marker dropped, every control
+// character (ANSI escapes included — the notes are attacker-adjacent free text
+// printed straight to a terminal) and inner whitespace run folded to a single
+// space, and the result truncated to notesWidth with an ellipsis. Empty in,
+// empty out — the common case of a VM with no notes, and of every backend that
+// carries none.
+func shortNotes(raw string) string {
+	line := ""
+	for _, l := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(l) != "" {
+			line = l
+			break
+		}
+	}
+	line = strings.TrimLeft(line, "#> \t")
+
+	var b strings.Builder
+	pendingSpace := false
+	for _, r := range line {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			pendingSpace = b.Len() > 0 // collapse runs; never lead with a space
+			continue
+		}
+		if pendingSpace {
+			b.WriteByte(' ')
+			pendingSpace = false
+		}
+		b.WriteRune(r)
+	}
+
+	if runes := []rune(b.String()); len(runes) > notesWidth {
+		return strings.TrimRight(string(runes[:notesWidth-1]), " ") + "…"
+	}
+	return b.String()
 }
 
 // entryState is the SSH column for one VM: the hypervisor's power word when it
@@ -92,18 +200,19 @@ func printListTable(ctx context.Context, entries []registry.Entry) {
 	// Header first, then the probes: everything but the SSH column is known
 	// up front, so the table's shape appears immediately while the parallel
 	// probe runs, rather than after the dial timeout.
-	fmt.Printf(listRow, "NNN", "NAME", "BACKEND", "IP", "USER", "SSH")
-	states := sshStates(ctx, entries)
+	fmt.Printf(listRow, "NNN", padNotes("NOTES"), "NAME", "BACKEND", "IP", "USER", "SSH")
+	probes := probeRows(ctx, entries)
 	for i, e := range entries {
-		fmt.Printf(listRow, e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, states[i])
+		fmt.Printf(listRow, e.ID.String(), padNotes(probes[i].notes), e.ID.Name(), e.Backend, e.IP, e.User, probes[i].ssh)
 	}
 }
 
 func printListJSON(ctx context.Context, entries []registry.Entry) error {
-	states := sshStates(ctx, entries)
+	probes := probeRows(ctx, entries)
 	type row struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
+		Notes   string `json:"notes"`
 		Backend string `json:"backend"`
 		IP      string `json:"ip"`
 		User    string `json:"user"`
@@ -111,7 +220,7 @@ func printListJSON(ctx context.Context, entries []registry.Entry) error {
 	}
 	rows := make([]row, 0, len(entries))
 	for i, e := range entries {
-		rows = append(rows, row{e.ID.String(), e.ID.Name(), e.Backend, e.IP, e.User, states[i]})
+		rows = append(rows, row{e.ID.String(), e.ID.Name(), probes[i].notes, e.Backend, e.IP, e.User, probes[i].ssh})
 	}
 	b, err := json.MarshalIndent(rows, "", "  ")
 	if err != nil {

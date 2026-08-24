@@ -84,6 +84,12 @@ func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 // VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a VM.
 func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }
 
+// VMNotes is ~/.mpd-virt/<NNN>/notes — a best-effort local cache of the VM's
+// backend notes (the proxmox Notes/description), refreshed by `list` whenever
+// the backend answers and read back when it cannot, so the listing still shows
+// which VM is which while the Proxmox host is unreachable or the VM is off.
+func VMNotes(id vmid.ID) string { return filepath.Join(VMDir(id), "notes") }
+
 // KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the VM's pinned ssh host
 // key, recorded on first contact (adopt/create) under the stable
 // HostKeyAlias mpd-<NNN> and refused if it ever changes. Per-VM so

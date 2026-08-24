@@ -18,6 +18,69 @@ func mustID(t *testing.T, s string) vmid.ID {
 	return id
 }
 
+// shortNotes distils raw VM notes into one table cell: first non-blank line,
+// leading markdown marker gone, control chars and whitespace runs folded, and
+// truncated to notesWidth with an ellipsis.
+func TestShortNotes(t *testing.T) {
+	cases := []struct{ raw, want string }{
+		{"", ""},                                           // no notes — the common case
+		{"test vm", "test vm"},                             // short, untouched
+		{"# prod db\nsecond line", "prod db"},              // markdown heading, first line only
+		{"\n\n  trixie - server", "trixie - server"},       // leading blank lines skipped, trimmed
+		{"a\t\tb   c", "a b c"},                            // whitespace runs collapse to one space
+		{"x\x00y\x1by", "x y y"},                           // control chars (NUL, ESC) never reach the terminal
+		{"trixie - gnome desktop", "trixie - gnome desk…"}, // 22 chars → 19 + ellipsis
+		{"12345678901234567890", "12345678901234567890"},   // exactly notesWidth — no ellipsis
+	}
+	for _, c := range cases {
+		if got := shortNotes(c.raw); got != c.want {
+			t.Errorf("shortNotes(%q) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}
+
+// padNotes pads to a fixed number of display columns by rune count, so a
+// multibyte cell does not jag the columns that follow it.
+func TestPadNotes(t *testing.T) {
+	if got := padNotes("abc"); len([]rune(got)) != notesWidth {
+		t.Errorf("padNotes(ascii) rune width = %d, want %d", len([]rune(got)), notesWidth)
+	}
+	// An accented name and the ellipsis are multi-byte; byte padding would
+	// under-pad exactly these rows, so the pad must count runes.
+	if got := padNotes("škoďák…"); len([]rune(got)) != notesWidth {
+		t.Errorf("padNotes(multibyte) rune width = %d, want %d", len([]rune(got)), notesWidth)
+	}
+	if full := "12345678901234567890"; padNotes(full) != full {
+		t.Errorf("padNotes at full width should add nothing")
+	}
+}
+
+// cachedNotes returns a live value and writes it through, and falls back to the
+// last written value when the backend goes quiet — the whole point being a
+// legible listing while the Proxmox host is unreachable or the VM is off.
+func TestCachedNotes(t *testing.T) {
+	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	id := mustID(t, "150")
+
+	// A live value passes through and is cached, though the VM dir is absent.
+	if got := cachedNotes(id, "customer acme"); got != "customer acme" {
+		t.Fatalf("live pass-through = %q, want customer acme", got)
+	}
+	// No live value (backend unreachable): the cached value stands in.
+	if got := cachedNotes(id, ""); got != "customer acme" {
+		t.Errorf("cache fallback = %q, want customer acme", got)
+	}
+	// A fresh live value overwrites the cache.
+	cachedNotes(id, "customer beta")
+	if got := cachedNotes(id, ""); got != "customer beta" {
+		t.Errorf("cache after refresh = %q, want customer beta", got)
+	}
+	// Never cached, and nothing live, is empty — never an error.
+	if got := cachedNotes(mustID(t, "151"), ""); got != "" {
+		t.Errorf("no cache and no live = %q, want empty", got)
+	}
+}
+
 // stubPowerState substitutes the backend power probe for one test.
 func stubPowerState(t *testing.T, state string) {
 	t.Helper()
