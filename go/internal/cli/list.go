@@ -12,10 +12,8 @@ import (
 	"unicode"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
-	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
-	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
 
@@ -103,7 +101,7 @@ func probeRows(ctx context.Context, entries []registry.Entry) []probe {
 		go func(i int, e registry.Entry) {
 			defer wg.Done()
 			rows[i].ssh = entryState(ctx, e)
-			rows[i].notes = shortNotes(cachedNotes(e.ID, vmNotes(ctx, e.ID, backend.Backend(e.Backend))))
+			rows[i].notes = shortNotes(cachedNotes(e, vmNotes(ctx, e.ID, backend.Backend(e.Backend))))
 		}(i, e)
 	}
 	wg.Wait()
@@ -114,34 +112,29 @@ func probeRows(ctx context.Context, entries []registry.Entry) []probe {
 // without a live hypervisor — the same trick as powerState.
 var vmNotes = backend.Notes
 
-// cachedNotes is a write-through cache over the backend's live notes: a
-// non-empty live value is returned and persisted to ~/.mpd-virt/<NNN>/notes,
-// and an empty one (the Proxmox host unreachable, the API down, the backend
-// carrying no notes at all) falls back to the last value cached there. That is
-// what keeps a listing legible when the box is off or off-network — the case
-// where knowing which VM is which matters most. Best-effort throughout: a cache
-// that cannot be written or read simply leaves the live value to stand.
+// cachedNotes is a write-through cache over the backend's live notes, kept in
+// the VM's vm.json record: a non-empty live value is returned and, when it
+// differs from what the record holds, persisted (Save leaves the rest of the
+// record untouched); an empty one — the Proxmox host unreachable, the API down,
+// the backend carrying no notes at all — falls back to e.Notes, the value
+// List already loaded from the record. That is what keeps a listing legible
+// when the box is off or off-network, the case where knowing which VM is which
+// matters most. Best-effort: a Save that fails simply leaves the live value to
+// stand for this run.
 //
 // The trade-off is that notes deliberately *cleared* on a reachable VM keep
 // showing their last value until something else is set — an acceptable price
-// for surviving an unreachable one, and the raw text is cached (not the trimmed
-// cell) so a later width change re-trims it correctly.
-func cachedNotes(id vmid.ID, live string) string {
-	if live != "" {
-		if err := os.WriteFile(paths.VMNotes(id), []byte(live), 0o600); err != nil {
-			// A missing VM dir is the only expected failure; create it and retry
-			// once, else give up and just use the live value.
-			if os.MkdirAll(paths.VMDir(id), 0o700) == nil {
-				_ = os.WriteFile(paths.VMNotes(id), []byte(live), 0o600)
-			}
-		}
-		return live
+// for surviving an unreachable one; the raw text is cached (not the trimmed
+// cell), so a later width change re-trims it correctly.
+func cachedNotes(e registry.Entry, live string) string {
+	if live == "" {
+		return e.Notes
 	}
-	b, err := os.ReadFile(paths.VMNotes(id))
-	if err != nil {
-		return ""
+	if live != e.Notes {
+		e.Notes = live
+		_ = registry.Save(e)
 	}
-	return string(b)
+	return live
 }
 
 // shortNotes renders raw VM notes as one tidy table cell: the first non-blank

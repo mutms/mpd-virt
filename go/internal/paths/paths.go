@@ -81,14 +81,12 @@ func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
 // VMDir is ~/.mpd-virt/<NNN> — per-VM bookkeeping.
 func VMDir(id vmid.ID) string { return filepath.Join(Root(), id.String()) }
 
-// VMEnv is ~/.mpd-virt/<NNN>/env — the registry entry for a VM.
-func VMEnv(id vmid.ID) string { return filepath.Join(VMDir(id), "env") }
-
-// VMNotes is ~/.mpd-virt/<NNN>/notes — a best-effort local cache of the VM's
-// backend notes (the proxmox Notes/description), refreshed by `list` whenever
-// the backend answers and read back when it cannot, so the listing still shows
-// which VM is which while the Proxmox host is unreachable or the VM is off.
-func VMNotes(id vmid.ID) string { return filepath.Join(VMDir(id), "notes") }
+// VMRecord is ~/.mpd-virt/<NNN>/vm.json — the VM's registry record (identity,
+// backend, address, user, and the cached backend notes), a pretty-printed
+// JSON mirror of the internal registry.Entry so it opens and reviews cleanly
+// in a Finder/editor. The one per-VM file OpenSSH must read raw is known_hosts;
+// the CA lives beside this in ca/. See the layout in AGENTS.md.
+func VMRecord(id vmid.ID) string { return filepath.Join(VMDir(id), "vm.json") }
 
 // KnownHosts is ~/.mpd-virt/<NNN>/known_hosts — the VM's pinned ssh host
 // key, recorded on first contact (adopt/create) under the stable

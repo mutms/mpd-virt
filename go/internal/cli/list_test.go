@@ -61,29 +61,44 @@ func TestPadNotes(t *testing.T) {
 	}
 }
 
-// cachedNotes returns a live value and writes it through, and falls back to the
-// last written value when the backend goes quiet — the whole point being a
-// legible listing while the Proxmox host is unreachable or the VM is off.
+// cachedNotes returns a live value and writes it through to the VM's record,
+// and falls back to the record's stored notes when the backend goes quiet — the
+// whole point being a legible listing while the Proxmox host is unreachable or
+// the VM is off. It writes only when the value actually changed.
 func TestCachedNotes(t *testing.T) {
 	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
 	id := mustID(t, "150")
+	if err := registry.Save(registry.Entry{ID: id, IP: "10.1.10.150", User: "skodak", Backend: "proxmox"}); err != nil {
+		t.Fatal(err)
+	}
+	load := func() registry.Entry {
+		e, err := registry.Load(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
 
-	// A live value passes through and is cached, though the VM dir is absent.
-	if got := cachedNotes(id, "customer acme"); got != "customer acme" {
+	// A live value passes through and is persisted to the record.
+	if got := cachedNotes(load(), "customer acme"); got != "customer acme" {
 		t.Fatalf("live pass-through = %q, want customer acme", got)
 	}
-	// No live value (backend unreachable): the cached value stands in.
-	if got := cachedNotes(id, ""); got != "customer acme" {
+	if e := load(); e.Notes != "customer acme" {
+		t.Errorf("record notes = %q, want customer acme", e.Notes)
+	}
+	// No live value (backend unreachable): the record's notes stand in, and the
+	// rest of the record (ip/user/backend) is untouched.
+	e := load()
+	if got := cachedNotes(e, ""); got != "customer acme" {
 		t.Errorf("cache fallback = %q, want customer acme", got)
 	}
-	// A fresh live value overwrites the cache.
-	cachedNotes(id, "customer beta")
-	if got := cachedNotes(id, ""); got != "customer beta" {
-		t.Errorf("cache after refresh = %q, want customer beta", got)
+	if e.IP != "10.1.10.150" || e.User != "skodak" || e.Backend != "proxmox" {
+		t.Errorf("identity fields lost: %+v", e)
 	}
-	// Never cached, and nothing live, is empty — never an error.
-	if got := cachedNotes(mustID(t, "151"), ""); got != "" {
-		t.Errorf("no cache and no live = %q, want empty", got)
+	// A fresh live value overwrites the cached notes.
+	cachedNotes(load(), "customer beta")
+	if e := load(); e.Notes != "customer beta" {
+		t.Errorf("record notes after refresh = %q, want customer beta", e.Notes)
 	}
 }
 

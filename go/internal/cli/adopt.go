@@ -248,7 +248,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	if err := registry.Save(registry.Entry{ID: id, IP: ip, User: username, Backend: string(be)}); err != nil {
 		return fmt.Errorf("registry: %w", err)
 	}
-	pass("registry " + paths.VMEnv(id))
+	pass("registry " + paths.VMRecord(id))
 	if err := sshconfig.Write(id, ip, username); err != nil {
 		return fmt.Errorf("ssh config: %w", err)
 	}
