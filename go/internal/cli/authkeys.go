@@ -143,7 +143,7 @@ func pushAuthorizedKeys(ctx context.Context, t host.Target, keys []string) (bool
 }
 
 // syncAuthorizedKeys is the best-effort wrapper the lifecycle verbs use. Like
-// assets and mpd-virt.env, these are the developer's own material: a failed
+// assets and the env files, these are the developer's own material: a failed
 // push warns and never fails a start or update. Malformed entries are skipped
 // with a warning rather than corrupting the file — sshd would ignore them
 // anyway, and skipping keeps the managed block clean.

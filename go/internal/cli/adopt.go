@@ -261,7 +261,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	// below, which seeds that same path from mpd's own template only when
 	// nothing is there. Pushing first means an adopted vm starts out
 	// already agreeing with every other vm this Mac owns.
-	syncMpdEnv(ctx, t, id.String())
+	syncEnv(ctx, t, id.String())
 
 	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
 	// own IP off the interface.

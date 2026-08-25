@@ -51,7 +51,7 @@ func updateCmd() *cobra.Command {
 				fmt.Printf("  ⚠ LAN hosts push failed: %v\n    run `mpd-virt server sync %s` afterwards\n", err, id.String())
 			}
 			syncAssets(cmd.Context(), t, id.String())
-			syncMpdEnv(cmd.Context(), t, id.String())
+			syncEnv(cmd.Context(), t, id.String())
 			syncAuthorizedKeys(cmd.Context(), t, e, id.String())
 
 			fmt.Printf("update %s at %s\n", id.Name(), e.IP)

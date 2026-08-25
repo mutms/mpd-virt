@@ -205,7 +205,7 @@ func startCmd() *cobra.Command {
 			// Same loop for the developer's MPD_* defaults, and nothing to
 			// republish after it — mpd re-reads the file per command, and
 			// the runtime sees it through a directory mount.
-			syncMpdEnv(cmd.Context(), t, id.String())
+			syncEnv(cmd.Context(), t, id.String())
 			// And the extra ssh keys the developer authorized in vm.json — a
 			// bastion, a second device. e carries them from the Load above.
 			syncAuthorizedKeys(cmd.Context(), t, e, id.String())
