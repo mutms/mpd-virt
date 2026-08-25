@@ -66,7 +66,7 @@ func TestPadNotes(t *testing.T) {
 // whole point being a legible listing while the Proxmox host is unreachable or
 // the VM is off. It writes only when the value actually changed.
 func TestCachedNotes(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "150")
 	if err := registry.Save(registry.Entry{ID: id, IP: "10.1.10.150", User: "skodak", Backend: "proxmox"}); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestCachedNotes(t *testing.T) {
 // vm.json without waiting for a list), writes only on a change, never clobbers a
 // note when the backend comes back empty, and leaves the other fields intact.
 func TestSyncNotes(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "150")
 	if err := registry.Save(registry.Entry{ID: id, IP: "10.1.10.150", User: "skodak", Backend: "proxmox", AuthorizedKeys: []string{"ssh-ed25519 AAAA k"}}); err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestRenderRow(t *testing.T) {
 // folds the reply into a membership set; an absent proxy is "none", not an error.
 func TestOverlayVMsDefault(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
+	t.Setenv("MPD_VIRT_TEST_ROOT", root)
 
 	// No proxy socket yet — the overlay is simply down.
 	if got := overlayVMs(); len(got) != 0 {

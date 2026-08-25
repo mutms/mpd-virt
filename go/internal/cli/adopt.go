@@ -9,6 +9,7 @@ import (
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/ca"
+	"github.com/mutms/mpd-virt/go/internal/config"
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/registry"
@@ -79,15 +80,17 @@ func adoptCmd() *cobra.Command {
 			}
 			if backendFlag == "" {
 				// A re-adoption reads the backend recorded at first adoption;
-				// a first adoption falls back to a configured default
-				// (DEFAULT=YES in proxmox.env), which is what lets a purged
-				// fleet be re-adopted without --backend on every VM.
+				// a first adoption falls back to the configured default_backend,
+				// which is what lets a purged fleet be re-adopted without
+				// --backend on every VM.
 				if e, err := registry.Load(id); err == nil {
 					backendFlag = e.Backend
 					fmt.Printf("backend %s (from the registry)\n", backendFlag)
-				} else if def, ok := backend.DefaultBackend(); ok {
+				} else if def, err := configuredDefaultBackend(); err != nil {
+					return err
+				} else if def != "" {
 					backendFlag = string(def)
-					fmt.Printf("backend %s (default from proxmox.env)\n", backendFlag)
+					fmt.Printf("backend %s (default from config.json)\n", backendFlag)
 				} else {
 					return fmt.Errorf("--backend is required for the first adoption of %s (one of %s)",
 						id.Name(), backend.List())
@@ -121,6 +124,21 @@ func adoptCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backendFlag, "backend", "",
 		"platform the VM runs on ("+backend.List()+") — required for the first adoption, read from the registry after")
 	return cmd
+}
+
+// configuredDefaultBackend returns the default backend from
+// ~/.mpd-virt/config.json (default_backend), or "" when none is set. A
+// malformed config or an unknown backend name is an error, so a typo surfaces
+// rather than silently falling through to the "--backend required" message.
+func configuredDefaultBackend() (backend.Backend, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	if cfg.DefaultBackend == "" {
+		return "", nil
+	}
+	return backend.Parse(cfg.DefaultBackend)
 }
 
 // defaultUser mirrors the proposal's rule: the VM's dev user defaults to

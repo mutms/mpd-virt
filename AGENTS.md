@@ -43,13 +43,14 @@ VM — there is no default unless you set one. Once a VM is registered, every
 verb (including a re-adoption) reads the backend recorded in the registry;
 passing `--backend` to a re-adoption changes the record.
 
-To make the first adopt/create default to proxmox — so a purged fleet of
-proxmox VMs re-adopts one flag lighter per VM — set `DEFAULT=YES` in
-`~/.mpd-virt/proxmox.env`. The resolution order when `--backend` is omitted is:
-the backend recorded in the registry (a re-adoption), then that configured
-default, then the "required" error. Only proxmox can be the default today (it
-is the only backend with a config file, and the multi-VM case that wants one);
-`--backend` on the command line always wins.
+To set a default backend — so a purged fleet re-adopts one flag lighter per
+VM — put `{"default_backend": "proxmox"}` in `~/.mpd-virt/config.json`
+(mpd-virt's own host-side settings; see State layout). Any backend name is
+accepted, not just proxmox. The resolution order when `--backend` is omitted
+is: the backend recorded in the registry (a re-adoption), then
+`default_backend`, then the "required" error; `--backend` on the command line
+always wins. A malformed config.json, or a `default_backend` that is not a
+known backend, is a clear error — never a silent fall-through to "required".
 
 | Backend     | Host                 | What it does                                                                                                                                                                                                                                                                                                                         |
 |-------------|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -58,7 +59,7 @@ is the only backend with a config file, and the multi-VM case that wants one);
 | `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first.                                                                                                                                                                                                |
 | `utm`       | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~200 MB Debian cloud image on first use, seeds cloud-init, and pins the VM to `192.168.64.<NNN>`; power on/off.                                                                                                                           |
 | `libvirt`   | a Linux host         | A KVM VM on the Linux VM mpd-virt runs on, driven by `virsh` against `qemu:///system`. `create` downloads the amd64 Debian cloud qcow2 once, seeds cloud-init, pins the VM to `192.168.122.<NNN>` on the `default` NAT network; power on/off; `remove --full` deletes it. One-time host prep in [`docs/libvirt.md`](docs/libvirt.md). |
-| `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/proxmox.env` — see [`docs/proxmox.md`](docs/proxmox.md)). `create` full-clones the `mpd-template` VM (`TEMPLATE_VMID`) and sets the clone's cloud-init hostname, static IP, user and key; `remove --full` destroys the clone and its disks. |
+| `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/backends/proxmox.json` — see [`docs/proxmox.md`](docs/proxmox.md)). `create` full-clones the `mpd-template` VM (`template_vmid`) and sets the clone's cloud-init hostname, static IP, user and key; `remove --full` destroys the clone and its disks. |
 
 The `proxmox` backend talks to the Proxmox REST API for VM state, start,
 graceful shutdown, and — once a VM is adopted — its live IP through the
@@ -66,8 +67,8 @@ guest agent. `create --backend=proxmox` clones the template VM and drives
 its cloud-init; a VM made by hand is adopted with `adopt --backend=proxmox`.
 The VM number is the Proxmox VMID. For the VM's LAN
 address there are two sources, in order: at first adoption, before the VM
-runs a guest agent, the address is derived by convention — `NETWORK` in
-`~/.mpd-virt/proxmox.env` with the last octet replaced by the
+runs a guest agent, the address is derived by convention — `network` in
+`~/.mpd-virt/backends/proxmox.json` with the last octet replaced by the
 number — so the cloud-init assigns a static address matching that rule.
 After adoption the VM runs `qemu-guest-agent` (the prep script and
 bootstrap install it), so `start` asks the API for its real address, which
@@ -202,9 +203,10 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   ├── lan-hosts                  ← rendered hosts(5) file pushed into VMs (adopt/create/start/update, `server sync`)
 │   ├── cloud-images/              ← cached Debian cloud-image archive (utm `create`)
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
+├── config.json                    ← OPTIONAL: mpd-virt's own host-side settings, hand-written (default_backend today; see Backends)
+├── backends/<name>.json           ← OPTIONAL: a backend's own config (proxmox: API endpoint + token), hand-written (see docs/proxmox.md)
 ├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every VM (see Developer assets)
 ├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every VM — SURVIVES `uninstall` (see Developer env)
-├── proxmox.env                    ← OPTIONAL: the Proxmox API endpoint + token + optional DEFAULT=YES, hand-written (see docs/proxmox.md)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/lan-servers.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
@@ -222,9 +224,11 @@ The whole tree is owner-only: every invocation re-asserts 0700 on
 directories and strips group/other bits from files. Nothing under `~/.mpd-virt` is another user's
 to read — least of all the CA keys and the proxmox token.
 
-Two environment overrides exist, mostly for tests and dry-runs:
-`MPD_VIRT_ROOT` relocates `~/.mpd-virt`, and `MPD_VIRT_SSH_CONFIG` points the
-managed blocks at a file other than `~/.ssh/config`.
+Two **test-only** environment overrides exist (the `TEST` in each name says
+so — they are not a supported way to run mpd-virt): `MPD_VIRT_TEST_ROOT`
+relocates `~/.mpd-virt`, and `MPD_VIRT_TEST_SSH_CONFIG` points the managed
+blocks at a file other than `~/.ssh/config`. The test suite uses them to stay
+off the developer's real files; production always uses the real paths.
 
 Keeping the root CA across `remove` and `uninstall` is deliberate: a re-adopt
 reuses the same trust anchor, so you never have to re-trust a fresh-fingerprint
@@ -312,9 +316,11 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 
 - `go/cmd/mpd-virt/` — main; version is stamped via `-ldflags` in the Makefile
 - `go/internal/cli/` — the cobra command tree; one file per verb
-- `go/internal/backend/` — power and address through each backend's CLI
+- `go/internal/backend/` — the backend framework: the `VM` interface, the registry, and the orchestration (Start/Stop/Create/Delete/PowerState/locate) that drives every backend uniformly. Knows no platform's details.
+- `go/internal/backends/` — the per-platform implementations, one file each (`proxmox.go`, `container.go`, `utm.go`, `libvirt.go`, `parallels.go`, `generic.go`), registering themselves with the framework at init; the CLI imports it once so every command has them
 - `go/internal/ca/` — the local CA: root, per-VM intermediates, server leaves
 - `go/internal/registry/` — which VMs are adopted (`~/.mpd-virt/<NNN>/vm.json`)
+- `go/internal/config/` — mpd-virt's own host-side settings (`~/.mpd-virt/config.json`; `default_backend`)
 - `go/internal/server/` — LAN service hosts and their certs (`server …`)
 - `go/internal/sshconfig/` — the managed `~/.ssh/config` blocks
 - `go/internal/proxy/` — client for a running mpd-proxy's control socket

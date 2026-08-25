@@ -36,7 +36,7 @@ func stub(t *testing.T, dns []string, live ...string) {
 // with no VMs on file and cannot touch the developer's real ~/.mpd-virt.
 func isolateRegistry(t *testing.T) {
 	t.Helper()
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 }
 
 func seedLastIP(t *testing.T, id vmid.ID, ip string) {
@@ -138,45 +138,6 @@ func TestLocateDedupes(t *testing.T) {
 	}
 	if probes != 1 {
 		t.Errorf("a deduped IP should be probed once, got %d probes", probes)
-	}
-}
-
-// inspectFixture is real `container inspect mpd-181` output (trimmed): the live
-// address is under status.networks[].ipv4Address in CIDR form.
-const inspectFixture = `[
-  {
-    "configuration" : { "id" : "mpd-181", "networks" : [ { "network" : "default" } ] },
-    "id" : "mpd-181",
-    "status" : {
-      "networks" : [ { "ipv4Address" : "192.168.64.26/24", "network" : "default" } ],
-      "state" : "running"
-    }
-  }
-]`
-
-func TestParseContainerIP(t *testing.T) {
-	got, err := parseContainerIP(inspectFixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "192.168.64.26" {
-		t.Errorf("parseContainerIP = %q, want 192.168.64.26 (from status, mask stripped)", got)
-	}
-}
-
-// prlctlFixture is real `prlctl list mpd-130 -f --json` output: the address is
-// the bare "ip_configured" string.
-const prlctlFixture = `[
-    { "uuid": "bb586bcf", "status": "running", "ip_configured": "10.211.55.130", "name": "mpd-130" }
-]`
-
-func TestParseParallelsIP(t *testing.T) {
-	got, err := parseParallelsIP(prlctlFixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "10.211.55.130" {
-		t.Errorf("parseParallelsIP = %q, want 10.211.55.130", got)
 	}
 }
 

@@ -40,7 +40,9 @@
 // keeping them here. The "mpd Root CA" already in the Keychain makes the TLS
 // trust work regardless of path.
 //
-// MPD_VIRT_SSH_CONFIG overrides the file, keeping tests off the real one.
+// MPD_VIRT_TEST_SSH_CONFIG points the managed blocks at another file — a
+// test-only escape hatch (the TEST in the name says so) that keeps the suite
+// off the real ~/.ssh/config. Not a supported way to run mpd-virt.
 package sshconfig
 
 import (
@@ -80,9 +82,9 @@ func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 // no alias to chase into another stanza.
 const runtimeHostName = "runtime"
 
-// Path is the ssh config file mpd-virt manages (or $MPD_VIRT_SSH_CONFIG).
+// Path is the ssh config file mpd-virt manages (or $MPD_VIRT_TEST_SSH_CONFIG).
 func Path() string {
-	if p := os.Getenv("MPD_VIRT_SSH_CONFIG"); p != "" {
+	if p := os.Getenv("MPD_VIRT_TEST_SSH_CONFIG"); p != "" {
 		return p
 	}
 	h, _ := os.UserHomeDir()

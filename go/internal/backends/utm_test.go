@@ -1,4 +1,4 @@
-package backend
+package backends
 
 import (
 	"context"
@@ -7,41 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
-
-func TestParseSizeMiB(t *testing.T) {
-	cases := map[string]int{
-		"8g":    8192,
-		"8G":    8192,
-		"8192m": 8192,
-		"8192":  8192,
-		" 4g ":  4096,
-		"":      0,
-		"junk":  0,
-	}
-	for in, want := range cases {
-		if got := parseSizeMiB(in); got != want {
-			t.Errorf("parseSizeMiB(%q) = %d, want %d", in, got, want)
-		}
-	}
-}
-
-func TestParseSizeGiB(t *testing.T) {
-	cases := map[string]int{
-		"80g":    80,
-		"80G":    80,
-		"81920m": 80,
-		"81920":  80, // bare number read as MiB → 80 GiB
-		"":       0,
-		"nope":   0,
-	}
-	for in, want := range cases {
-		if got := parseSizeGiB(in); got != want {
-			t.Errorf("parseSizeGiB(%q) = %d, want %d", in, got, want)
-		}
-	}
-}
 
 func TestUTMCanonicalIP(t *testing.T) {
 	id, _ := vmid.Parse("158")
@@ -79,38 +47,12 @@ func TestUTMNetworkConfig(t *testing.T) {
 	}
 }
 
-func TestCidataUserData(t *testing.T) {
-	got := cidataUserData("skodak", "ssh-ed25519 AAAAKEY dev@mac", "mpd-158")
-	for _, want := range []string{
-		"#cloud-config",
-		"hostname: mpd-158",
-		"name: skodak",
-		"sudo: ALL=(ALL) NOPASSWD:ALL",
-		"lock_passwd: true",
-		"- ssh-ed25519 AAAAKEY dev@mac",
-		"ssh_pwauth: false",
-		"resize_rootfs: true",
-		"systemctl enable --now ssh",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("cidataUserData missing %q in:\n%s", want, got)
-		}
-	}
-}
-
-func TestCidataMetaData(t *testing.T) {
-	got := cidataMetaData("mpd-158")
-	if !strings.Contains(got, "instance-id: mpd-158") || !strings.Contains(got, "local-hostname: mpd-158") {
-		t.Errorf("cidataMetaData = %q", got)
-	}
-}
-
-// TestUTMLivePlumbing exercises the real osascript + hdiutil paths against
-// an installed UTM: build a cidata seed, create a VM referencing it and a
-// tiny fake disk, confirm exists/status, then delete it. Gated on
-// MPD_VIRT_UTM_LIVE=1 (and UTM present) so ordinary `go test` never touches
-// the desktop app. It deliberately skips the 200 MB image download + boot —
-// this proves provisioning, not that the guest runs.
+// TestUTMLivePlumbing exercises the real osascript + hdiutil paths against an
+// installed UTM: build a cidata seed, create a VM referencing it and a tiny fake
+// disk, confirm exists/status, then delete it. Gated on MPD_VIRT_UTM_LIVE=1 (and
+// UTM present) so ordinary `go test` never touches the desktop app. It
+// deliberately skips the 200 MB image download + boot — this proves
+// provisioning, not that the guest runs.
 func TestUTMLivePlumbing(t *testing.T) {
 	if os.Getenv("MPD_VIRT_UTM_LIVE") != "1" {
 		t.Skip("set MPD_VIRT_UTM_LIVE=1 to run the live UTM plumbing test")
@@ -138,7 +80,7 @@ func TestUTMLivePlumbing(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed := filepath.Join(dir, "seed.iso")
-	if err := makeCidataISO(ctx, seed, "skodak", "ssh-ed25519 AAAATEST test@mac", name, utmNetworkConfig(utmCanonicalIP(mustID(t, "199")))); err != nil {
+	if err := backend.MakeCidataISO(ctx, seed, "skodak", "ssh-ed25519 AAAATEST test@mac", name, utmNetworkConfig(utmCanonicalIP(vmid.ID(199)))); err != nil {
 		t.Fatalf("makeCidataISO: %v", err)
 	}
 	if fi, err := os.Stat(seed); err != nil || fi.Size() == 0 {
@@ -159,9 +101,9 @@ func TestUTMLivePlumbing(t *testing.T) {
 	}
 	t.Logf("VM status after create: %q", utmVMStatus(ctx, name))
 
-	// Deleting the VM itself is UTM's business now (mpd-virt's `remove`
-	// only un-adopts), so the teardown here uses the raw scripts — the same
-	// ones create's own failure rollback runs.
+	// Deleting the VM itself is UTM's business now (mpd-virt's `remove` only
+	// un-adopts), so the teardown here uses the raw scripts — the same ones
+	// create's own failure rollback runs.
 	_, _ = runOsascript(ctx, utmKillScript(name))
 	if _, err := runOsascript(ctx, utmDeleteScript(name)); err != nil {
 		t.Fatalf("utmDeleteScript: %v", err)

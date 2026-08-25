@@ -13,7 +13,7 @@ import (
 // rendered into the block.
 func useTempRoot(t *testing.T) {
 	t.Helper()
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 }
 
 func testID(t *testing.T, n int) vmid.ID {
@@ -33,7 +33,7 @@ func useTempConfig(t *testing.T) string {
 	t.Helper()
 	useTempRoot(t)
 	path := filepath.Join(t.TempDir(), "config")
-	t.Setenv("MPD_VIRT_SSH_CONFIG", path)
+	t.Setenv("MPD_VIRT_TEST_SSH_CONFIG", path)
 	return path
 }
 

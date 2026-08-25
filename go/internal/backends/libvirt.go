@@ -1,4 +1,4 @@
-package backend
+package backends
 
 import (
 	"context"
@@ -10,20 +10,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/exec"
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// libvirt backend — a KVM VM on a Linux host, driven with virsh against the
-// system daemon (docs/libvirt.md for the one-time host prep). `create`
-// materializes a VM from the amd64 Debian cloud qcow2 plus a cidata seed,
-// like utm.go does on macOS; start/stop/state/delete are virsh verbs.
+// libvirt is a KVM VM on a Linux host, driven with virsh against the system
+// daemon (docs/libvirt.md for the one-time host prep). `create` materializes a
+// VM from the amd64 Debian cloud qcow2 plus a cidata seed, like utm.go does on
+// macOS; start/stop/state/delete are virsh verbs.
 //
 // Networking: libvirt's `default` NAT network is 192.168.122.0/24, so each
-// mpd-<NNN> VM is pinned (via cloud-init) to 192.168.122.<NNN>, gateway .1
-// — which is also how locate finds it.
+// mpd-<NNN> VM is pinned (via cloud-init) to 192.168.122.<NNN>, gateway .1 —
+// which is also how locate finds it.
+type libvirt struct{}
+
+func init() { backend.Register(backend.Libvirt, libvirt{}) }
 
 const (
 	libvirtURI            = "qemu:///system"
@@ -31,6 +35,33 @@ const (
 	libvirtDefaultDiskGiB = 80
 	libvirtDefaultCPUs    = 4
 )
+
+func (libvirt) State(ctx context.Context, id vmid.ID) backend.State {
+	return backend.Normalize(libvirtState(ctx, id.Name()))
+}
+
+func (libvirt) Power(ctx context.Context, out io.Writer, id vmid.ID, verb string, _ backend.State) bool {
+	return libvirtPower(ctx, out, id, verb)
+}
+
+func (libvirt) Candidates(ctx context.Context, id vmid.ID) []string {
+	if libvirtDomainExists(ctx, id.Name()) {
+		return []string{libvirtCanonicalIP(id)}
+	}
+	return nil
+}
+
+func (libvirt) Create(ctx context.Context, out io.Writer, id vmid.ID, opts backend.CreateOpts) (string, error) {
+	return libvirtCreate(ctx, out, id, opts)
+}
+
+func (libvirt) Delete(ctx context.Context, out io.Writer, id vmid.ID) error {
+	return libvirtDelete(ctx, out, id)
+}
+
+func (libvirt) Notes(context.Context, vmid.ID) string { return "" }
+func (libvirt) Managed() bool                         { return true }
+func (libvirt) Deletable() bool                       { return true }
 
 // libvirtCanonicalIP is the pinned address for a libvirt VM: 192.168.122.<NNN>.
 func libvirtCanonicalIP(id vmid.ID) string { return libvirtSubnet + "." + strconv.Itoa(int(id)) }
@@ -41,7 +72,7 @@ func virsh(ctx context.Context, args ...string) (exec.Result, error) {
 
 // libvirtCreate defines and boots a fresh VM, returning its pinned IP once
 // cloud-init's first boot is done and sshd answers.
-func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOpts) (string, error) {
+func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.CreateOpts) (string, error) {
 	name := id.Name()
 	if libvirtDomainExists(ctx, name) {
 		return "", fmt.Errorf("libvirt already has a VM named %s — `mpd-virt remove %s --full`, or `virsh undefine` it first", name, id.String())
@@ -50,17 +81,17 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 	if st, err := os.Stat(filepath.Dir(dir)); err != nil || !st.IsDir() {
 		return "", fmt.Errorf("%s is missing — one-time host prep (docs/libvirt.md):\n    sudo install -d -o $USER -g $USER -m 0755 %s", filepath.Dir(dir), filepath.Dir(dir))
 	}
-	memMiB := parseSizeMiB(opts.Memory)
+	memMiB := backend.ParseSizeMiB(opts.Memory)
 	if memMiB == 0 {
 		return "", fmt.Errorf("cannot parse --memory %q (use e.g. 8g or 8192m)", opts.Memory)
 	}
-	diskGiB := parseSizeGiB(opts.Disk)
+	diskGiB := backend.ParseSizeGiB(opts.Disk)
 	if diskGiB == 0 {
 		diskGiB = libvirtDefaultDiskGiB
 	}
 	ip := libvirtCanonicalIP(id)
 
-	base, err := ensureCloudQcow2(ctx, out)
+	base, err := backend.EnsureCloudQcow2(ctx, out)
 	if err != nil {
 		return "", err
 	}
@@ -73,20 +104,20 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 
 	// A full copy, not a backing file: the cache lives under ~ (0700), where
 	// libvirt-qemu could not read it. Sparse, so only used blocks cost disk.
-	fmt.Fprintf(out, "  ▶ disk %s (%d GB, from %s)\n", diskPath, diskGiB, cloudQcow2)
+	fmt.Fprintf(out, "  ▶ disk %s (%d GB, from %s)\n", diskPath, diskGiB, filepath.Base(base))
 	if r, err := exec.Capture(ctx, exec.Cmd{Name: "qemu-img", Args: []string{"convert", "-f", "qcow2", "-O", "qcow2", base, diskPath}}); err != nil {
 		return "", err
 	} else if r.Failed() {
-		return "", fmt.Errorf("qemu-img convert failed: %s", shortErr(r))
+		return "", fmt.Errorf("qemu-img convert failed: %s", backend.ShortErr(r))
 	}
 	if r, err := exec.Capture(ctx, exec.Cmd{Name: "qemu-img", Args: []string{"resize", diskPath, fmt.Sprintf("%dG", diskGiB)}}); err != nil {
 		return "", err
 	} else if r.Failed() {
-		return "", fmt.Errorf("qemu-img resize failed: %s", shortErr(r))
+		return "", fmt.Errorf("qemu-img resize failed: %s", backend.ShortErr(r))
 	}
 
 	fmt.Fprintf(out, "  ▶ writing cidata seed → %s\n", seedPath)
-	if err := makeCidataISO(ctx, seedPath, opts.User, opts.PubKey, name, libvirtNetworkConfig(ip)); err != nil {
+	if err := backend.MakeCidataISO(ctx, seedPath, opts.User, opts.PubKey, name, libvirtNetworkConfig(ip)); err != nil {
 		return "", err
 	}
 
@@ -98,7 +129,7 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 	if r, err := virsh(ctx, "define", xmlPath); err != nil {
 		return "", err
 	} else if r.Failed() {
-		return "", fmt.Errorf("virsh define failed: %s", shortErr(r))
+		return "", fmt.Errorf("virsh define failed: %s", backend.ShortErr(r))
 	}
 	ok := false
 	defer func() {
@@ -112,17 +143,17 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts CreateOp
 	if r, err := virsh(ctx, "start", name); err != nil {
 		return "", err
 	} else if r.Failed() {
-		return "", fmt.Errorf("virsh start failed: %s", shortErr(r))
+		return "", fmt.Errorf("virsh start failed: %s", backend.ShortErr(r))
 	}
 
 	t := host.Target{
 		User: opts.User, Host: ip,
 		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: name,
 	}
-	if !waitReachable(ctx, t, 300*time.Second) {
+	if !backend.WaitReachable(ctx, t, 300*time.Second) {
 		return "", fmt.Errorf("VM %s did not come up at %s within 5 min — `virsh console %s` to inspect", name, ip, name)
 	}
-	if err := waitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
+	if err := backend.WaitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
 		return "", err
 	}
 	ok = true
@@ -147,13 +178,13 @@ ethernets:
 `, ip, gw, gw)
 }
 
-// libvirtDomainXML is the VM definition — the one mpd's setup/linux flow
-// ran for real (q35, host-passthrough, the timer set, memballoon), minus
-// its spice display: Debian's qemu is built without spice. The <video>
-// stays even headless: libvirt launches qemu with -nodefaults, and without
-// a video device the kernel triple-faults under nested KVM before its
-// first message — GRUB loops on "Booting Debian GNU/Linux". The MAC is
-// derived from the number so the VM keeps its address across re-creates.
+// libvirtDomainXML is the VM definition — the one mpd's setup/linux flow ran for
+// real (q35, host-passthrough, the timer set, memballoon), minus its spice
+// display: Debian's qemu is built without spice. The <video> stays even
+// headless: libvirt launches qemu with -nodefaults, and without a video device
+// the kernel triple-faults under nested KVM before its first message — GRUB
+// loops on "Booting Debian GNU/Linux". The MAC is derived from the number so
+// the VM keeps its address across re-creates.
 func libvirtDomainXML(name string, id vmid.ID, memMiB, cpus int, diskPath, seedPath string) string {
 	return fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>
@@ -222,8 +253,8 @@ func libvirtDomainExists(ctx context.Context, name string) bool {
 	return err == nil && !r.Failed()
 }
 
-// libvirtState is virsh's state word ("running", "shut off", "paused"), or
-// "" when the domain is unknown or virsh is absent.
+// libvirtState is virsh's state word ("running", "shut off", "paused"), or ""
+// when the domain is unknown or virsh is absent.
 func libvirtState(ctx context.Context, name string) string {
 	r, err := virsh(ctx, "domstate", name)
 	if err != nil || r.Failed() {
@@ -245,7 +276,7 @@ func libvirtPower(ctx context.Context, out io.Writer, id vmid.ID, verb string) b
 		return false
 	}
 	if r.Failed() {
-		fmt.Fprintf(out, "    … %s (continuing)\n", shortErr(r))
+		fmt.Fprintf(out, "    … %s (continuing)\n", backend.ShortErr(r))
 		return false
 	}
 	return true
@@ -263,7 +294,7 @@ func libvirtDelete(ctx context.Context, out io.Writer, id vmid.ID) error {
 		if r, err := virsh(ctx, "undefine", name); err != nil {
 			return err
 		} else if r.Failed() {
-			return fmt.Errorf("virsh undefine %s failed: %s", name, shortErr(r))
+			return fmt.Errorf("virsh undefine %s failed: %s", name, backend.ShortErr(r))
 		}
 	}
 	if err := os.RemoveAll(paths.LibvirtDir(name)); err != nil {

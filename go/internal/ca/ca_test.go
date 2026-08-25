@@ -10,7 +10,7 @@ import (
 )
 
 func TestGenerateAndConstrain(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 
 	id, _ := vmid.Parse("135")
 	if err := LoadOrGenerateVM(id); err != nil {

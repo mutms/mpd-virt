@@ -3,91 +3,75 @@ package backend
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// prlctlListFixture is real `prlctl list -a --json` output from a Mac running
-// several VMs at once — the shape a per-name query returns too.
-const prlctlListFixture = `[
-    { "uuid": "b1c42d97", "status": "running",   "ip_configured": "-", "name": "macOS" },
-    { "uuid": "bb586bcf", "status": "suspended", "ip_configured": "-", "name": "mpd-130" },
-    { "uuid": "7d740193", "status": "stopped",   "ip_configured": "-", "name": "mpd-130-copy" },
-    { "uuid": "5c85feb1", "status": "running",   "ip_configured": "-", "name": "mpd-160" },
-    { "uuid": "edde6d3d", "status": "suspended", "ip_configured": "-", "name": "vscode" }
-]`
-
-// The VM's own status is read, not the first entry's — and a near-miss name
-// like mpd-130-copy must not answer for mpd-130.
-func TestParseParallelsState(t *testing.T) {
-	for _, tc := range []struct{ name, want string }{
-		{"mpd-160", "running"},
-		{"mpd-130", "suspended"},
-		{"mpd-130-copy", "stopped"},
-		{"mpd-999", ""}, // not listed
-	} {
-		if got := parseParallelsState(prlctlListFixture, tc.name); got != tc.want {
-			t.Errorf("parseParallelsState(%q) = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
-
-func TestParseParallelsStateGarbage(t *testing.T) {
-	if got := parseParallelsState("not json", "mpd-160"); got != "" {
-		t.Errorf("unparseable output should read as no state, got %q", got)
-	}
-}
-
-// container inspect carries the state next to the address parseContainerIP reads.
-func TestParseContainerState(t *testing.T) {
-	if got := parseContainerState(inspectFixture); got != "running" {
-		t.Errorf("parseContainerState = %q, want running", got)
-	}
-	if got := parseContainerState("not json"); got != "" {
-		t.Errorf("unparseable output should read as no state, got %q", got)
-	}
-}
-
 // Settled states normalize; transitional and unrecognized words stay unknown,
 // so the power verb is issued rather than skipped on a guess.
-func TestNormalizeState(t *testing.T) {
-	for word, want := range map[string]vmState{
-		"running":   stRunning,
-		"started":   stRunning, // UTM's word
-		"Stopped":   stStopped,
-		"suspended": stSuspended,
-		"paused":    stPaused,
-		"starting":  stUnknown,
-		"stopping":  stUnknown,
-		"":          stUnknown,
+func TestNormalize(t *testing.T) {
+	for word, want := range map[string]State{
+		"running":   StateRunning,
+		"started":   StateRunning, // UTM's word
+		"Stopped":   StateStopped,
+		"suspended": StateSuspended,
+		"paused":    StatePaused,
+		"starting":  StateUnknown,
+		"stopping":  StateUnknown,
+		"shut off":  StateUnknown, // libvirt's word for off — deliberately unknown
+		"":          StateUnknown,
 	} {
-		if got := normalizeState(word); got != want {
-			t.Errorf("normalizeState(%q) = %q, want %q", word, got, want)
+		if got := Normalize(word); got != want {
+			t.Errorf("Normalize(%q) = %q, want %q", word, got, want)
 		}
 	}
 }
 
 // stubState substitutes the backend state probe for one test.
-func stubState(t *testing.T, st vmState) {
+func stubState(t *testing.T, st State) {
 	t.Helper()
 	orig := probeState
-	probeState = func(context.Context, vmid.ID, Backend) vmState { return st }
+	probeState = func(context.Context, vmid.ID, Backend) State { return st }
 	t.Cleanup(func() { probeState = orig })
 }
 
-// A VM already running is not started again: no power command is issued, so
-// there is no refusal to explain away.
+// fakePower is a test backend that records the power verb it was asked for.
+// Embedding unregistered gives it the rest of the VM interface as no-ops.
+type fakePower struct {
+	unregistered
+	verb   string
+	called bool
+}
+
+func (f *fakePower) Power(_ context.Context, _ io.Writer, _ vmid.ID, verb string, _ State) bool {
+	f.verb, f.called = verb, true
+	return true
+}
+
+// registerFake wires a fake backend in for one test and removes it after.
+func registerFake(t *testing.T, be Backend) *fakePower {
+	t.Helper()
+	f := &fakePower{}
+	Register(be, f)
+	t.Cleanup(func() { delete(impls, be) })
+	return f
+}
+
+// A VM already running is not powered again: powerOn reports the prior state and
+// the backend's Power is never called, so there is no refusal to explain away.
 func TestPowerOnSkipsRunningVms(t *testing.T) {
-	stubState(t, stRunning)
+	stubState(t, StateRunning)
+	f := registerFake(t, Parallels)
 	id := mustID(t, "160")
 	var out bytes.Buffer
-	if was := powerOn(context.Background(), &out, id, Parallels); was != stRunning {
-		t.Errorf("powerOn should report the prior state %q, got %q", stRunning, was)
+	if was := powerOn(context.Background(), &out, id, Parallels); was != StateRunning {
+		t.Errorf("powerOn should report the prior state %q, got %q", StateRunning, was)
 	}
-	if strings.Contains(out.String(), "prlctl") {
-		t.Errorf("a running VM should not be started again, got: %s", out.String())
+	if f.called {
+		t.Errorf("a running VM should not be powered again")
 	}
 	if !strings.Contains(out.String(), "mpd-160 is already running") {
 		t.Errorf("output should say the VM is already running, got: %s", out.String())
@@ -96,12 +80,13 @@ func TestPowerOnSkipsRunningVms(t *testing.T) {
 
 // The mirror case: a VM already off is not stopped again.
 func TestPowerOffSkipsStoppedVms(t *testing.T) {
-	stubState(t, stStopped)
+	stubState(t, StateStopped)
+	f := registerFake(t, Parallels)
 	id := mustID(t, "160")
 	var out bytes.Buffer
 	powerOff(context.Background(), &out, id, Parallels)
-	if strings.Contains(out.String(), "prlctl") {
-		t.Errorf("a stopped VM should not be stopped again, got: %s", out.String())
+	if f.called {
+		t.Errorf("a stopped VM should not be stopped again")
 	}
 	if !strings.Contains(out.String(), "mpd-160 is already stopped") {
 		t.Errorf("output should say the VM is already stopped, got: %s", out.String())
@@ -111,22 +96,11 @@ func TestPowerOffSkipsStoppedVms(t *testing.T) {
 // An unreadable state must not stop the power verb from being tried — that is
 // the pre-existing blind behaviour, kept for VMs powered elsewhere.
 func TestPowerOnUnknownStateStillTries(t *testing.T) {
-	stubState(t, stUnknown)
-	id := mustID(t, "160")
+	stubState(t, StateUnknown)
+	f := registerFake(t, Parallels)
 	var out bytes.Buffer
-	powerOn(context.Background(), &out, id, Parallels)
-	if !strings.Contains(out.String(), "prlctl start mpd-160") {
-		t.Errorf("an unknown state should still issue the start verb, got: %s", out.String())
-	}
-}
-
-// A refusal names the state the VM was actually in, instead of guessing.
-func TestRefusalNote(t *testing.T) {
-	id := mustID(t, "160")
-	if got := refusalNote(id, stSuspended, "stopped"); got != "mpd-160 is suspended" {
-		t.Errorf("refusalNote with a known state = %q", got)
-	}
-	if got := refusalNote(id, stUnknown, "stopped"); !strings.Contains(got, "may already be stopped") {
-		t.Errorf("refusalNote with no state should fall back to the guess, got %q", got)
+	powerOn(context.Background(), &out, mustID(t, "160"), Parallels)
+	if !f.called || f.verb != "start" {
+		t.Errorf("an unknown state should still issue the start verb; called=%v verb=%q", f.called, f.verb)
 	}
 }

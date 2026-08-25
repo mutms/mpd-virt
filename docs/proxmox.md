@@ -7,7 +7,7 @@ installer or cloud-init image — and adopted.
 Once a VM is adopted, mpd-virt drives it through the Proxmox REST API — but
 only for three things: VM status, start, and graceful shutdown (`mpd-virt
 start/stop <NNN>`). The VM number doubles as the Proxmox VMID, and the VM's
-LAN address is `NETWORK` with the last octet replaced by the number
+LAN address is `network` with the last octet replaced by the number
 (`10.1.10.0` + VM `150` → `10.1.10.150`) — the cloud image runs no
 qemu-guest-agent, so give the VM exactly that static address in its
 cloud-init IP config.
@@ -23,34 +23,33 @@ cloud-init IP config.
 3. Put the VMs, the template and the storage in a pool (`mpd`) and grant the
    token the role on `/pool/mpd` and on the bridge
    (`/sdn/zones/localnetwork/vmbr0`), both with propagate
-4. Create `~/.mpd-virt/proxmox.env` file with the following content
+4. Create `~/.mpd-virt/backends/proxmox.json` with the following content
+```json
+{
+  "api_url": "https://<proxmoxserverurl>:8006/api2/json/",
+  "network": "<local_network_prefix>.0/24",
+  "gateway": "<gateway>",
+  "token_id": "<copy_from_dialog>",
+  "token_secret": "<copy_from_dialog>",
+  "template_vmid": 999,
+  "pool": "mpd"
+}
 ```
-API_URL=https://<proxmoxserverurl>:8006/api2/json/
-NETWORK=<local_network_prefix>.0/24
-GATEWAY=<gateway>
-TOKEN_ID=<copy_from_dialog>
-TOKEN_SECRET=<copy_from_dialog>
-TEMPLATE_VMID=999
-POOL=mpd
-DEFAULT=YES
-```
-`DEFAULT=YES` (optional) makes proxmox the default backend, so `adopt` and
-`create` need no `--backend` when it is omitted — handy when re-adopting a
-fleet of proxmox VMs. A `--backend` on the command line still wins, and a
-re-adoption still uses the backend already recorded for that VM; the default
-only fills in a first adopt/create. Drop the line (or set it to `no`) to keep
-`--backend` required.
+`template_vmid` (default 999), `gateway` and `pool` are optional. To skip
+`--backend` when re-adopting a fleet of proxmox VMs, set the default backend
+once in `~/.mpd-virt/config.json` — `{"default_backend": "proxmox"}` — see the
+Backends section of `AGENTS.md`. A `--backend` on the command line still wins,
+and a re-adoption still uses the backend already recorded for that VM.
 
-`NETWORK` with `.NNN` is the VM's address; its prefix (`/24` when omitted)
-and `GATEWAY` make up the clone's cloud-init IP line
+`network` with `.NNN` is the VM's address; its prefix (`/24` when omitted)
+and `gateway` make up the clone's cloud-init IP line
 (`ip=10.1.10.154/16,gw=10.1.1.1`). The template itself stays on DHCP.
-`TOKEN_ID` and `TOKEN_SECRET` are the two values the token-creation dialog
-shows, copied verbatim — no quotes, no angle brackets. The file holds a
-secret: `chmod 600` it (mpd-virt re-asserts owner-only permissions on the
-whole `~/.mpd-virt` tree on every run, but there is no reason to leave it
-readable even once). Grant the token only the `mpd-virt` role from step 1,
-scoped to the pool: it can then create, configure, power and delete VMs
-there and nothing outside it.
+`token_id` and `token_secret` are the two values the token-creation dialog
+shows, copied verbatim. The file holds a secret: `chmod 600` it (mpd-virt
+re-asserts owner-only permissions on the whole `~/.mpd-virt` tree on every run,
+but there is no reason to leave it readable even once). Grant the token only
+the `mpd-virt` role from step 1, scoped to the pool: it can then create,
+configure, power and delete VMs there and nothing outside it.
 
 The API endpoint's TLS certificate must be trusted on the Mac: either serve
 an mpd-CA-signed certificate on the Proxmox host, or add its CA to the System
@@ -59,13 +58,13 @@ Keychain. mpd-virt trusts the system roots plus the mpd root CA.
 ## Template VM and `mpd-virt create`
 
 `mpd-virt create NNN --backend=proxmox` does, through the API: full clone of
-the template as VMID NNN named `mpd-NNN` into `POOL`; cloud-init on the
-clone set to the static `NETWORK.NNN` with `GATEWAY`, your user and SSH
+the template as VMID NNN named `mpd-NNN` into `pool`; cloud-init on the
+clone set to the static `network`.NNN with `gateway`, your user and SSH
 key, no password; start;
 wait for cloud-init's first boot; then the normal adoption. A clone comes
 up in about a minute because the template already carries mpd's packages.
 
-Build the template once (VMID `TEMPLATE_VMID`, default 999):
+Build the template once (VMID `template_vmid`, default 999):
 
 1. create the VM as in "Cloud-init Debian VM installation" below, named
    `mpd-template`, in the pool, cloud-init: user, your SSH key(s), DNS,

@@ -82,7 +82,7 @@ func TestServiceHostAndEntry(t *testing.T) {
 // legacy MPD_SERVER_KIND) does not break Load.
 func TestSaveLoadRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
+	t.Setenv("MPD_VIRT_TEST_ROOT", root)
 
 	e := Entry{Name: "forge", IP: "10.1.10.100"}
 	if err := Save(e); err != nil {
@@ -115,7 +115,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 func TestWriteHostsFile(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
+	t.Setenv("MPD_VIRT_TEST_ROOT", root)
 	if err := Save(Entry{Name: "warp", IP: "10.1.10.102"}); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestWriteHostsFile(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
+	t.Setenv("MPD_VIRT_TEST_ROOT", root)
 	if err := Save(Entry{Name: "forge", IP: "1.2.3.4"}); err != nil {
 		t.Fatal(err)
 	}

@@ -1,30 +1,43 @@
-package backend
+package backends
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/paths"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// writeProxmoxEnv points MPD_VIRT_ROOT at a scratch root holding a
-// proxmox.env aimed at apiURL — the same isolation trick the
-// whole test suite uses to stay out of the developer's real ~/.mpd-virt.
-func writeProxmoxEnv(t *testing.T, apiURL string) {
+// writeProxmoxConfig points MPD_VIRT_TEST_ROOT at a scratch root holding a
+// backends/proxmox.json aimed at apiURL — the same isolation trick the whole
+// test suite uses to stay out of the developer's real ~/.mpd-virt.
+func writeProxmoxConfig(t *testing.T, apiURL string) {
 	t.Helper()
-	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
-	env := "API_URL=" + apiURL + "\nNETWORK=10.1.10.0\nTOKEN_ID=mpd-virt@pam!test\nTOKEN_SECRET=sekret\n"
-	if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
+	writeProxmoxFile(t, fmt.Sprintf(
+		`{"api_url":%q,"network":"10.1.10.0","token_id":"mpd-virt@pam!test","token_secret":"sekret"}`, apiURL))
+}
+
+// writeProxmoxFile writes a backends/proxmox.json with the given JSON body,
+// under whatever MPD_VIRT_TEST_ROOT is currently set to.
+func writeProxmoxFile(t *testing.T, body string) {
+	t.Helper()
+	if err := os.MkdirAll(paths.BackendsDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.BackendConfig("proxmox"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// fakeProxmox serves the three API shapes the backend uses, recording every
+// fakeProxmox serves the API shapes the backend uses, recording every
 // authenticated request path.
 func fakeProxmox(t *testing.T, status string, hits *[]string) *httptest.Server {
 	t.Helper()
@@ -44,9 +57,9 @@ func fakeProxmox(t *testing.T, status string, hits *[]string) *httptest.Server {
 			// several lines, so the caller's first-line/trim job is exercised.
 			_, _ = w.Write([]byte(`{"data":{"description":"# prod db\nsecond line"}}`))
 		case r.URL.Path == "/nodes/kitchenbox/qemu/150/agent/network-get-interfaces":
-			// lo (loopback), ens18 (the real LAN address + link-local +
-			// ipv6), and an overlay-range address on the container bridge —
-			// only the ens18 LAN v4 should survive filtering.
+			// lo (loopback), ens18 (the real LAN address + link-local + ipv6),
+			// and an overlay-range address on the container bridge — only the
+			// ens18 LAN v4 should survive filtering.
 			_, _ = w.Write([]byte(`{"data":{"result":[
 				{"name":"lo","ip-addresses":[{"ip-address-type":"ipv4","ip-address":"127.0.0.1"}]},
 				{"name":"ens18","ip-addresses":[
@@ -61,21 +74,21 @@ func fakeProxmox(t *testing.T, status string, hits *[]string) *httptest.Server {
 	}))
 }
 
-// The state probe reads power state straight off the cluster listing; a VM
-// the token cannot see (152) is honestly unknown, never an error.
+// The state probe reads power state straight off the cluster listing; a VM the
+// token cannot see (152) is honestly unknown, never an error.
 func TestProxmoxState(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "running", &hits)
 	defer ts.Close()
-	writeProxmoxEnv(t, ts.URL+"/")
+	writeProxmoxConfig(t, ts.URL+"/")
 
-	if st := proxmoxState(context.Background(), mustID(t, "150")); st != stRunning {
+	if st := proxmoxState(context.Background(), vmid.ID(150)); st != backend.StateRunning {
 		t.Errorf("state(150) = %q, want running", st)
 	}
-	if st := proxmoxState(context.Background(), mustID(t, "151")); st != stStopped {
+	if st := proxmoxState(context.Background(), vmid.ID(151)); st != backend.StateStopped {
 		t.Errorf("state(151) = %q, want stopped", st)
 	}
-	if st := proxmoxState(context.Background(), mustID(t, "152")); st != stUnknown {
+	if st := proxmoxState(context.Background(), vmid.ID(152)); st != backend.StateUnknown {
 		t.Errorf("state(152) = %q, want unknown", st)
 	}
 }
@@ -86,13 +99,13 @@ func TestProxmoxPower(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "stopped", &hits)
 	defer ts.Close()
-	writeProxmoxEnv(t, ts.URL+"/")
+	writeProxmoxConfig(t, ts.URL+"/")
 
 	var out strings.Builder
-	if !proxmoxPower(context.Background(), &out, mustID(t, "150"), "start") {
+	if !proxmoxPower(context.Background(), &out, vmid.ID(150), "start") {
 		t.Fatalf("start failed: %s", out.String())
 	}
-	if !proxmoxPower(context.Background(), &out, mustID(t, "150"), "stop") {
+	if !proxmoxPower(context.Background(), &out, vmid.ID(150), "stop") {
 		t.Fatalf("stop failed: %s", out.String())
 	}
 	want := []string{"POST /nodes/kitchenbox/qemu/150/status/start", "POST /nodes/kitchenbox/qemu/150/status/shutdown"}
@@ -109,70 +122,38 @@ func TestProxmoxPower(t *testing.T) {
 
 // Notes come back raw from the config "description" field (multi-line markdown
 // and all); tidying them for display is the caller's job, so proxmoxNotes
-// returns the value verbatim. A VM the token cannot see is honestly empty,
-// never an error — the same best-effort contract as proxmoxState.
+// returns the value verbatim. A VM the token cannot see is honestly empty, never
+// an error — the same best-effort contract as proxmoxState.
 func TestProxmoxNotes(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "running", &hits)
 	defer ts.Close()
-	writeProxmoxEnv(t, ts.URL+"/")
+	writeProxmoxConfig(t, ts.URL+"/")
 
-	if got := proxmoxNotes(context.Background(), mustID(t, "150")); got != "# prod db\nsecond line" {
+	if got := proxmoxNotes(context.Background(), vmid.ID(150)); got != "# prod db\nsecond line" {
 		t.Errorf("notes(150) = %q, want the raw description", got)
 	}
-	if got := proxmoxNotes(context.Background(), mustID(t, "152")); got != "" {
+	if got := proxmoxNotes(context.Background(), vmid.ID(152)); got != "" {
 		t.Errorf("notes(152) = %q, want empty for a VM the token cannot see", got)
 	}
-	if got := Notes(context.Background(), mustID(t, "150"), Generic); got != "" {
+	if got := backend.Notes(context.Background(), vmid.ID(150), backend.Generic); got != "" {
 		t.Errorf("Notes for a non-proxmox backend = %q, want empty (no API call)", got)
 	}
 }
 
 // An unconfigured backend yields empty notes, never an error — a blank cell,
-// like every other proxmox probe with no env file.
+// like every other proxmox probe with no config.
 func TestProxmoxNotesUnconfigured(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir()) // empty root — no proxmox.env
-	if got := proxmoxNotes(context.Background(), mustID(t, "150")); got != "" {
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir()) // empty root — no proxmox.json
+	if got := proxmoxNotes(context.Background(), vmid.ID(150)); got != "" {
 		t.Errorf("notes = %q, want empty without configuration", got)
-	}
-}
-
-// DEFAULT=YES in proxmox.env makes proxmox the default backend; anything else
-// (absent, unset, a non-truthy value, no file at all) leaves no default.
-func TestDefaultBackend(t *testing.T) {
-	writeEnv := func(t *testing.T, extra string) {
-		root := t.TempDir()
-		t.Setenv("MPD_VIRT_ROOT", root)
-		env := "API_URL=https://x/\nNETWORK=10.1.10.0\nTOKEN_ID=a@b!c\nTOKEN_SECRET=s\n" + extra
-		if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for _, v := range []string{"YES", "yes", "1", "true", "on"} {
-		writeEnv(t, "DEFAULT="+v+"\n")
-		if be, ok := DefaultBackend(); !ok || be != Proxmox {
-			t.Errorf("DEFAULT=%s: got (%q,%v), want (proxmox,true)", v, be, ok)
-		}
-	}
-	for _, v := range []string{"", "DEFAULT=no\n", "DEFAULT=0\n", "DEFAULT=maybe\n"} {
-		writeEnv(t, v)
-		if be, ok := DefaultBackend(); ok {
-			t.Errorf("%q: got (%q,%v), want no default", v, be, ok)
-		}
-	}
-
-	// No proxmox.env at all: no default, no panic.
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
-	if _, ok := DefaultBackend(); ok {
-		t.Error("no proxmox.env should mean no default")
 	}
 }
 
 // The derived address is NETWORK's last octet replaced by the VM number.
 func TestProxmoxDerivedIP(t *testing.T) {
-	writeProxmoxEnv(t, "https://example.invalid/")
-	if ip := proxmoxDerivedIP(mustID(t, "150")); ip != "10.1.10.150" {
+	writeProxmoxConfig(t, "https://example.invalid/")
+	if ip := proxmoxDerivedIP(vmid.ID(150)); ip != "10.1.10.150" {
 		t.Errorf("derived IP for 150 = %q, want 10.1.10.150", ip)
 	}
 }
@@ -184,9 +165,9 @@ func TestProxmoxAgentIPs(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "running", &hits)
 	defer ts.Close()
-	writeProxmoxEnv(t, ts.URL+"/")
+	writeProxmoxConfig(t, ts.URL+"/")
 
-	got := proxmoxAgentIPs(context.Background(), mustID(t, "150"))
+	got := proxmoxAgentIPs(context.Background(), vmid.ID(150))
 	if len(got) != 1 || got[0] != "10.1.1.54" {
 		t.Errorf("agent IPs = %v, want [10.1.1.54]", got)
 	}
@@ -198,26 +179,26 @@ func TestProxmoxAgentIPsUnknownVM(t *testing.T) {
 	var hits []string
 	ts := fakeProxmox(t, "running", &hits)
 	defer ts.Close()
-	writeProxmoxEnv(t, ts.URL+"/")
+	writeProxmoxConfig(t, ts.URL+"/")
 
-	if got := proxmoxAgentIPs(context.Background(), mustID(t, "152")); got != nil {
+	if got := proxmoxAgentIPs(context.Background(), vmid.ID(152)); got != nil {
 		t.Errorf("agent IPs for an unlisted VM = %v, want nil", got)
 	}
 }
 
-// An unconfigured backend (no env file) degrades exactly like an absent
+// An unconfigured backend (no config file) degrades exactly like an absent
 // hypervisor CLI: unknown state, empty candidate IP, a reported power refusal.
 func TestProxmoxUnconfigured(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir()) // empty root — no proxmox.env
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir()) // empty root — no proxmox.json
 
-	if st := proxmoxState(context.Background(), mustID(t, "150")); st != stUnknown {
+	if st := proxmoxState(context.Background(), vmid.ID(150)); st != backend.StateUnknown {
 		t.Errorf("state = %q, want unknown", st)
 	}
-	if ip := proxmoxDerivedIP(mustID(t, "150")); ip != "" {
+	if ip := proxmoxDerivedIP(vmid.ID(150)); ip != "" {
 		t.Errorf("derived IP = %q, want empty", ip)
 	}
 	var out strings.Builder
-	if proxmoxPower(context.Background(), &out, mustID(t, "150"), "start") {
+	if proxmoxPower(context.Background(), &out, vmid.ID(150), "start") {
 		t.Error("power reported success without configuration")
 	}
 	if !strings.Contains(out.String(), "not configured") {
@@ -225,16 +206,13 @@ func TestProxmoxUnconfigured(t *testing.T) {
 	}
 }
 
-// A partial env file names the missing key.
+// A partial config names the missing key.
 func TestProxmoxConfigMissingKey(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("MPD_VIRT_ROOT", root)
-	env := "API_URL=https://x:8006/api2/json/\nNETWORK=10.1.10.0\nTOKEN_ID=a@b!c\n" // no TOKEN_SECRET
-	if err := os.WriteFile(filepath.Join(root, "proxmox.env"), []byte(env), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
+	// no token_secret
+	writeProxmoxFile(t, `{"api_url":"https://x:8006/api2/json/","network":"10.1.10.0","token_id":"a@b!c"}`)
 	_, err := loadProxmoxConfig()
-	if err == nil || !strings.Contains(err.Error(), "TOKEN_SECRET") {
+	if err == nil || !strings.Contains(err.Error(), "token_secret") {
 		t.Errorf("err = %v, want mention of TOKEN_SECRET", err)
 	}
 }
@@ -255,9 +233,9 @@ func TestProxmoxIPConfig(t *testing.T) {
 	}
 }
 
-// The API half of create: clone the template under the new id, set
-// cloud-init (derived IP from the template's prefix/gateway, user, key, no
-// password), start. Each call is checked for the parameters Proxmox needs.
+// The API half of create: clone the template under the new id, set cloud-init
+// (derived IP from the template's prefix/gateway, user, key, no password), start.
+// Each call is checked for the parameters Proxmox needs.
 func TestProxmoxCloneFromTemplate(t *testing.T) {
 	var hits []string
 	forms := map[string]string{}
@@ -281,18 +259,17 @@ func TestProxmoxCloneFromTemplate(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	writeProxmoxEnv(t, srv.URL+"/")
-	root := os.Getenv("MPD_VIRT_ROOT")
-	env := filepath.Join(root, "proxmox.env")
-	b, _ := os.ReadFile(env)
-	_ = os.WriteFile(env, append(b, []byte("POOL=mpd-test\nGATEWAY=10.1.1.1\n")...), 0o600)
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
+	writeProxmoxFile(t, fmt.Sprintf(
+		`{"api_url":%q,"network":"10.1.10.0","token_id":"mpd-virt@pam!test","token_secret":"sekret","pool":"mpd-test","gateway":"10.1.1.1"}`,
+		srv.URL+"/"))
 
 	cfg, err := loadProxmoxConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := newProxmoxClient(cfg)
-	ip, err := c.cloneFromTemplate(context.Background(), io.Discard, 154, CreateOpts{User: "skodak", PubKey: "ssh-ed25519 AAAA+x/y me@host"})
+	ip, err := c.cloneFromTemplate(context.Background(), io.Discard, 154, backend.CreateOpts{User: "skodak", PubKey: "ssh-ed25519 AAAA+x/y me@host"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,8 +279,8 @@ func TestProxmoxCloneFromTemplate(t *testing.T) {
 	if got := forms["POST /nodes/kitchenbox/qemu/999/clone"]; got != "full=1&name=mpd-154&newid=154&pool=mpd-test" {
 		t.Errorf("clone form = %q", got)
 	}
-	// sshkeys = the template's key plus ours, double-encoded: Proxmox's own
-	// %20 form, then the transport's form encoding of the percent signs.
+	// sshkeys = the template's key plus ours, double-encoded: Proxmox's own %20
+	// form, then the transport's form encoding of the percent signs.
 	want := "ciuser=skodak&delete=cipassword&ipconfig0=ip%3D10.1.10.154%2F24%2Cgw%3D10.1.1.1&sshkeys=ssh-ed25519%2520TTTT%2520template%250Assh-ed25519%2520AAAA%252Bx%252Fy%2520me%2540host"
 	if got := forms["PUT /nodes/kitchenbox/qemu/154/config"]; got != want {
 		t.Errorf("config form = %q\nwant %q", got, want)
@@ -313,7 +290,7 @@ func TestProxmoxCloneFromTemplate(t *testing.T) {
 	}
 
 	// An id that already exists is refused before anything is cloned.
-	if _, err := c.cloneFromTemplate(context.Background(), io.Discard, 150, CreateOpts{}); err == nil || !strings.Contains(err.Error(), "already has VM 150") {
+	if _, err := c.cloneFromTemplate(context.Background(), io.Discard, 150, backend.CreateOpts{}); err == nil || !strings.Contains(err.Error(), "already has VM 150") {
 		t.Errorf("expected refusal for an existing VM, got %v", err)
 	}
 }
@@ -327,9 +304,9 @@ func TestProxmoxAddKey(t *testing.T) {
 	}
 }
 
-// The API half of remove --full: hard-stop a running VM, then destroy it
-// with its disks. A VM the API no longer lists is already gone and must
-// not be an error.
+// The API half of remove --full: hard-stop a running VM, then destroy it with
+// its disks. A VM the API no longer lists is already gone and must not be an
+// error.
 func TestProxmoxDestroyVM(t *testing.T) {
 	var hits []string
 	status := "running"
@@ -350,7 +327,7 @@ func TestProxmoxDestroyVM(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	writeProxmoxEnv(t, srv.URL+"/")
+	writeProxmoxConfig(t, srv.URL+"/")
 	cfg, err := loadProxmoxConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -385,7 +362,7 @@ func TestProxmoxDestroyVM(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer srv2.Close()
-	writeProxmoxEnv(t, srv2.URL+"/")
+	writeProxmoxConfig(t, srv2.URL+"/")
 	cfg, _ = loadProxmoxConfig()
 	out.Reset()
 	if err := newProxmoxClient(cfg).destroyVM(context.Background(), &out, 154); err != nil {

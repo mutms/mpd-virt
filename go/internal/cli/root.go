@@ -3,6 +3,9 @@ package cli
 
 import (
 	"github.com/mutms/mpd-virt/go/internal/paths"
+	// Registers every backend implementation with the backend framework at
+	// init, so all commands can drive them. Imported once, centrally.
+	_ "github.com/mutms/mpd-virt/go/internal/backends"
 	"github.com/spf13/cobra"
 )
 

@@ -24,7 +24,7 @@ func mustID(t *testing.T, s string) vmid.ID {
 // reviewable shape the refactor is for: real JSON with the derived name and the
 // three-digit id as a string.
 func TestSaveLoadRoundTrip(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "150")
 	in := Entry{ID: id, IP: "10.1.10.150", User: "skodak", Backend: "proxmox", Notes: "customer acme"}
 	if err := Save(in); err != nil {
@@ -66,7 +66,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 // authorized_keys round-trip, and its stickiness: a start-shaped Save (no keys)
 // preserves the hand-edited list, exactly like notes.
 func TestAuthorizedKeys(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "153")
 	keys := []string{"ssh-ed25519 AAAAC3Nz warpgate", "ssh-rsa AAAAB3Nz laptop"}
 	if err := Save(Entry{ID: id, IP: "10.1.10.153", User: "skodak", Backend: "proxmox", AuthorizedKeys: keys}); err != nil {
@@ -87,7 +87,7 @@ func TestAuthorizedKeys(t *testing.T) {
 // Notes is sticky: a lifecycle Save that carries no notes must preserve the
 // cache `list` maintains, while a non-empty value overwrites it.
 func TestSaveNotesSticky(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "151")
 
 	if err := Save(Entry{ID: id, IP: "10.1.10.151", User: "skodak", Backend: "proxmox", Notes: "first"}); err != nil {
@@ -113,7 +113,7 @@ func TestSaveNotesSticky(t *testing.T) {
 // directory are all refused — the record flows into ssh command lines, so a bad
 // one is caught here, not obeyed downstream.
 func TestLoadRejects(t *testing.T) {
-	t.Setenv("MPD_VIRT_ROOT", t.TempDir())
+	t.Setenv("MPD_VIRT_TEST_ROOT", t.TempDir())
 	id := mustID(t, "152")
 
 	if _, err := Load(id); err == nil {

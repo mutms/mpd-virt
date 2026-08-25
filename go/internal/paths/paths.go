@@ -1,8 +1,10 @@
 // Package paths holds the host-side filesystem locations mpd-virt owns
 // under ~/.mpd-virt/.
 //
-// MPD_VIRT_ROOT overrides the root, which keeps tests (and dry-runs) out
-// of the developer's real ~/.mpd-virt.
+// MPD_VIRT_TEST_ROOT relocates the whole tree — a test-only escape hatch (the
+// TEST in the name says so) that keeps the suite out of the developer's real
+// ~/.mpd-virt. It is not a supported way to run mpd-virt; production always
+// uses ~/.mpd-virt.
 package paths
 
 import (
@@ -12,10 +14,10 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// Root is ~/.mpd-virt (or $MPD_VIRT_ROOT) — everything mpd-virt owns on
+// Root is ~/.mpd-virt (or $MPD_VIRT_TEST_ROOT) — everything mpd-virt owns on
 // the host. Holds conf/ (identity, survives remove) and per-VM dirs.
 func Root() string {
-	if r := os.Getenv("MPD_VIRT_ROOT"); r != "" {
+	if r := os.Getenv("MPD_VIRT_TEST_ROOT"); r != "" {
 		return r
 	}
 	return filepath.Join(home(), ".mpd-virt")
@@ -27,13 +29,22 @@ func Conf() string { return filepath.Join(Root(), "conf") }
 // CARoot is ~/.mpd-virt/conf/caroot — the root CA keypair.
 func CARoot() string { return filepath.Join(Conf(), "caroot") }
 
-// ProxmoxEnv is ~/.mpd-virt/proxmox.env — the Proxmox API endpoint + token
-// the proxmox backend drives power through (docs/proxmox.md).
-//
-// At the root rather than under conf/ for the same reason as MpdEnv: the
-// developer writes this file by hand, and conf/ is for what mpd-virt
-// generates and manages itself — nothing there is meant to be edited.
-func ProxmoxEnv() string { return filepath.Join(Root(), "proxmox.env") }
+// BackendsDir is ~/.mpd-virt/backends — per-backend config files. One JSON file
+// per backend that needs configuring (proxmox today); most backends need none.
+// The host-side mirror of the internal/backends code layout.
+func BackendsDir() string { return filepath.Join(Root(), "backends") }
+
+// BackendConfig is ~/.mpd-virt/backends/<name>.json — one backend's own config,
+// hand-written by the developer (the Proxmox API endpoint + token today). JSON
+// so it reviews cleanly like vm.json; not under conf/, which is for what
+// mpd-virt generates, not what you edit.
+func BackendConfig(name string) string { return filepath.Join(BackendsDir(), name+".json") }
+
+// Config is ~/.mpd-virt/config.json — mpd-virt's own host-side settings (the
+// default backend today). Hand-written by the developer, JSON so it reviews
+// cleanly like vm.json; at the root rather than conf/, which is for what
+// mpd-virt generates, not what you edit.
+func Config() string { return filepath.Join(Root(), "config.json") }
 
 // Servers is ~/.mpd-virt/servers — LAN service registry (one dir per host).
 func Servers() string { return filepath.Join(Root(), "servers") }
@@ -74,7 +85,7 @@ func LibvirtDir(name string) string { return filepath.Join("/var/lib/mpd-virt", 
 // ProxySocket is ~/.mpd-virt/proxy/socket — mpd-proxy's control socket.
 // mpd-proxy creates the proxy/ dir (user-owned, 0700) and binds the socket
 // there; it derives the same path from the sudo user's home and knows
-// nothing of MPD_VIRT_ROOT, so under a relocated root (tests, dry-runs)
+// nothing of MPD_VIRT_TEST_ROOT, so under a relocated root (tests, dry-runs)
 // there is simply no proxy. The socket is ephemeral: it dies with the proxy.
 func ProxySocket() string { return filepath.Join(Root(), "proxy", "socket") }
 
