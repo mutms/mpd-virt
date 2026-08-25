@@ -52,6 +52,7 @@ func updateCmd() *cobra.Command {
 			}
 			syncAssets(cmd.Context(), t, id.String())
 			syncEnv(cmd.Context(), t, id.String())
+			syncOCIMirror(cmd.Context(), t, id.String())
 			syncAuthorizedKeys(cmd.Context(), t, e, id.String())
 
 			fmt.Printf("update %s at %s\n", id.Name(), e.IP)

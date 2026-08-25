@@ -21,6 +21,15 @@ type Config struct {
 	// recorded in the registry). Empty means none — --backend is then required.
 	// The name is validated by the caller against the known backends.
 	DefaultBackend string `json:"default_backend"`
+
+	// OCIMirrorLocation points every adopted VM's podman at an OCI
+	// pull-through cache: when set, adopt/update write a
+	// /etc/containers/registries.conf.d drop-in mirroring the registries mpd
+	// pulls from (docker.io, ghcr.io) to this host[:port], so images are
+	// fetched once and served from the LAN. Empty means no mirror — pulls go
+	// straight upstream. The cache host is the developer's own; mpd-virt only
+	// carries the setting. Example: "devoci.mpd.test:5000".
+	OCIMirrorLocation string `json:"oci_mirror_location"`
 }
 
 // Load reads config.json. A missing file is the zero Config, not an error — the

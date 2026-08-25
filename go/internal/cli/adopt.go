@@ -263,6 +263,11 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	// already agreeing with every other vm this Mac owns.
 	syncEnv(ctx, t, id.String())
 
+	// Point podman at the configured OCI pull-through cache, if any. Before
+	// `mpd --vm-setup` on purpose: its base-image pre-warm is then the first
+	// pull to ride the cache.
+	syncOCIMirror(ctx, t, id.String())
+
 	// mpd derives its identity from the hostname (mpd-<NNN>) and reads its
 	// own IP off the interface.
 	if err := step(ctx, t, "mpd --vm-setup", "/opt/mpd/bin/mpd --vm-setup"); err != nil {
