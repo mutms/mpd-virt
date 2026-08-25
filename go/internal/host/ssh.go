@@ -179,54 +179,17 @@ func (t Target) Install(ctx context.Context, localPath, remotePath, mode string)
 	return nil
 }
 
-// MirrorTree replaces a root-owned directory on the VM with a copy of a
-// local one. Unlike Install it is a *mirror*, not a merge: the remote copy
-// is removed first, so a file deleted on the Mac disappears from the VM
-// and the two can never drift into a union of both histories.
-//
-// The destination is owned by the dev user, exactly like /opt/mpd. On a
-// passwordless-sudo VM root ownership protects nothing — the dev user
-// sudo's freely — and it only creates access friction (a Mac file that
-// arrived 0700 would land root-only and lock the dev user out of their
-// own assets). It stays a mirror regardless of ownership: the tree is
-// removed and replaced on every push, so the Mac remains the source of
-// truth. sudo is used only to create and replace under /opt (root
-// territory); the tree is then chowned to the dev user. `chmod -R
-// u+rwX,go-w` normalises the Mac's perms so the owner can always traverse
-// directories and read files (keeping the execute bit on anything already
-// executable, so a bin/ script stays runnable) and group/world lose write.
-func (t Target) MirrorTree(ctx context.Context, localDir, remotePath string) error {
-	staging, err := t.Line(ctx, "mktemp -d")
-	if err != nil {
-		return err
-	}
-	if staging == "" {
-		return fmt.Errorf("mktemp -d returned nothing")
-	}
-	defer func() { _, _ = t.Run(ctx, "rm -rf "+staging) }()
-
-	staged := staging + "/" + path.Base(remotePath)
-	r, err := exec.Capture(ctx, exec.Cmd{Name: "scp", Args: t.scpTreeArgs(localDir, staged)})
+// ScpTree copies a local directory to remoteDest, keeping the mode bits
+// (so a bin/ script stays executable). remoteDest must not already exist —
+// scp copies *into* an existing directory, which would nest the tree one
+// level deeper. The parent must exist; callers stage under a mktemp -d.
+func (t Target) ScpTree(ctx context.Context, localDir, remoteDest string) error {
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "scp", Args: t.scpTreeArgs(localDir, remoteDest)})
 	if err != nil {
 		return err
 	}
 	if r.Failed() {
 		return fmt.Errorf("scp -r %s: %s", localDir, oneOf(r.Stderr, r.Stdout))
-	}
-
-	// One remote shell so a half-installed tree is not left behind: the old
-	// copy goes away and the new one lands in the same invocation.
-	install := fmt.Sprintf(
-		"sudo install -d -o %[4]s -g %[4]s -m 0755 %[1]s && "+
-			"sudo rm -rf %[2]s && "+
-			"sudo cp -a %[3]s %[2]s && "+
-			"sudo chown -R %[4]s:%[4]s %[2]s && "+
-			"sudo chmod -R u+rwX,go-w %[2]s",
-		path.Dir(remotePath), remotePath, staged, t.User)
-	if r, err := t.Run(ctx, install); err != nil {
-		return err
-	} else if r.Failed() {
-		return fmt.Errorf("install %s: %s", remotePath, oneOf(r.Stderr, r.Stdout))
 	}
 	return nil
 }

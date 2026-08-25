@@ -49,10 +49,11 @@ func Config() string { return filepath.Join(Root(), "config.json") }
 // Servers is ~/.mpd-virt/servers — LAN service registry (one dir per host).
 func Servers() string { return filepath.Join(Root(), "servers") }
 
-// Assets is ~/.mpd-virt/assets — the developer's own scripts and files,
-// mirrored into every VM at /opt/mpd-virt/assets. Optional: absent means
-// mpd-virt pushes nothing and leaves whatever a VM already has. This Mac
-// is the source of truth; the in-VM copy is root-owned and read-only.
+// Assets is ~/.mpd-virt/assets — the developer's own tools and files,
+// overlaid onto mpd's own tree at /opt/mpd/assets on every VM (vm/bin and
+// runtime/bin on PATH, like mpd's own tools). Optional: absent means
+// mpd-virt pushes nothing and leaves whatever a VM already has. This Mac is
+// the source of truth; the in-VM copy is dev-owned and replaced on overlay.
 func Assets() string { return filepath.Join(Root(), "assets") }
 
 // LanHosts is ~/.mpd-virt/conf/lan-hosts — the rendered hosts(5) file that
@@ -117,7 +118,7 @@ func EnsureKnownHosts(id vmid.ID) string {
 
 // EnsurePrivate walks ~/.mpd-virt and drops group/other permission bits
 // everywhere: directories to 0700, regular files to owner-only (keeping the
-// owner's execute bit — assets/bin scripts carry it into the VMs). Nothing
+// owner's execute bit — assets bin/ scripts carry it into the VMs). Nothing
 // under the root is meant to be readable by another user — the CA keys and
 // the proxmox token outright must not be. Run on every invocation; errors
 // are ignored (a root-owned stray should not brick the CLI) and non-regular

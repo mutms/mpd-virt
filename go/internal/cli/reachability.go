@@ -199,9 +199,9 @@ func startCmd() *cobra.Command {
 			} else if changed {
 				pass("LAN service names republished")
 			}
-			// Re-mirrored on every start, so editing a script on the Mac and
-			// running `mpd-virt start <NNN>` is the whole update loop.
-			syncAssets(cmd.Context(), t, id.String())
+			// Assets are deliberately NOT re-pushed here: they overlay into
+			// /opt/mpd/assets at adoption and survive reboots, so the frequent
+			// `start` skips the trip — edit-and-repush is `mpd-virt update`.
 			// Same loop for the developer's MPD_* defaults, and nothing to
 			// republish after it — mpd re-reads the file per command, and
 			// the runtime sees it through a directory mount.

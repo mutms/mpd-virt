@@ -83,7 +83,7 @@ flavors and the API token setup.
 |--------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `adopt <NNN> [IP]` | `--backend= --username=`                                                                        | Adopt a reachable Debian VM: run the bootstrap over SSH, install `mpd`, push the CA + LAN service names + developer assets + env, register it, write ssh-config, wire reachability, check CA trust. IP is resolved by name when omitted — the backend's own source (parallels/container, or the proxmox guest agent once adopted), or mDNS for a VM that advertises itself (cloud-init or the prep script sets up avahi); pass it explicitly when neither reaches the VM. **Preconditions:** a reachable sshd with key auth and passwordless sudo on Debian Trixie — nothing about the network stack is gated; mpd's DNS works on whatever the VM has (it keeps its records in `/etc/hosts` and forwards through the VM's own `/etc/resolv.conf`). avahi (mDNS discovery) and qemu-guest-agent (the proxmox IP query) are conveniences, not requirements: the cloud-init image ships them and the bootstrap installs them regardless. Proxmox VMs (their cloud-init seed) and `create`-made VMs (utm/container) are adoptable as they are. mpd's `setup/mpd-prepare-adopt.sh` (run on the VM) standardises a VM that did **not** come from cloud-init onto the systemd-networkd + systemd-resolved stack and adds the same avahi + qemu-guest-agent conveniences. The two cases that want it are an already-running generic/bare-metal VM, and a sandbox VM (the intended upgrade path from trying mpd to the daily managed workflow, projects intact): a sandbox deliberately ships without sshd, and the prep script installs it idempotently on top of the sandbox's own network conversion. |
 | `create <NNN>`     | `--backend=<utm\|container\|proxmox\|libvirt> --image= --memory= --disk= --pubkey= --username=` | Provision a new local VM, then take it over. `--image` is the container base image (default the published `ghcr.io/mutms/mpd-virt-container-apple:<tag>` from `backend.DefaultContainerImage()`), `--memory` defaults to 10g, `--disk` (utm) to 80g, `--pubkey` to `~/.ssh/id_ed25519.pub`. For laptop-local backends only; Proxmox/cloud VMs are made by hand and adopted with `adopt`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `start <NNN>`      | `--username=`                                                                                   | Bring an adopted VM into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + developer assets + env + authorized keys, register the mpd-proxy overlay, verify. Safe to re-run on a live VM — the backend's state is read first, so an already-running VM is not started again.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `start <NNN>`      | `--username=`                                                                                   | Bring an adopted VM into service: power it on (parallels/container/utm/proxmox; a no-op for generic), find its current IP, update the registry + ssh-config, refresh the LAN service names + env + authorized keys, register the mpd-proxy overlay, verify. (Developer assets are overlaid at adoption and by `update`, not here — they persist in `/opt/mpd/assets/` across reboots.) Safe to re-run on a live VM — the backend's state is read first, so an already-running VM is not started again.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `stop <NNN>`       | —                                                                                               | Detach from the overlay and power the VM off (a no-op for generic, and for a VM already stopped).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `update <NNN>`     | `--username=`                                                                                   | Refresh the LAN service names + developer assets + env + authorized keys, then run mpd's bootstrap step 20 over SSH (apt dist-upgrade + the package set, so a stale template or image converges) and `mpd --vm-upgrade` (pull + rebuild + re-run `mpd --vm-setup`), then re-wire reachability.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `remove <NNN>`     | `--yes --full`                                                                                  | Un-adopt a VM (aliases `delete`, `rm`): detach it from the overlay, strip its ssh-config block, and delete `~/.mpd-virt/<NNN>/` — registry entry, pinned host key, per-VM CA. **Powers the VM off** (a no-op for generic) so its hypervisor object can be deleted right after — a running Apple container refuses `container rm` — but **never deletes the VM itself** unless `--full` (the inverse of `create`: Apple containers, libvirt and proxmox VMs, disks included; utm/parallels VMs are deleted in their hypervisor), and a stopped VM stays re-adoptable. Keeps the root CA. A rebuilt VM comes back via `remove` + `adopt`: the new host key is recorded as a deliberate first contact and its certs are reissued under a fresh per-VM CA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -205,7 +205,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── config.json                    ← OPTIONAL: mpd-virt's own host-side settings, hand-written (default_backend today; see Backends)
 ├── backends/<name>.json           ← OPTIONAL: a backend's own config (proxmox: API endpoint + token), hand-written (see docs/proxmox.md)
-├── assets/                        ← OPTIONAL: your own scripts/files, mirrored into every VM (see Developer assets)
+├── assets/                        ← OPTIONAL: your own tools/files (vm/bin, runtime/bin), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
 ├── mpd-virt.env                   ← OPTIONAL: your MPD_* defaults, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/lan-servers.md)
@@ -245,37 +245,48 @@ compromised VM can and cannot forge) and the trust model live in
 
 ## Developer assets
 
-`~/.mpd-virt/assets/` is an optional directory of **your own** scripts and
-files — private hacks, experiments, site-specific wiring. `adopt`,
-`create`, `start` and `update` mirror it into every VM at
-`/opt/mpd-virt/assets/`, and if it contains a `bin/`, every file in it is
-made executable and the directory is appended to `PATH` for interactive
-shells via `/etc/profile.d/mpd-virt-assets.sh` — no `chmod +x` needed on
-the Mac. Nothing else happens: mpd-virt carries
-the files and never runs, reads, or interprets them.
+`~/.mpd-virt/assets/` is an optional directory of **your own** tools and
+files — private hacks, experiments, site-specific wiring. It mirrors mpd's
+own asset layout, so a VM tool goes in `~/.mpd-virt/assets/vm/bin/` and a
+runtime tool in `~/.mpd-virt/assets/runtime/bin/`. `adopt` and `update`
+overlay it onto mpd's own tree at `/opt/mpd/assets/` on every VM; files in a
+`bin/` are made executable there (no `chmod +x` needed on the Mac). Nothing
+else happens: mpd-virt carries the files and never runs, reads, or
+interprets them.
+
+Landing in `/opt/mpd/assets/` is the whole point: mpd's own wiring then
+carries them for free — `vm/bin` is on the VM's PATH and `runtime/bin` is on
+the runtime containers' PATH (through the read-only `/opt/mpd` mount),
+exactly like mpd's own tools. One search path, VM and runtimes, no separate
+drop-in to maintain.
 
 This exists so a one-off need does not become a feature here. Something
 that applies to one developer's LAN — a static route to an office gateway,
-a scratch tool — is a script in your own tree, not a flag in this repo.
+a scratch tool — is a tool in your own tree, not a flag in this repo.
 
-- **The Mac is the source of truth.** The push is a *mirror*: the VM's copy
-  is removed and replaced, so a file deleted on the Mac disappears from the
-  VM on the next lifecycle verb. Edit on the Mac and re-push, never in the
-  VM — an in-VM edit is overwritten on the next push anyway. The in-VM copy
-  is **owned by the dev user**, like `/opt/mpd`: root ownership would protect
-  nothing on a passwordless-sudo VM and only gets in the way.
+- **The Mac is the source of truth.** An *overlay*, not a mirror: mpd's own
+  files under `/opt/mpd/assets/` are never touched, and the files mpd-virt
+  drops are recorded in a managed block in `/opt/mpd/.git/info/exclude` — so
+  they stay out of the checkout's `git status`, and that block tells the next
+  overlay which files to remove when you delete one on the Mac. Edit on the
+  Mac and re-run `update`, never in the VM — an in-VM edit is overwritten on
+  the next overlay. The in-VM copy is **owned by the dev user**, like the
+  rest of `/opt/mpd`.
+- **Don't shadow mpd's own tools** — a file at the same `assets/` path as one
+  of mpd's would overwrite a tracked file, not add beside it, and fight the
+  next `git pull`. Name your tools distinctly.
+- **Applied at adoption, refreshed by `update` — not `start`.** The overlay
+  lives in `/opt/mpd/assets/` and survives reboots, so the frequent `start`
+  skips the trip; `mpd-virt update <NNN>` is the edit-and-repush loop. Safe
+  into a git checkout because mpd upgrades with `git pull --ff-only`, which
+  never touches these untracked files.
 - **No assets directory means no action**, not "remove them from the VM" —
-  absence is the normal state for a VM that never wanted any.
-- **Best-effort.** A failed push warns and points at `mpd-virt start <NNN>`;
-  it never fails an adoption, start, or update.
-- **Not under `/opt/mpd`** — that is mpd's git checkout, which
-  `mpd --vm-upgrade` pulls; `/opt/mpd-virt` is mpd-virt's own slot and
-  is never touched by an mpd update.
-- **VM-only.** mpd bind-mounts `/opt/mpd` read-only into every runtime
-  container but knows nothing about `/opt/mpd-virt`, so these do not appear
-  inside containers.
-- `sudo <script>` will not find them (sudoers `secure_path` does not include
-  the directory) — same as mpd's in-runtime tools. Scripts `sudo` internally.
+  absence is the normal state for a VM that never wanted any. An *empty*
+  `assets/` is the deliberate "I removed my tools" and does clear the overlay.
+- **Best-effort.** A failed overlay warns and points at `mpd-virt update
+  <NNN>`; it never fails an adoption or an update.
+- `sudo <tool>` will not find them (sudoers `secure_path` does not include
+  the directory) — same as mpd's own tools. Tools `sudo` internally.
 
 ## Developer env
 
@@ -303,10 +314,10 @@ them.
 - **Best-effort**, and nothing to republish afterwards: mpd re-reads the
   file per command, and the runtime container sees it through a directory
   bind-mount.
-- **Pushed as the dev user, not root** — unlike the assets mirror. That
-  directory is mpd's, dev-owned, and `mpd --vm-setup` seeds the same path
-  from mpd's template when nothing is there. A root-owned file would leave
-  mpd unable to seed a replacement if the Mac's copy later went away.
+- **Pushed as the dev user.** That directory is mpd's, dev-owned, and
+  `mpd --vm-setup` seeds the same path from mpd's template when nothing is
+  there. A root-owned file would leave mpd unable to seed a replacement if
+  the Mac's copy later went away.
 - **Survives `uninstall`**, alongside the root CA. It is yours, and unlike
   `assets/` there is no copy on a VM worth restoring from.
 
