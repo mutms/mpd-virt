@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/backends"
 	"github.com/mutms/mpd-virt/go/internal/proxy"
 	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/sshconfig"
@@ -98,7 +99,7 @@ func removeCmd() *cobra.Command {
 			//    and proxmox deletes hard-stop the VM themselves, and a
 			//    graceful shutdown of disks about to be destroyed is a wait
 			//    for nothing.
-			if loadErr == nil && (!full || backend.Backend(e.Backend) == backend.Container) {
+			if loadErr == nil && (!full || backend.Backend(e.Backend) == backends.Container) {
 				if err := backend.Stop(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend)); err != nil {
 					fmt.Printf("  ⚠ could not power %s off: %v (continuing)\n", id.Name(), err)
 				}

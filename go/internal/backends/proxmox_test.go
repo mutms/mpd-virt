@@ -136,7 +136,7 @@ func TestProxmoxNotes(t *testing.T) {
 	if got := proxmoxNotes(context.Background(), vmid.ID(152)); got != "" {
 		t.Errorf("notes(152) = %q, want empty for a VM the token cannot see", got)
 	}
-	if got := backend.Notes(context.Background(), vmid.ID(150), backend.Generic); got != "" {
+	if got := backend.Notes(context.Background(), vmid.ID(150), Generic); got != "" {
 		t.Errorf("Notes for a non-proxmox backend = %q, want empty (no API call)", got)
 	}
 }

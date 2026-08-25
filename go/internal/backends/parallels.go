@@ -18,7 +18,11 @@ import (
 // adopted; mpd-virt's `remove` only un-adopts, never deletes.
 type parallels struct{}
 
-func init() { backend.Register(backend.Parallels, parallels{}) }
+// Parallels is this backend's name — Parallels Desktop VM. Stored in vm.json's
+// "backend" and passed as --backend.
+const Parallels backend.Backend = "parallels"
+
+func init() { backend.Register(Parallels, parallels{}) }
 
 func (parallels) State(ctx context.Context, id vmid.ID) backend.State {
 	// -a so stopped VMs are listed too; without it Parallels reports only the

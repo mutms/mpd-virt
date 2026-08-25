@@ -30,7 +30,11 @@ import (
 // finds it, since UTM exposes no clean guest-IP query.
 type utm struct{}
 
-func init() { backend.Register(backend.UTM, utm{}) }
+// UTM is this backend's name — UTM Desktop VM (macOS, osascript-driven). Stored in vm.json's
+// "backend" and passed as --backend.
+const UTM backend.Backend = "utm"
+
+func init() { backend.Register(UTM, utm{}) }
 
 const (
 	utmAppPath        = "/Applications/UTM.app"

@@ -27,7 +27,11 @@ import (
 // which is also how locate finds it.
 type libvirt struct{}
 
-func init() { backend.Register(backend.Libvirt, libvirt{}) }
+// Libvirt is this backend's name — libvirt/KVM VM on a Linux host. Stored in vm.json's
+// "backend" and passed as --backend.
+const Libvirt backend.Backend = "libvirt"
+
+func init() { backend.Register(Libvirt, libvirt{}) }
 
 const (
 	libvirtURI            = "qemu:///system"

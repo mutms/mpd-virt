@@ -19,7 +19,11 @@ import (
 // `container delete` (the inverse of create).
 type container struct{}
 
-func init() { backend.Register(backend.Container, container{}) }
+// Container is this backend's name — native Apple container. Stored in vm.json's
+// "backend" and passed as --backend.
+const Container backend.Backend = "container"
+
+func init() { backend.Register(Container, container{}) }
 
 func (container) State(ctx context.Context, id vmid.ID) backend.State {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"inspect", id.Name()}})

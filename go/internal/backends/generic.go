@@ -16,7 +16,11 @@ import (
 // backend's unsupported operations degrade to.
 type generic struct{}
 
-func init() { backend.Register(backend.Generic, generic{}) }
+// Generic is this backend's name — adopted / manually managed VM (demos, LAN). Stored in vm.json's
+// "backend" and passed as --backend.
+const Generic backend.Backend = "generic"
+
+func init() { backend.Register(Generic, generic{}) }
 
 func (generic) State(context.Context, vmid.ID) backend.State { return backend.StateUnknown }
 

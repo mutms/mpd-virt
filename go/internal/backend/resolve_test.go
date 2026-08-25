@@ -50,7 +50,7 @@ func seedLastIP(t *testing.T, id vmid.ID, ip string) {
 func TestLocateName(t *testing.T) {
 	isolateRegistry(t)
 	stub(t, []string{"10.1.1.143"}, "10.1.1.143")
-	got, err := locate(context.Background(), mustID(t, "139"), Generic)
+	got, err := locate(context.Background(), mustID(t, "139"), "generic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestLocateFallsBackToLastIP(t *testing.T) {
 	id := mustID(t, "139")
 	seedLastIP(t, id, "10.1.1.143")
 	stub(t, []string{"10.9.9.9"}, "10.1.1.143") // dns record dead, registry IP live
-	got, err := locate(context.Background(), id, Generic)
+	got, err := locate(context.Background(), id, "generic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestLocateFallsBackToLastIP(t *testing.T) {
 func TestLocatePicksLiveAddress(t *testing.T) {
 	isolateRegistry(t)
 	stub(t, []string{"10.0.0.5", "10.1.1.143"}, "10.1.1.143")
-	got, err := locate(context.Background(), mustID(t, "139"), Generic)
+	got, err := locate(context.Background(), mustID(t, "139"), "generic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestLocatePicksLiveAddress(t *testing.T) {
 func TestLocateNoCandidates(t *testing.T) {
 	isolateRegistry(t)
 	stub(t, nil) // nothing resolves, nothing live
-	_, err := locate(context.Background(), mustID(t, "205"), Generic)
+	_, err := locate(context.Background(), mustID(t, "205"), "generic")
 	if err == nil {
 		t.Fatal("want an error when nothing resolves and no IP is on file")
 	}
@@ -107,7 +107,7 @@ func TestLocateAllDead(t *testing.T) {
 	id := mustID(t, "139")
 	seedLastIP(t, id, "10.1.10.1")
 	stub(t, []string{"10.0.0.5"}) // a dns record and a registry IP, neither live
-	_, err := locate(context.Background(), id, Generic)
+	_, err := locate(context.Background(), id, "generic")
 	if err == nil {
 		t.Fatal("want an error when no candidate answers ssh")
 	}
@@ -129,7 +129,7 @@ func TestLocateDedupes(t *testing.T) {
 	sshReachable = func(context.Context, string) bool { probes++; return true }
 	t.Cleanup(func() { resolveHost, sshReachable = origResolve, origReach })
 
-	got, err := locate(context.Background(), id, Generic)
+	got, err := locate(context.Background(), id, "generic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestLocateRejectsNonAddressCandidates(t *testing.T) {
 		"999.1.1.1",
 	}
 	stub(t, append(junk, "10.1.1.143"), "10.1.1.143")
-	got, err := locate(context.Background(), mustID(t, "139"), Generic)
+	got, err := locate(context.Background(), mustID(t, "139"), "generic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestLocateRejectsNonAddressCandidates(t *testing.T) {
 	// And when only junk is offered, locate reports no candidates at all —
 	// the junk must not even be probed.
 	stub(t, junk, junk...)
-	if _, err := locate(context.Background(), mustID(t, "139"), Generic); err == nil ||
+	if _, err := locate(context.Background(), mustID(t, "139"), "generic"); err == nil ||
 		!strings.Contains(err.Error(), "no candidate") {
 		t.Errorf("junk-only discovery should yield 'no candidate', got %v", err)
 	}

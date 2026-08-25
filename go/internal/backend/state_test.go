@@ -64,10 +64,10 @@ func registerFake(t *testing.T, be Backend) *fakePower {
 // the backend's Power is never called, so there is no refusal to explain away.
 func TestPowerOnSkipsRunningVms(t *testing.T) {
 	stubState(t, StateRunning)
-	f := registerFake(t, Parallels)
+	f := registerFake(t, "parallels")
 	id := mustID(t, "160")
 	var out bytes.Buffer
-	if was := powerOn(context.Background(), &out, id, Parallels); was != StateRunning {
+	if was := powerOn(context.Background(), &out, id, "parallels"); was != StateRunning {
 		t.Errorf("powerOn should report the prior state %q, got %q", StateRunning, was)
 	}
 	if f.called {
@@ -81,10 +81,10 @@ func TestPowerOnSkipsRunningVms(t *testing.T) {
 // The mirror case: a VM already off is not stopped again.
 func TestPowerOffSkipsStoppedVms(t *testing.T) {
 	stubState(t, StateStopped)
-	f := registerFake(t, Parallels)
+	f := registerFake(t, "parallels")
 	id := mustID(t, "160")
 	var out bytes.Buffer
-	powerOff(context.Background(), &out, id, Parallels)
+	powerOff(context.Background(), &out, id, "parallels")
 	if f.called {
 		t.Errorf("a stopped VM should not be stopped again")
 	}
@@ -97,9 +97,9 @@ func TestPowerOffSkipsStoppedVms(t *testing.T) {
 // the pre-existing blind behaviour, kept for VMs powered elsewhere.
 func TestPowerOnUnknownStateStillTries(t *testing.T) {
 	stubState(t, StateUnknown)
-	f := registerFake(t, Parallels)
+	f := registerFake(t, "parallels")
 	var out bytes.Buffer
-	powerOn(context.Background(), &out, mustID(t, "160"), Parallels)
+	powerOn(context.Background(), &out, mustID(t, "160"), "parallels")
 	if !f.called || f.verb != "start" {
 		t.Errorf("an unknown state should still issue the start verb; called=%v verb=%q", f.called, f.verb)
 	}

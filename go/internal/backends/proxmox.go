@@ -31,7 +31,11 @@ import (
 // proxmox is a Debian VM on a Proxmox host, driven through the REST API.
 type proxmox struct{}
 
-func init() { backend.Register(backend.Proxmox, proxmox{}) }
+// Proxmox is this backend's name — Proxmox VM on a Proxmox host. Stored in vm.json's
+// "backend" and passed as --backend.
+const Proxmox backend.Backend = "proxmox"
+
+func init() { backend.Register(Proxmox, proxmox{}) }
 
 func (proxmox) State(ctx context.Context, id vmid.ID) backend.State { return proxmoxState(ctx, id) }
 
