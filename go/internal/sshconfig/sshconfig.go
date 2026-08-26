@@ -53,7 +53,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
@@ -104,17 +103,19 @@ func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 // over plain SSH, independent of the mpd-proxy overlay, which is exactly
 // why they still work when it is down.
 //
-// Host keys are pinned, never ignored: every stanza points at the VM's own
-// known_hosts file (~/.mpd-virt/<NNN>/known_hosts — adoption records the key
-// on first contact) with a stable HostKeyAlias, so the pin survives DHCP
-// churn and a changed key is refused instead of silently accepted. The VM
-// key is stored under the bare name (mpd-<NNN>) and the runtime container's
-// under mpd-<NNN>-runtime; both live in the same per-VM file, which
-// `remove` retires with the VM.
+// Host keys are handled like any other SSH host: your first `ssh mpd-<NNN>`
+// prompts you to approve the key and records it in your own
+// ~/.ssh/known_hosts, and a later change trips the usual warning. The only
+// non-default touch is HostKeyAlias, which stores the entry under the stable
+// name (mpd-<NNN>, and mpd-<NNN>-runtime for the container) rather than the
+// DHCP address — so the approval survives an IP change and each VM's runtime
+// doesn't collide with the next one's under the shared HostName "runtime".
+// mpd-virt's own behind-the-scenes SSH (adopt/start, which can't stop to ask
+// you) keeps its key handling to a per-VM file, so it never writes to your
+// known_hosts and your first manual connect is a clean, normal prompt.
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)
-	knownHosts := knownHostsValue(id)
 
 	lines := []string{
 		beginMarker(id),
@@ -122,20 +123,15 @@ func render(id vmid.ID, ip, user string) string {
 		"    HostName " + runtimeHostName,
 		"    User " + user,
 		"    ProxyJump " + user + "@" + ip,
-		"    StrictHostKeyChecking accept-new",
-		"    UserKnownHostsFile " + knownHosts,
 		"    HostKeyAlias " + name + "-runtime",
 		"",
 		// Both names: the alias for typing, the address because ProxyJump
 		// above names it literally and ssh matches Host patterns against
-		// the string it was given. Without the second pattern the jump
-		// would fall back to the default known_hosts while `ssh <alias>`
-		// used the pin — same VM, two behaviours.
+		// the string it was given — so the jump to the IP gets the same
+		// HostKeyAlias as `ssh <alias>` instead of a second entry keyed by IP.
 		"Host " + VMAlias(id) + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
-		"    StrictHostKeyChecking accept-new",
-		"    UserKnownHostsFile " + knownHosts,
 		"    HostKeyAlias " + name,
 	}
 	lines = append(lines,
@@ -143,8 +139,6 @@ func render(id vmid.ID, ip, user string) string {
 		"Host "+name+"-socks",
 		"    HostName "+ip,
 		"    User "+user,
-		"    StrictHostKeyChecking accept-new",
-		"    UserKnownHostsFile "+knownHosts,
 		"    HostKeyAlias "+name,
 		"    DynamicForward "+socksPort,
 		"    ServerAliveInterval 30",
@@ -152,16 +146,6 @@ func render(id vmid.ID, ip, user string) string {
 		endMarker(id),
 	)
 	return strings.Join(lines, "\n")
-}
-
-// knownHostsValue is the per-VM known_hosts path as an ssh-config value,
-// quoted if the path carries whitespace.
-func knownHostsValue(id vmid.ID) string {
-	p := paths.KnownHosts(id)
-	if strings.ContainsAny(p, " \t") {
-		return `"` + p + `"`
-	}
-	return p
 }
 
 // Write inserts (or replaces) the managed block for a VM, creating ~/.ssh
