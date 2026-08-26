@@ -216,7 +216,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── config.json                    ← OPTIONAL: mpd-virt's own host-side settings, hand-written (default_backend, oci_mirror_location; see Backends)
 ├── backends/<name>.json           ← OPTIONAL: a backend's own config (proxmox: API endpoint + token), hand-written (see docs/proxmox.md)
-├── assets/                        ← OPTIONAL: your own tools/files (vm/bin, runtime/bin), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
+├── assets/                        ← OPTIONAL: your own tools/dotfiles (vm/bin, runtime/bin, vm/home, runtime/home), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
 ├── vm.env                         ← OPTIONAL: your env for the VM's own shells, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── runtime.env                     ← OPTIONAL: your env for every runtime, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
@@ -271,6 +271,18 @@ carries them for free — `vm/bin` is on the VM's PATH and `runtime/bin` is on
 the runtime containers' PATH (through the read-only `/opt/mpd` mount),
 exactly like mpd's own tools. One search path, VM and runtimes, no separate
 drop-in to maintain.
+
+Beyond tools, a `vm/home/` or `runtime/home/` subtree is your **dotfiles**:
+files there are seeded into the dev user's home — the VM's own home by
+`mpd --vm-setup`, a runtime's home when it is created — so a `.vimrc`, a
+`.gitconfig`, or forge `.ssh/known_hosts` follows you into every VM and
+runtime. Seed-once: a file that already exists in the home is left alone (it
+is yours once there), so an edit made in the VM sticks; delete the in-VM copy
+to re-seed from the overlay. It is the home-dir counterpart to the `bin/` PATH
+overlay — and the reason opinionated dotfiles (vim settings, which forges you
+trust) live in your overlay rather than shipping with mpd. (Despite the name,
+`vm/home/` is not an `/etc/skel`: the VM's dev account already exists, so
+mpd overlays these onto the live home rather than seeding a fresh one.)
 
 This exists so a one-off need does not become a feature here. Something
 that applies to one developer's LAN — a static route to an office gateway,
