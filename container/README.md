@@ -2,8 +2,9 @@
 
 The base image `mpd-virt create --backend=container` runs and adopts as an
 mpd VM. Pre-baked: mpd's bootstrap step 20 is applied at build time (at the
-commit `MPD_BOOTSTRAP_REF` pins — the same as `bootstrapRef` in
-`internal/cli/adopt.go`), so a VM is a pull plus a few seconds of adoption.
+ref `MPD_BOOTSTRAP_REF` selects — the same as `bootstrapRef` in
+`internal/cli/adopt.go`, `main` during development), so a VM is a pull plus a
+few seconds of adoption.
 
 ## Testing a local build
 

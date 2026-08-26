@@ -66,15 +66,22 @@ the runtime container.
 
 ## Supply-chain pins
 
-What executes on a VM before mpd is built there is pinned: mpd's three
-bootstrap scripts are fetched at a commit hash (`bootstrapRef` in
-`internal/cli/adopt.go`, mirrored by `MPD_BOOTSTRAP_REF` in `container/Containerfile`), and the Debian cloud image the utm backend
-downloads is verified against a pinned SHA-512 (`internal/backend/
-cloudinit.go`) over an https-only redirect chain. The mpd checkout itself —
-and `update` — deliberately track `mutms/mpd` main: that repo is part of the
-trusted computing base, and the checkout leaves auditable history on the VM
-that pipe-to-bash never would. Bump both pins deliberately, together with a
-review of what changed.
+What executes on a VM before mpd is built there is fetched from GitHub:
+mpd's three bootstrap scripts (`bootstrapRef` in `internal/cli/adopt.go`,
+mirrored by `MPD_BOOTSTRAP_REF` in `container/Containerfile`), and the Debian
+cloud image the utm backend downloads — the latter verified against a pinned
+SHA-512 (`internal/backend/cloudinit.go`) over an https-only redirect chain.
+The mpd checkout itself — and `update` — deliberately track `mutms/mpd` main:
+that repo is part of the trusted computing base, and the checkout leaves
+auditable history on the VM that pipe-to-bash never would.
+
+**While mpd is in active development, `bootstrapRef` tracks `main` rather than
+a commit hash** — a commit pin would have to be re-pinned and the binary
+rebuilt on every bootstrap change, and the bootstrap scripts run from the same
+repo the checkout already trusts. This widens an existing trust decision rather
+than opening a new one. A `TODO(release)` in `adopt.go` marks pinning it — and
+bumping it deliberately with a review of what changed — as a hardening step for
+the first public release. The cloud-image SHA-512 stays pinned regardless.
 
 Everything under `~/.mpd-virt` is owner-only (0700/0600, re-asserted on
 every run); nothing there — CA keys, the proxmox API token, pinned host

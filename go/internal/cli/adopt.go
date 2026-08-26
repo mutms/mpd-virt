@@ -19,17 +19,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bootstrapRef pins mpd's bootstrap scripts — the three steps that are
-// piped straight from GitHub into bash with passwordless sudo behind them,
-// before any checkout exists on the VM to audit. A commit hash, not a
-// branch: what runs is exactly what was reviewed when the pin was bumped,
-// not whatever `main` holds at that instant. Bump deliberately, like the
-// cloud-image pin, and together with MPD_BOOTSTRAP_REF in
-// container/Containerfile, which bakes step 20 into the Apple image at
-// the same ref. (The clone itself, and `update`, deliberately track mpd's
-// main — that is the platform's own trust decision, and the checkout at
-// least leaves auditable history on the VM; see docs/security.md.)
-const bootstrapRef = "9dec27a152a02670992d2d4140ef3d8517af74e7"
+// bootstrapRef selects mpd's bootstrap scripts — the three steps piped
+// straight from GitHub into bash with passwordless sudo behind them, before
+// any checkout exists on the VM to audit.
+//
+// TODO(release): pin this to a reviewed commit hash before the first public
+// release, and bump it deliberately from then on — together with
+// MPD_BOOTSTRAP_REF in container/Containerfile — like the cloud-image pin, so
+// what runs is exactly what was reviewed, not whatever `main` holds at that
+// instant. While mpd is in active development, a commit pin means every
+// bootstrap change has to be re-pinned here AND the binary rebuilt/reinstalled
+// to match, which costs more than it buys; so it tracks `main` for now. The
+// clone itself and `update` already track mpd's main regardless (see
+// docs/security.md), so this only widens an existing trust decision.
+const bootstrapRef = "main"
 
 // bootstrapBaseURL is where the bootstrap steps are fetched from, at the
 // pinned ref. Step 30 lands the checkout; everything after runs from it.

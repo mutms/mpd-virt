@@ -4,8 +4,10 @@
 
 FROM debian:13.6
 
-# Change after 20-install-software.sh is updated in mpd repository.
-ARG MPD_BOOTSTRAP_REF=9dec27a152a02670992d2d4140ef3d8517af74e7
+# TODO(release): pin to a reviewed commit before the first public release
+# (see bootstrapRef in go/internal/cli/adopt.go). Tracks main during
+# development; rebuild the image when 20-install-software.sh changes upstream.
+ARG MPD_BOOTSTRAP_REF=main
 
 ARG VERSION
 LABEL org.opencontainers.image.version="${VERSION}" \
