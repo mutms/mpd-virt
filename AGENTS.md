@@ -272,17 +272,24 @@ the runtime containers' PATH (through the read-only `/opt/mpd` mount),
 exactly like mpd's own tools. One search path, VM and runtimes, no separate
 drop-in to maintain.
 
-Beyond tools, a `vm/home/` or `runtime/home/` subtree is your **dotfiles**:
-files there are seeded into the dev user's home — the VM's own home by
-`mpd --vm-setup`, a runtime's home when it is created — so a `.vimrc`, a
-`.gitconfig`, or forge `.ssh/known_hosts` follows you into every VM and
-runtime. Seed-once: a file that already exists in the home is left alone (it
-is yours once there), so an edit made in the VM sticks; delete the in-VM copy
-to re-seed from the overlay. It is the home-dir counterpart to the `bin/` PATH
-overlay — and the reason opinionated dotfiles (vim settings, which forges you
-trust) live in your overlay rather than shipping with mpd. (Despite the name,
-`vm/home/` is not an `/etc/skel`: the VM's dev account already exists, so
-mpd overlays these onto the live home rather than seeding a fresh one.)
+Beyond tools, a `vm/home/` or `runtime/home/` subtree is your **dotfiles**,
+applied to the dev user's home in two flavours:
+
+- `home/default/` — **seeded**: copied only when the file doesn't yet exist, so
+  it is yours to edit in the box afterward (a `.vimrc`, a forge
+  `.ssh/known_hosts` you append to).
+- `home/forced/` — **overwritten** from the Mac every apply, so an edit here
+  propagates (a `.gitconfig`, tool configs you want kept in step). Edit these
+  on the Mac, not in the box.
+
+Neither ever deletes — a file you remove from the overlay stays in the home, so
+this can't lose data. Applied to the VM's home by `mpd --vm-setup` and to a
+runtime's home at create + on every `--vm-setup` (so `forced/` reaches existing
+runtimes). It is the home-dir counterpart to the `bin/` PATH overlay, and the
+reason opinionated dotfiles live in your overlay rather than shipping with mpd.
+(Despite the name, `vm/home/` is not an `/etc/skel`: the VM's dev account
+already exists, so mpd overlays onto the live home rather than seeding a fresh
+one.)
 
 This exists so a one-off need does not become a feature here. Something
 that applies to one developer's LAN — a static route to an office gateway,
