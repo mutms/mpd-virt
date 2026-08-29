@@ -155,8 +155,8 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 		User: opts.User, Host: canonIP,
 		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: id.Name(),
 	}
-	if !backend.WaitReachable(ctx, t, 300*time.Second) {
-		return "", fmt.Errorf("UTM VM %s did not come up at %s within 5 min — cloud-init may still be running or have failed; open the UTM console to inspect", name, canonIP)
+	if err := backend.WaitReachableOrWhy(ctx, t, 300*time.Second); err != nil {
+		return "", fmt.Errorf("UTM VM %s did not come up at %s within 5 min — cloud-init may still be running or have failed; open the UTM console to inspect.\n\n%w", name, canonIP, err)
 	}
 	if err := backend.WaitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
 		return "", err

@@ -154,8 +154,8 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.
 		User: opts.User, Host: ip,
 		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: name,
 	}
-	if !backend.WaitReachable(ctx, t, 300*time.Second) {
-		return "", fmt.Errorf("VM %s did not come up at %s within 5 min — `virsh console %s` to inspect", name, ip, name)
+	if err := backend.WaitReachableOrWhy(ctx, t, 300*time.Second); err != nil {
+		return "", fmt.Errorf("VM %s did not come up at %s within 5 min — `virsh console %s` to inspect.\n\n%w", name, ip, name, err)
 	}
 	if err := backend.WaitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
 		return "", err

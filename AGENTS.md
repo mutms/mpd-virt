@@ -189,6 +189,12 @@ Three verbs touch that file, and the asymmetry is deliberate:
 Entries keyed by IP are left alone throughout — an address is not
 mpd-virt's to claim.
 
+`create` refuses a number that already has a registry entry — an adopted
+VM's identity is not its to discard, and `remove` is the verb for that.
+Without one, the `~/.mpd-virt/<NNN>/` directory is the debris of a create
+that failed partway; it is cleared, because the pinned host key in it
+would refuse the new VM and send the reachability loop to its timeout.
+
 ## Registry
 
 One `~/.mpd-virt/<NNN>/vm.json` file per adopted VM — a pretty-printed JSON

@@ -8,6 +8,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,18 @@ func WaitReachable(ctx context.Context, t host.Target, timeout time.Duration) bo
 		time.Sleep(3 * time.Second)
 	}
 	return false
+}
+
+// WaitReachableOrWhy is WaitReachable plus the reason it failed — the
+// loop itself discards every error it retries past.
+func WaitReachableOrWhy(ctx context.Context, t host.Target, timeout time.Duration) error {
+	if WaitReachable(ctx, t, timeout) {
+		return nil
+	}
+	if err := t.CheckReachable(ctx); err != nil {
+		return err
+	}
+	return errors.New("no answer, and no error explaining it")
 }
 
 // --- size parsing -----------------------------------------------------------

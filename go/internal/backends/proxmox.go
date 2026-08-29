@@ -382,8 +382,8 @@ func proxmoxCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.
 		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: id.Name(),
 	}
 	fmt.Fprintf(out, "  ▶ waiting for %s at %s (cloud-init first boot) …\n", id.Name(), ip)
-	if !backend.WaitReachable(ctx, t, 300*time.Second) {
-		return "", fmt.Errorf("%s did not come up at %s within 5 min — open its console in the Proxmox UI", id.Name(), ip)
+	if err := backend.WaitReachableOrWhy(ctx, t, 300*time.Second); err != nil {
+		return "", fmt.Errorf("%s did not come up at %s within 5 min — open its console in the Proxmox UI.\n\n%w", id.Name(), ip, err)
 	}
 	if err := backend.WaitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
 		return "", err

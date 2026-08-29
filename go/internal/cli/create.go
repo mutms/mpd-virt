@@ -8,6 +8,7 @@ import (
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
 	"github.com/mutms/mpd-virt/go/internal/backends"
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,9 @@ func createCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
 			if err != nil {
+				return err
+			}
+			if err := clearLeftoverState(id); err != nil {
 				return err
 			}
 			// Fall back to the configured default_backend when --backend is
@@ -109,4 +113,29 @@ func readPubKey(path string) (string, error) {
 		return "", fmt.Errorf("public key %s is empty", path)
 	}
 	return key, nil
+}
+
+// clearLeftoverState handles ~/.mpd-virt/<NNN>/ already being there. A
+// registry entry means an adopted VM — refuse. Without one it is debris
+// from a failed create, whose pinned host key would refuse the new VM.
+func clearLeftoverState(id vmid.ID) error {
+	dir := paths.VMDir(id)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(paths.VMRecord(id)); err == nil {
+		return fmt.Errorf(`%s is already adopted (registry entry at %s).
+
+Creating over it would hang: the new VM answers with a new host key, and
+the pin recorded for the old one refuses it.
+
+    mpd-virt remove %s
+
+then create again.`, id.Name(), paths.VMRecord(id), id.String())
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("could not clear %s: %w", dir, err)
+	}
+	fmt.Printf("cleared %s (leftover from an unfinished create)\n", dir)
+	return nil
 }
