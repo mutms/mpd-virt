@@ -88,7 +88,9 @@ mkdir -p ~/.ssh && chmod 700 ~/.ssh
 touch ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
 # Read back over the ssh connection whose own host key is pinned, so the
 # new key arrives on a channel that is already trusted.
-ssh "mpd-${NNN}-vm" "sudo -n cat ${KEEP}/ssh_host_*_key.pub" \
+# The glob runs in a root shell: KEEP is 0700 root-owned, so expanding it
+# in the dev user's shell yields the literal pattern and cat fails.
+ssh "mpd-${NNN}-vm" "sudo -n bash -c 'cat ${KEEP}/ssh_host_*_key.pub'" \
     | awk -v alias="mpd-${NNN}-runtime" 'NF >= 2 { print alias, $1, $2 }' \
     >> ~/.ssh/known_hosts
 

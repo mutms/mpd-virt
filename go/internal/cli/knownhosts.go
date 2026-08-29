@@ -62,7 +62,9 @@ func vmHostKeyLines(id vmid.ID) []string {
 // stored copy — readable whether or not the runtime is running — and
 // labels them with the alias its stanza pins under.
 func runtimeHostKeyLines(ctx context.Context, t host.Target, id vmid.ID) []string {
-	raw, err := t.Line(ctx, "sudo -n cat "+runtimeSSHDir+"/ssh_host_*_key.pub 2>/dev/null || true")
+	// The glob runs in a root shell: the directory is 0700 root-owned, so
+	// expanding it in the dev user's shell yields the literal pattern.
+	raw, err := t.Line(ctx, "sudo -n bash -c 'cat "+runtimeSSHDir+"/ssh_host_*_key.pub' 2>/dev/null || true")
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return nil
 	}
