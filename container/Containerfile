@@ -2,7 +2,7 @@
 # Debian Trixie with systemd as PID 1 under plain `container run` (needs
 # `--cap-add ALL`; hostname comes from --name).
 
-FROM debian:13.6
+FROM debian:trixie
 
 # TODO(release): pin to a reviewed commit before the first public release
 # (see bootstrapRef in go/internal/cli/adopt.go). Tracks main during

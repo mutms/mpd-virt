@@ -18,7 +18,9 @@ fi
 
 echo "publishing $IMAGE:$TAG"
 
-container build --build-arg VERSION="$TAG" -t "$IMAGE:$TAG" -f Containerfile .
+# --pull --no-cache: a release is always built on the freshly pulled base
+# with current packages, never from stale local layers.
+container build --pull --no-cache --build-arg VERSION="$TAG" -t "$IMAGE:$TAG" -f Containerfile .
 container image push "$IMAGE:$TAG"
 
 echo "published $IMAGE:$TAG"
