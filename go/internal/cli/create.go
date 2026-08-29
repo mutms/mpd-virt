@@ -116,8 +116,8 @@ func readPubKey(path string) (string, error) {
 }
 
 // clearLeftoverState handles ~/.mpd-virt/<NNN>/ already being there. A
-// registry entry means an adopted VM — refuse. Without one it is debris
-// from a failed create, whose pinned host key would refuse the new VM.
+// registry entry means an adopted VM — stop. Without one, offer to delete
+// it: a host key pinned there does not match the new VM.
 func clearLeftoverState(id vmid.ID) error {
 	dir := paths.VMDir(id)
 	if _, err := os.Stat(dir); err != nil {
@@ -126,16 +126,19 @@ func clearLeftoverState(id vmid.ID) error {
 	if _, err := os.Stat(paths.VMRecord(id)); err == nil {
 		return fmt.Errorf(`%s is already adopted (registry entry at %s).
 
-Creating over it would hang: the new VM answers with a new host key, and
-the pin recorded for the old one refuses it.
-
     mpd-virt remove %s
 
 then create again.`, id.Name(), paths.VMRecord(id), id.String())
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("could not clear %s: %w", dir, err)
+
+	fmt.Printf("%s has host-side state at %s, but no registry entry.\n", id.Name(), dir)
+	fmt.Printf("Delete it to continue.\n\n")
+	if !confirmWord("delete") {
+		return fmt.Errorf("aborted — nothing changed")
 	}
-	fmt.Printf("cleared %s (leftover from an unfinished create)\n", dir)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("could not delete %s: %w", dir, err)
+	}
+	fmt.Printf("  ✓ %s deleted\n", dir)
 	return nil
 }

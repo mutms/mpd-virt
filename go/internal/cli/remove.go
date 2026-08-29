@@ -148,7 +148,8 @@ func removeCmd() *cobra.Command {
 }
 
 // confirmWord makes the operator type an exact word (the VM name for
-// remove, "uninstall" for uninstall) to confirm a trust-relevant action.
+// remove, "uninstall" for uninstall, "delete" for clearing a failed
+// create's leftovers) to confirm a trust-relevant action.
 // Anything else — including EOF on a non-interactive stdin — aborts.
 func confirmWord(want string) bool {
 	fmt.Printf("Type %s to confirm (anything else aborts): ", want)
