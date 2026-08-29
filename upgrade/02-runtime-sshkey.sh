@@ -27,12 +27,13 @@ NNN="${1:?usage: 02-runtime-sshkey.sh <NNN>}"
 echo "==> start ${NNN}"
 mpd-virt start "${NNN}"
 
-echo "==> VM: runtime host key"
-# Progress goes to stderr so stdout carries only the public keys. They are
-# read here, over the connection whose host key is already pinned, rather
-# than in a second call — sshd is restarted last, so this session survives
-# it and the pin below is in place before anything reconnects.
-PUBKEYS="$(ssh "mpd-${NNN}-vm" bash -s <<'REMOTE'
+# The remote half goes to a file rather than straight into the command
+# substitution below: macOS ships bash 3.2, whose parser matches the
+# closing `)` of a `$( )` without regard for a heredoc inside it, so
+# parentheses in the heredoc text break the script.
+REMOTE_SCRIPT="$(mktemp)"
+trap 'rm -f "${REMOTE_SCRIPT}"' EXIT
+cat > "${REMOTE_SCRIPT}" <<'REMOTE'
 set -euo pipefail
 KEEP=/var/lib/mpd/state/runtime-ssh
 
@@ -75,10 +76,16 @@ sudo podman exec "${RUNTIME}" bash -c 'cat /etc/ssh/ssh_host_*_key.pub'
 
 if [ -n "${RESTART:-}" ]; then
     sudo podman exec "${RUNTIME}" systemctl restart ssh
-    echo "    sshd restarted (established sessions are unaffected)" >&2
+    echo "    sshd restarted; established sessions are unaffected" >&2
 fi
 REMOTE
-)"
+
+echo "==> VM: runtime host key"
+# Progress goes to stderr so stdout carries only the public keys. They are
+# read here, over the connection whose host key is already pinned, rather
+# than in a second call — sshd is restarted last, so this session survives
+# it and the pin below is in place before anything reconnects.
+PUBKEYS="$(ssh "mpd-${NNN}-vm" bash -s < "${REMOTE_SCRIPT}")"
 
 echo "==> this host: pin mpd-${NNN}-runtime in ~/.ssh/known_hosts"
 # ssh-keygen -R exits 0 whether or not the entry was there, and keeps the
