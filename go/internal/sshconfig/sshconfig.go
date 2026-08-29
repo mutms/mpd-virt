@@ -113,12 +113,10 @@ func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 // mpd-virt's own behind-the-scenes SSH (adopt/start, which can't stop to ask
 // you) keeps its key handling to a per-VM file, so it never writes to your
 // known_hosts and your first manual connect is a clean, normal prompt.
-// HostKeyAliases are the names this VM's host keys are stored under in
-// the user's own ~/.ssh/known_hosts — which is NOT the set of aliases you
-// type. render() below pins the `-vm` and `-socks` stanzas under the bare
-// name and the runtime stanza under `<name>-runtime`, so those two are the
-// entries a removal has to clear. Kept beside render() on purpose: an
-// alias added there without a line here leaves an orphan entry behind.
+// HostKeyAliases are the names host keys are stored under, which are not
+// the aliases you type: render() pins `-vm` and `-socks` under the bare
+// name and the runtime stanza under `<name>-runtime`. Kept beside render()
+// — an alias added there without a line here leaves an orphan entry.
 func HostKeyAliases(id vmid.ID) []string {
 	name := id.Name()
 	return []string{name, name + "-runtime"}

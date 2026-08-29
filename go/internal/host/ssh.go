@@ -194,16 +194,10 @@ func (t Target) ScpTree(ctx context.Context, localDir, remoteDest string) error 
 	return nil
 }
 
-// ScpTreeLive is ScpTree with scp's own progress meter left on: stdout and
-// stderr go to the terminal instead of being captured, so a long copy shows
-// per-file percentage, rate and ETA.
-//
-// A captured scp says nothing for as long as the copy takes. That is right
-// for a few kilobytes of dev tools and wrong once an overlay carries
-// something big — an IDE tarball seeded through vm/home is minutes of
-// silence in the middle of an adoption, indistinguishable from a hang.
-// Callers choose by size. The cost is the error: scp has already printed
-// its own message, so this returns the exit code, not the text.
+// ScpTreeLive is ScpTree with scp's progress meter left on: output goes to
+// the terminal instead of being captured, so a long copy is not silent.
+// Callers choose by size. The error carries the exit code, not the text —
+// scp has already printed its own.
 func (t Target) ScpTreeLive(ctx context.Context, localDir, remoteDest string) error {
 	code, err := exec.Run(ctx, exec.Cmd{Name: "scp", Args: t.scpTreeArgs(localDir, remoteDest)})
 	if err != nil {

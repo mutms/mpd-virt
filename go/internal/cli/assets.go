@@ -40,11 +40,8 @@ const (
 	excludeBegin = "# BEGIN mpd-virt dev assets (managed — do not edit)"
 	excludeEnd   = "# END mpd-virt dev assets"
 
-	// scpMeterFrom is the overlay size at which the push shows scp's own
-	// progress meter instead of copying silently. A tree of dev tools is
-	// kilobytes and lands before a meter could be read; a tree carrying a
-	// seeded IDE tarball is gigabytes, and silence there reads as a hung
-	// adoption. 16 MiB is comfortably above the first and below the second.
+	// scpMeterFrom is the overlay size from which the push shows scp's
+	// progress meter rather than copying silently.
 	scpMeterFrom = 16 << 20
 )
 
@@ -79,7 +76,6 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 
 	// The tree the developer keeps, plus a manifest (what to make executable
 	// and normalise) and the fresh exclude block (what to record).
-	// Big overlays copy with scp's meter visible; small ones stay quiet.
 	if size >= scpMeterFrom {
 		fmt.Printf("  ▶ assets overlay: %d files, %s — copying to the VM\n", len(rels), humanBytes(size))
 		if err := t.ScpTreeLive(ctx, local, staging+"/assets"); err != nil {
@@ -110,10 +106,9 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 }
 
 // assetRelPaths lists the developer's files as slash-separated paths
-// relative to the assets root (vm/bin/foo, runtime/bin/bar), and their total
-// size in bytes — what the push is about to send, which decides whether it
-// shows a progress meter. Directories and macOS litter are left out — they
-// carry no meaning in the manifest.
+// relative to the assets root (vm/bin/foo, runtime/bin/bar), plus their
+// total size — what decides the progress meter. Directories and macOS
+// litter are left out; they carry no meaning in the manifest.
 func assetRelPaths(root string) ([]string, int64, error) {
 	var rels []string
 	var size int64
@@ -137,8 +132,7 @@ func assetRelPaths(root string) ([]string, int64, error) {
 	return rels, size, err
 }
 
-// humanBytes renders a byte count the way a developer reads a transfer:
-// two significant-ish digits and a binary unit.
+// humanBytes renders a byte count with a binary unit.
 func humanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

@@ -162,15 +162,32 @@ records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
 changed key is refused — by the aliases and by mpd-virt's own verbs alike.
 See `docs/security.md` for why that pin is the identity of the VM.
 
-Your own `~/.ssh/known_hosts` gets its entries from your manual connects,
-and they are keyed by `HostKeyAlias` rather than by the alias you type:
+Your own `~/.ssh/known_hosts` is separate from that per-VM file, and its
+entries are keyed by `HostKeyAlias` rather than by the alias you type:
 the `-vm` and `-socks` stanzas both pin under `mpd-<NNN>`, the bare
-runtime alias under `mpd-<NNN>-runtime`. `remove` and `uninstall` clear
-exactly those two with `ssh-keygen -R`, so re-adopting a number later is
-a clean first-contact prompt instead of a host-key-changed warning. The
-list lives in `sshconfig.HostKeyAliases`, beside the `render` that pins
-them, and a test fails if the two drift. Entries keyed by IP are left
-alone — an address is not mpd-virt's to claim.
+runtime alias under `mpd-<NNN>-runtime`. The list lives in
+`sshconfig.HostKeyAliases`, beside the `render` that pins them, and a
+test fails if the two drift.
+
+Three verbs touch that file, and the asymmetry is deliberate:
+
+- **`create` writes both entries**, so your first `ssh mpd-<NNN>` is not
+  two TOFU prompts (the VM, then the runtime it jumps to). It adds no
+  trust that create has not already taken: the VM's key is the one
+  first contact pinned, copied across rather than fetched again, and the
+  runtime's is read over that pinned channel from
+  `/var/lib/mpd/state/runtime-ssh/` on the VM — better than the prompt it
+  replaces, which approves whatever answers.
+- **`adopt` writes nothing.** An adopted VM already existed and mpd-virt
+  is meeting it for the first time; your own first `ssh` should be a real
+  trust-on-first-use, with adopt's printed fingerprint to compare against
+  the console.
+- **`remove` and `uninstall` clear both** with `ssh-keygen -R`, so
+  re-adopting a number later is a clean first-contact prompt instead of a
+  host-key-changed warning.
+
+Entries keyed by IP are left alone throughout — an address is not
+mpd-virt's to claim.
 
 ## Registry
 

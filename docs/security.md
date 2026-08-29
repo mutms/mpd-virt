@@ -39,6 +39,16 @@ the per-VM file). The pin is stored under the stable alias `mpd-<NNN>`
 (`HostKeyAlias`), so a VM that moves to a new DHCP lease keeps its
 continuity instead of getting a fresh trust-on-first-use.
 
+`create` also copies the pin into your own `~/.ssh/known_hosts`, together
+with the runtime container's host key read from the VM over that pinned
+channel — so the first `ssh mpd-<NNN>` prompts for neither hop. This
+hands over a trust decision already made rather than making a new one,
+which is why `adopt` pointedly does not do it: an adopted VM is a machine
+mpd-virt is meeting for the first time, and your first connection to it
+should be a real trust-on-first-use with the printed fingerprint to
+compare. (The runtime key is worth pinning because mpd generates one per
+runtime and never ships one in an image — see mpd's `docs/security.md`.)
+
 `remove` and `uninstall` discard that pin along with the VM: the per-VM
 file goes with `~/.mpd-virt/<NNN>/`, and the entries your own manual
 connects left in `~/.ssh/known_hosts` (`mpd-<NNN>` and

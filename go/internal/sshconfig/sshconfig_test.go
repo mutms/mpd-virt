@@ -161,10 +161,8 @@ func TestStripKeepsForeignContent(t *testing.T) {
 	}
 }
 
-// The invariant that makes removal complete: every HostKeyAlias the
-// rendered block pins must be one HostKeyAliases reports, or a `remove`
-// leaves an orphan entry in the user's known_hosts that only shows up as
-// a host-key-changed warning months later.
+// Every HostKeyAlias render() pins must be one HostKeyAliases reports, or
+// a `remove` leaves an orphan entry behind.
 func TestHostKeyAliasesCoverEveryRenderedAlias(t *testing.T) {
 	id := testID(t, 222)
 	known := map[string]bool{}
