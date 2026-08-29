@@ -113,7 +113,7 @@ func (container) Deletable() bool                       { return true }
 // Containerfile header). Only the Apple `container` runtime is supported;
 // --image overrides it, e.g. for a locally built tag.
 func DefaultContainerImage() string {
-	return "ghcr.io/mutms/mpd-virt-container-apple:13.6.1" // darwin/Apple `container`
+	return "ghcr.io/mutms/mpd-virt-container-apple:13.6.2" // darwin/Apple `container`
 }
 
 // containerExists reports whether a container of that name is already known

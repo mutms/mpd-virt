@@ -27,6 +27,11 @@ boundary is documented where it is implemented (the mpd repo's
 
 ## Host key continuity
 
+No image ships a host key: `container/Containerfile` removes the set
+`openssh-server` generates at install, and a systemd drop-in runs
+`ssh-keygen -A` before sshd on first boot, so each VM has its own. Cloud
+images do the same through cloud-init.
+
 The VM's ssh host key is what proves the machine at an address is the VM
 that was adopted — key auth cannot stand in for it (a rogue endpoint can
 accept an authentication it never verified), and adoption pushes CA material

@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 IMAGE="${IMAGE:-ghcr.io/mutms/mpd-virt-container-apple}"
-TAG="13.6.1"
+TAG="13.6.2"
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "error: working tree is not clean — commit or stash first" >&2

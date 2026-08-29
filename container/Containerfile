@@ -29,18 +29,34 @@ RUN apt-get update \
         openssh-server \
     && rm -rf /var/lib/apt/lists/* \
     && systemctl enable ssh systemd-resolved \
-    && systemctl mask systemd-modules-load.service
+    && systemctl mask systemd-modules-load.service \
+    # A host key is a secret and identifies one VM, so the image ships
+    # none: installing openssh-server generates a set, which would
+    # otherwise be the same key in every VM built from this tag — the key
+    # adopt pins as that VM's identity. The drop-in below makes each VM
+    # its own on first boot.
+    && rm -f /etc/ssh/ssh_host_*
 
-# sshd: key-only.
+# sshd: key-only, and its own host key on first boot. The empty
+# ExecStartPre clears the unit's own list: its `sshd -t` runs before any
+# appended entry and fails outright when there is no host key yet, so the
+# keygen has to be put in front of it. `ssh-keygen -A` writes only what is
+# missing, so later boots are a no-op.
 RUN set -eux; \
-    mkdir -p /run/sshd; \
+    mkdir -p /run/sshd /etc/systemd/system/ssh.service.d; \
     printf '%s\n' \
       'PasswordAuthentication no' \
       'KbdInteractiveAuthentication no' \
       'PubkeyAuthentication yes' \
       'PermitRootLogin no' \
       'UseDNS no' \
-      > /etc/ssh/sshd_config.d/10-hardening.conf
+      > /etc/ssh/sshd_config.d/10-hardening.conf; \
+    printf '%s\n' \
+      '[Service]' \
+      'ExecStartPre=' \
+      'ExecStartPre=/usr/bin/ssh-keygen -A' \
+      'ExecStartPre=/usr/sbin/sshd -t' \
+      > /etc/systemd/system/ssh.service.d/10-hostkeys.conf
 
 STOPSIGNAL SIGRTMIN+3
 ENTRYPOINT ["/sbin/init"]
