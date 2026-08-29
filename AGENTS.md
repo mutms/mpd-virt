@@ -316,6 +316,14 @@ a scratch tool — is a tool in your own tree, not a flag in this repo.
   `assets/` is the deliberate "I removed my tools" and does clear the overlay.
 - **Best-effort.** A failed overlay warns and points at `mpd-virt update
   <NNN>`; it never fails an adoption or an update.
+- **A big overlay copies with a progress meter.** Up to 16 MiB the push is
+  silent; from there it streams scp's own percentage, rate and ETA, because
+  an overlay carrying something large — an IDE tarball seeded through
+  `vm/home/default/` so new VMs skip the download — is minutes of transfer
+  that otherwise look like a hung adoption. Note it is sent in full on every
+  `adopt` and `update`: scp has no delta, so a gigabyte in the overlay is a
+  gigabyte each time, and it then lives twice on the VM (in
+  `/opt/mpd/assets/`, and in the home `mpd --vm-setup` copies it to).
 - `sudo <tool>` will not find them (sudoers `secure_path` does not include
   the directory) — same as mpd's own tools. Tools `sudo` internally.
 

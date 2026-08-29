@@ -39,6 +39,13 @@ const (
 
 	excludeBegin = "# BEGIN mpd-virt dev assets (managed — do not edit)"
 	excludeEnd   = "# END mpd-virt dev assets"
+
+	// scpMeterFrom is the overlay size at which the push shows scp's own
+	// progress meter instead of copying silently. A tree of dev tools is
+	// kilobytes and lands before a meter could be read; a tree carrying a
+	// seeded IDE tarball is gigabytes, and silence there reads as a hung
+	// adoption. 16 MiB is comfortably above the first and below the second.
+	scpMeterFrom = 16 << 20
 )
 
 // pushAssets overlays the developer's assets onto one VM's /opt/mpd/assets.
@@ -56,7 +63,7 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 	if err != nil || !fi.IsDir() {
 		return false, nil
 	}
-	rels, err := assetRelPaths(local)
+	rels, size, err := assetRelPaths(local)
 	if err != nil {
 		return false, err
 	}
@@ -72,7 +79,13 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 
 	// The tree the developer keeps, plus a manifest (what to make executable
 	// and normalise) and the fresh exclude block (what to record).
-	if err := t.ScpTree(ctx, local, staging+"/assets"); err != nil {
+	// Big overlays copy with scp's meter visible; small ones stay quiet.
+	if size >= scpMeterFrom {
+		fmt.Printf("  ▶ assets overlay: %d files, %s — copying to the VM\n", len(rels), humanBytes(size))
+		if err := t.ScpTreeLive(ctx, local, staging+"/assets"); err != nil {
+			return false, err
+		}
+	} else if err := t.ScpTree(ctx, local, staging+"/assets"); err != nil {
 		return false, err
 	}
 	manifest := ""
@@ -97,10 +110,13 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 }
 
 // assetRelPaths lists the developer's files as slash-separated paths
-// relative to the assets root (vm/bin/foo, runtime/bin/bar). Directories and
-// macOS litter are left out — they carry no meaning in the manifest.
-func assetRelPaths(root string) ([]string, error) {
+// relative to the assets root (vm/bin/foo, runtime/bin/bar), and their total
+// size in bytes — what the push is about to send, which decides whether it
+// shows a progress meter. Directories and macOS litter are left out — they
+// carry no meaning in the manifest.
+func assetRelPaths(root string) ([]string, int64, error) {
 	var rels []string
+	var size int64
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -113,9 +129,27 @@ func assetRelPaths(root string) ([]string, error) {
 			return err
 		}
 		rels = append(rels, filepath.ToSlash(rel))
+		if fi, err := d.Info(); err == nil {
+			size += fi.Size()
+		}
 		return nil
 	})
-	return rels, err
+	return rels, size, err
+}
+
+// humanBytes renders a byte count the way a developer reads a transfer:
+// two significant-ish digits and a binary unit.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
 }
 
 // excludeBlock renders the managed .git/info/exclude region: the markers
