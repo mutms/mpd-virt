@@ -160,3 +160,29 @@ func TestStripKeepsForeignContent(t *testing.T) {
 		t.Errorf("managed block survived Strip:\n%s", body)
 	}
 }
+
+// The invariant that makes removal complete: every HostKeyAlias the
+// rendered block pins must be one HostKeyAliases reports, or a `remove`
+// leaves an orphan entry in the user's known_hosts that only shows up as
+// a host-key-changed warning months later.
+func TestHostKeyAliasesCoverEveryRenderedAlias(t *testing.T) {
+	id := testID(t, 222)
+	known := map[string]bool{}
+	for _, a := range HostKeyAliases(id) {
+		known[a] = true
+	}
+	var pinned []string
+	for _, line := range strings.Split(render(id, "192.168.1.9", "dev"), "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[0] == "HostKeyAlias" {
+			pinned = append(pinned, f[1])
+		}
+	}
+	if len(pinned) == 0 {
+		t.Fatal("render() pinned no HostKeyAlias at all")
+	}
+	for _, a := range pinned {
+		if !known[a] {
+			t.Errorf("render() pins %q, which HostKeyAliases() does not report", a)
+		}
+	}
+}

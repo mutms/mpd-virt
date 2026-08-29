@@ -162,6 +162,16 @@ records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
 changed key is refused — by the aliases and by mpd-virt's own verbs alike.
 See `docs/security.md` for why that pin is the identity of the VM.
 
+Your own `~/.ssh/known_hosts` gets its entries from your manual connects,
+and they are keyed by `HostKeyAlias` rather than by the alias you type:
+the `-vm` and `-socks` stanzas both pin under `mpd-<NNN>`, the bare
+runtime alias under `mpd-<NNN>-runtime`. `remove` and `uninstall` clear
+exactly those two with `ssh-keygen -R`, so re-adopting a number later is
+a clean first-contact prompt instead of a host-key-changed warning. The
+list lives in `sshconfig.HostKeyAliases`, beside the `render` that pins
+them, and a test fails if the two drift. Entries keyed by IP are left
+alone — an address is not mpd-virt's to claim.
+
 ## Registry
 
 One `~/.mpd-virt/<NNN>/vm.json` file per adopted VM — a pretty-printed JSON

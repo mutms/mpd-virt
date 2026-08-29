@@ -39,6 +39,19 @@ the per-VM file). The pin is stored under the stable alias `mpd-<NNN>`
 (`HostKeyAlias`), so a VM that moves to a new DHCP lease keeps its
 continuity instead of getting a fresh trust-on-first-use.
 
+`remove` and `uninstall` discard that pin along with the VM: the per-VM
+file goes with `~/.mpd-virt/<NNN>/`, and the entries your own manual
+connects left in `~/.ssh/known_hosts` (`mpd-<NNN>` and
+`mpd-<NNN>-runtime`) are cleared with `ssh-keygen -R`. That is a
+deliberate discard, not a weakening — you have just typed the VM's name
+to confirm you are throwing the machine away, and the identity is part of
+it. What it buys is that a later re-adopt of the same number is a normal
+first-contact prompt, with adopt's fingerprint to compare, rather than a
+host-key-changed warning you would be tempted to clear by reflex. Nothing
+else in your `known_hosts` is touched: `ssh-keygen -R` matches the alias
+exactly, keeps the previous file as `known_hosts.old`, and entries keyed
+by IP are left alone.
+
 A legitimately re-keyed VM (rebuilt, rolled back to a snapshot) is the one
 case the refusal message names, with the exact `ssh-keygen -R` to run;
 `remove` retires the pin with the VM.

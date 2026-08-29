@@ -118,6 +118,12 @@ func removeCmd() *cobra.Command {
 				return fmt.Errorf("ssh config: %w", err)
 			}
 			pass("~/.ssh/config block removed")
+			// 3b. And the host keys those stanzas pinned, so a later
+			//     re-adopt of this number is a normal first-contact
+			//     prompt instead of a host-key-changed warning.
+			forgetHostKeys(cmd.Context(), id)
+			pass("~/.ssh/known_hosts entries removed (" +
+				strings.Join(sshconfig.HostKeyAliases(id), ", ") + ")")
 			// 4. Remove ~/.mpd-virt/<NNN>/ — registry entry, pinned host key,
 			//    per-VM CA. The root CA under conf/ survives for re-adoption.
 			if err := registry.Remove(id); err != nil {
