@@ -14,9 +14,9 @@
 #     ~/.ssh/known_hosts and the new key pinned, or the next
 #     `ssh mpd-<NNN>` is refused.
 #
-# Idempotent: the keys the old image shipped are known (their fingerprints
-# are below), so a runtime that already has its own is left alone and only
-# the known_hosts pin is refreshed.
+# Idempotent: the keys the old image shipped are known, so a runtime that
+# already has its own is left alone and only the known_hosts pin is
+# refreshed.
 #
 # Run from the mpd-virt host, once per VM. Usage: 02-runtime-sshkey.sh <NNN>
 set -euo pipefail
@@ -24,21 +24,21 @@ set -euo pipefail
 NNN="${1:?usage: 02-runtime-sshkey.sh <NNN>}"
 KEEP=/var/lib/mpd/state/runtime-ssh
 
-# The host key fingerprints baked into old delete image —
-# the ones every runtime pulled from that tag shares. Matching one is what
-# marks a runtime as not yet fixed.
-IMAGE_KEYS="SHA256:jCde2p1+4+95xjrfmNyPH9viGutsYkr99JnJewTkyQc
-SHA256:pUyT6rHpl1K8wxItNlHb+/u+5h/CjTtqRDQAQSwwGGo
-SHA256:Ifil+N5JPILCY4O4C9IxMsu42IPGYX+q4nA3i+9P8vY"
-
 echo "==> start ${NNN}"
 mpd-virt start "${NNN}"
 
 echo "==> VM: new host key for the runtime container"
-ssh "mpd-${NNN}-vm" bash -s -- "${IMAGE_KEYS}" <<'REMOTE'
+ssh "mpd-${NNN}-vm" bash -s <<'REMOTE'
 set -euo pipefail
-IMAGE_KEYS="$1"
 KEEP=/var/lib/mpd/state/runtime-ssh
+
+# The host key fingerprints baked into the old image — the ones every
+# runtime pulled from that tag shares. Matching one marks a runtime as not
+# yet fixed. Defined here rather than passed in: ssh joins its arguments
+# into one command string, so a multi-line one runs as several commands.
+IMAGE_KEYS="SHA256:jCde2p1+4+95xjrfmNyPH9viGutsYkr99JnJewTkyQc
+SHA256:pUyT6rHpl1K8wxItNlHb+/u+5h/CjTtqRDQAQSwwGGo
+SHA256:Ifil+N5JPILCY4O4C9IxMsu42IPGYX+q4nA3i+9P8vY"
 RUNTIME="$(sudo podman ps --filter label=mpd.runtime --format '{{.Names}}' | head -n 1)"
 if [ -z "${RUNTIME}" ]; then
     echo "No running runtime container. Start it with: mpd --vm-start" >&2
