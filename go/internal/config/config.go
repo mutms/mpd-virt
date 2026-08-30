@@ -21,15 +21,30 @@ type Config struct {
 	// recorded in the registry). Empty means none — --backend is then required.
 	// The name is validated by the caller against the known backends.
 	DefaultBackend string `json:"default_backend"`
+}
 
-	// OCIMirrorLocation points every adopted VM's podman at an OCI
-	// pull-through cache: when set, adopt/update write a
-	// /etc/containers/registries.conf.d drop-in mirroring the registries mpd
-	// pulls from (docker.io, ghcr.io) to this host[:port], so images are
-	// fetched once and served from the LAN. Empty means no mirror — pulls go
-	// straight upstream. The cache host is the developer's own; mpd-virt only
-	// carries the setting. Example: "devoci.mpd.test:5000".
-	OCIMirrorLocation string `json:"oci_mirror_location"`
+// BackendMirror reads the optional oci_mirror_location from
+// ~/.mpd-virt/backends/<backend>.json: an OCI pull-through cache is a property
+// of the network the backend's VMs live on (the home LAN's cache is
+// unreachable from a laptop's local VMs on the road), so each backend carries
+// its own. A missing file or key means no mirror; a present-but-malformed file
+// is an error, so a JSON typo does not silently disable the cache.
+func BackendMirror(backend string) (string, error) {
+	path := paths.BackendConfig(backend)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	var f struct {
+		OCIMirrorLocation string `json:"oci_mirror_location"`
+	}
+	if err := json.Unmarshal(body, &f); err != nil {
+		return "", fmt.Errorf("%s is not valid JSON: %w", path, err)
+	}
+	return f.OCIMirrorLocation, nil
 }
 
 // Load reads config.json. A missing file is the zero Config, not an error — the

@@ -11,10 +11,13 @@ import (
 )
 
 // The developer's OCI pull-through cache. When oci_mirror_location is set in
-// ~/.mpd-virt/config.json, every adopted VM's podman is pointed at it for the
-// registries mpd pulls from, so an image is fetched from upstream once and
-// served from the LAN thereafter. The cache host is the developer's own (site
-// specific); mpd-virt only carries the setting and writes the drop-in.
+// the VM's backend file (~/.mpd-virt/backends/<backend>.json), the VM's podman
+// is pointed at it for the registries mpd pulls from, so an image is fetched
+// from upstream once and served from the LAN thereafter. Per backend because
+// the cache is a property of the network the VMs live on: the Proxmox box at
+// home shares a LAN with the cache, a laptop's own VMs on the road do not.
+// The cache host is the developer's own (site specific); mpd-virt only
+// carries the setting and writes the drop-in.
 //
 // A /etc/containers/registries.conf.d drop-in, not a code path: podman reads
 // it natively, so image references stay unchanged and a pull falls back to
@@ -34,8 +37,8 @@ var validMirror = regexp.MustCompile(`^[a-zA-Z0-9.-]+(:[0-9]{1,5})?(/[a-zA-Z0-9.
 func registryMirrorConf(location string) string {
 	var b strings.Builder
 	b.WriteString("# Managed by mpd-virt — do not edit.\n")
-	b.WriteString("# Points podman at the OCI pull-through cache set as\n")
-	b.WriteString("# oci_mirror_location in ~/.mpd-virt/config.json on the developer's Mac.\n")
+	b.WriteString("# Points podman at the OCI pull-through cache set as oci_mirror_location\n")
+	b.WriteString("# in ~/.mpd-virt/backends/<backend>.json on the developer's Mac.\n")
 	for _, up := range mirrorUpstreams {
 		b.WriteString("\n[[registry]]\nlocation = \"" + up + "\"\n")
 		b.WriteString("[[registry.mirror]]\nlocation = \"" + location + "\"\n")
@@ -43,19 +46,19 @@ func registryMirrorConf(location string) string {
 	return b.String()
 }
 
-// pushOCIMirror converges the mirror drop-in on one VM from config.json: it
-// writes the block when a location is set, and removes the managed file when
-// it is not — so clearing the setting is honoured on the next lifecycle verb.
-// Returns the location it applied, "" when none.
+// pushOCIMirror converges the mirror drop-in on one VM from its backend's
+// config file: it writes the block when a location is set, and removes the
+// managed file when it is not — so clearing the setting is honoured on the
+// next lifecycle verb. Returns the location it applied, "" when none.
 //
 // Root-owned under /etc, so it is staged as the dev user and installed with
 // sudo (`install -D` creates registries.conf.d if a bare image lacks it).
-func pushOCIMirror(ctx context.Context, t host.Target) (string, error) {
-	cfg, err := config.Load()
+func pushOCIMirror(ctx context.Context, t host.Target, backend string) (string, error) {
+	mirror, err := config.BackendMirror(backend)
 	if err != nil {
 		return "", err
 	}
-	loc := strings.TrimSpace(cfg.OCIMirrorLocation)
+	loc := strings.TrimSpace(mirror)
 	if loc == "" {
 		// Not configured: drop any block a previous config left behind.
 		_, _ = t.Run(ctx, "sudo rm -f "+registryMirrorPath)
@@ -80,8 +83,8 @@ func pushOCIMirror(ctx context.Context, t host.Target) (string, error) {
 
 // syncOCIMirror is the best-effort wrapper the lifecycle verbs use: a cache is
 // a convenience, so a failure warns and never fails an adoption or an update.
-func syncOCIMirror(ctx context.Context, t host.Target, idPad string) {
-	loc, err := pushOCIMirror(ctx, t)
+func syncOCIMirror(ctx context.Context, t host.Target, backend, idPad string) {
+	loc, err := pushOCIMirror(ctx, t, backend)
 	if err != nil {
 		fmt.Printf("  ⚠ podman mirror config failed: %v\n    retry with: mpd-virt update %s\n", err, idPad)
 		return

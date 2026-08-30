@@ -10,3 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - First preview release
+
+### Changed
+
+- oci_mirror_location moved from config.json to backends/<name>.json — the
+  cache belongs to the network the backend's VMs live on
