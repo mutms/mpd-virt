@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +46,21 @@ const (
 	// scpMeterFrom is the overlay size from which the push shows scp's
 	// progress meter rather than copying silently.
 	scpMeterFrom = 16 << 20
+
+	// digestFile records, on the VM, the digest of the overlay it is
+	// carrying, so an unchanged tree is not copied again. Beside the
+	// exclude block this feature already owns, and git-ignored for the
+	// same reason. Delete it on the VM to force a full re-push.
+	digestFile = mpdRepoDir + "/.git/info/mpd-virt-assets.manifest"
+)
+
+// assetState is what one pushAssets call did.
+type assetState int
+
+const (
+	assetsNone    assetState = iota // no overlay on the Mac
+	assetsCurrent                   // the VM already carries this exact tree
+	assetsPushed
 )
 
 // pushAssets overlays the developer's assets onto one VM's /opt/mpd/assets.
@@ -54,23 +72,35 @@ const (
 // silently wiping every VM's overlay on the next start. An *empty* directory
 // is different: it is a deliberate "I removed my tools", so the overlay runs
 // and clears whatever a prior push left.
-func pushAssets(ctx context.Context, t host.Target) (bool, error) {
+func pushAssets(ctx context.Context, t host.Target) (assetState, error) {
 	local := paths.Assets()
 	fi, err := os.Stat(local)
 	if err != nil || !fi.IsDir() {
-		return false, nil
+		return assetsNone, nil
 	}
 	rels, size, err := assetRelPaths(local)
 	if err != nil {
-		return false, err
+		return assetsNone, err
+	}
+
+	// What the VM already carries. Copying gigabytes on every start to
+	// land the same bytes is the thing this avoids; an unreadable or
+	// missing record just means a full push.
+	digest, err := assetDigest(local, rels)
+	if err != nil {
+		return assetsNone, err
+	}
+	if r, err := t.Run(ctx, "cat "+digestFile+" 2>/dev/null || true"); err == nil &&
+		strings.TrimSpace(r.Stdout) == strings.TrimSpace(digest) && digest != "" {
+		return assetsCurrent, nil
 	}
 
 	staging, err := t.Line(ctx, "mktemp -d")
 	if err != nil {
-		return false, err
+		return assetsNone, err
 	}
 	if staging == "" {
-		return false, fmt.Errorf("mktemp -d returned nothing")
+		return assetsNone, fmt.Errorf("mktemp -d returned nothing")
 	}
 	defer func() { _, _ = t.Run(ctx, "rm -rf "+staging) }()
 
@@ -79,30 +109,62 @@ func pushAssets(ctx context.Context, t host.Target) (bool, error) {
 	if size >= scpMeterFrom {
 		fmt.Printf("  ▶ assets overlay: %d files, %s — copying to the VM\n", len(rels), humanBytes(size))
 		if err := t.ScpTreeLive(ctx, local, staging+"/assets"); err != nil {
-			return false, err
+			return assetsNone, err
 		}
 	} else if err := t.ScpTree(ctx, local, staging+"/assets"); err != nil {
-		return false, err
+		return assetsNone, err
 	}
 	manifest := ""
 	if len(rels) > 0 {
 		manifest = strings.Join(rels, "\n") + "\n"
 	}
 	if err := t.WriteRemote(ctx, manifest, staging+"/manifest", "0644"); err != nil {
-		return false, err
+		return assetsNone, err
+	}
+	if err := t.WriteRemote(ctx, digest, staging+"/digest", "0644"); err != nil {
+		return assetsNone, err
 	}
 	if len(rels) > 0 {
 		if err := t.WriteRemote(ctx, excludeBlock(rels), staging+"/exclude.block", "0644"); err != nil {
-			return false, err
+			return assetsNone, err
 		}
 	}
 
 	if r, err := t.Run(ctx, overlayScript(staging)); err != nil {
-		return false, err
+		return assetsNone, err
 	} else if r.Failed() {
-		return false, fmt.Errorf("overlay %s: %s", mpdAssetsDir, strings.TrimSpace(r.Stderr))
+		return assetsNone, fmt.Errorf("overlay %s: %s", mpdAssetsDir, strings.TrimSpace(r.Stderr))
 	}
-	return len(rels) > 0, nil
+	if len(rels) == 0 {
+		return assetsNone, nil
+	}
+	return assetsPushed, nil
+}
+
+// assetDigest fingerprints the overlay: one "<rel> <mode> <sha256>" line
+// per file, in the order assetRelPaths lists them. Content, not mtime — a
+// re-cloned or re-copied Mac tree must not read as a change.
+func assetDigest(root string, rels []string) (string, error) {
+	var b strings.Builder
+	for _, rel := range rels {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		fi, err := os.Stat(p)
+		if err != nil {
+			return "", err
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			return "", err
+		}
+		h := sha256.New()
+		_, err = io.Copy(h, f)
+		f.Close()
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "%s %04o %s\n", rel, fi.Mode().Perm(), hex.EncodeToString(h.Sum(nil)))
+	}
+	return b.String(), nil
 }
 
 // assetRelPaths lists the developer's files as slash-separated paths
@@ -214,6 +276,8 @@ if [ -d "$GITDIR" ]; then
         cat "$STAGED/exclude.block" >> "$tmp"
     fi
     mv "$tmp" "$EXCL"
+    # Last: the digest is only true once every step above succeeded.
+    cp "$STAGED/digest" "$GITDIR/info/mpd-virt-assets.manifest"
 fi
 `
 }
@@ -222,12 +286,15 @@ fi
 // are the developer's own material, so a failure to push them is never a
 // reason to fail an adoption or an update — it warns and says how to retry.
 func syncAssets(ctx context.Context, t host.Target, idPad string) {
-	pushed, err := pushAssets(ctx, t)
+	state, err := pushAssets(ctx, t)
 	if err != nil {
 		fmt.Printf("  ⚠ assets overlay failed: %v\n    retry with: mpd-virt update %s\n", err, idPad)
 		return
 	}
-	if pushed {
+	switch state {
+	case assetsPushed:
 		pass("assets overlaid → " + mpdAssetsDir + "  (vm/bin, runtime/bin on PATH)")
+	case assetsCurrent:
+		pass("assets overlay already current → " + mpdAssetsDir)
 	}
 }

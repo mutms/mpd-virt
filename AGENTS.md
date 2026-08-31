@@ -312,12 +312,26 @@ the runtime containers' PATH (through the read-only `/opt/mpd` mount),
 exactly like mpd's own tools. One search path, VM and runtimes, no separate
 drop-in to maintain.
 
+The push is skipped when the VM already carries the same bytes: a digest of
+the tree is recorded at `/opt/mpd/.git/info/mpd-virt-assets.manifest` after a
+successful overlay and compared on the next run. Large payloads therefore
+cross the wire once, not on every `start`. Delete that file on the VM to
+force a full re-push (the check does not notice files edited on the VM by
+hand).
+
+Large payloads belong outside `home/`. A Toolbox IDE backend goes in
+`~/.mpd-virt/assets/jetbrains/<app>.tgz` — one place for both audiences,
+since `/opt/mpd/assets/jetbrains/` is readable on the VM and inside every
+runtime through the read-only mount. mpd's `goland-install-app` and
+`phpstorm-install-app` read it there. Putting one under `home/` copies it
+into every home on top of the push.
+
 Beyond tools, a `vm/home/` or `runtime/home/` subtree is your **dotfiles**,
 applied to the dev user's home in two flavours:
 
 - `home/default/` — **seeded**: copied only when the file doesn't yet exist, so
   it is yours to edit in the box afterward (a `.vimrc`, a forge
-  `.ssh/known_hosts` you append to).
+  `.ssh/known_hosts` you append to). Dotfiles, not payloads.
 - `home/forced/` — **overwritten** from the Mac every apply, so an edit here
   propagates (a `.gitconfig`, tool configs you want kept in step). Edit these
   on the Mac, not in the box.
