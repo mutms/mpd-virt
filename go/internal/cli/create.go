@@ -67,11 +67,6 @@ func createCmd() *cobra.Command {
 			if err := runAdopt(cmd.Context(), id, ip, username, be); err != nil {
 				return err
 			}
-			// Only on create, never on adopt: this VM was built here a
-			// minute ago and its key is already pinned, so writing the
-			// developer's known_hosts hands over a trust decision that has
-			// been made rather than making a new one. See knownhosts.go.
-			pinHostKeys(cmd.Context(), vmTarget(id, username, ip), id)
 			return nil
 		},
 	}

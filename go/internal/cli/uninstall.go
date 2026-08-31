@@ -49,7 +49,7 @@ func uninstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("uninstall mpd-virt — stops %d VM (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA and your vm.env/runtime.env), the ssh-config blocks, and their known_hosts entries.\n", len(entries))
+			fmt.Printf("uninstall mpd-virt — stops %d VM (kept, not deleted), then wipes ~/.mpd-virt (keeping the root CA and your vm.env/runtime.env) and the ssh-config blocks.\n", len(entries))
 			if !assumeYes && !confirmWord("uninstall") {
 				fmt.Println("aborted — nothing changed")
 				return nil
@@ -63,9 +63,8 @@ func uninstallCmd() *cobra.Command {
 					fmt.Printf("  ⚠ stop %s: %v\n", e.ID.Name(), err)
 				}
 				_ = sshconfig.Strip(e.ID)
-				forgetHostKeys(cmd.Context(), e.ID)
 			}
-			pass(fmt.Sprintf("stopped %d VM; ssh-config blocks and known_hosts entries removed", len(entries)))
+			pass(fmt.Sprintf("stopped %d VM; ssh-config blocks removed", len(entries)))
 
 			// 2. Wipe ~/.mpd-virt EXCEPT the root CA (conf/caroot) and
 			//    the dev's own vm.env / runtime.env.

@@ -4,58 +4,39 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/mutms/mpd-virt/go/internal/exec"
 	"github.com/mutms/mpd-virt/go/internal/host"
 	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/sshconfig"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// The developer's own ~/.ssh/known_hosts, not the per-VM file mpd-virt
-// pins for itself (see vmTarget). `create` writes the entries, `remove`
-// and `uninstall` clear them, `adopt` does neither — see AGENTS.md.
+// Every host key mpd-virt knows about lives in the per-VM
+// ~/.mpd-virt/<NNN>/known_hosts, and the developer's own ~/.ssh/known_hosts
+// is never written: the managed ssh-config stanzas point UserKnownHostsFile
+// at that file. First contact pins the VM's key there (see vmTarget); this
+// file adds the runtime container's. See docs/security.md.
 
 // runtimeSSHDir mirrors mpd's podman.RuntimeSSHDir.
 const runtimeSSHDir = "/var/lib/mpd/state/runtime-ssh"
 
-// pinHostKeys writes this VM's host keys into the developer's
-// ~/.ssh/known_hosts, so the first `ssh mpd-<NNN>` prompts for neither
-// hop. Adds no trust create has not already taken: the VM's key is the one
-// it pinned, the runtime's is read over that pinned channel. Best-effort.
-func pinHostKeys(ctx context.Context, t host.Target, id vmid.ID) {
-	lines := append(vmHostKeyLines(id), runtimeHostKeyLines(ctx, t, id)...)
+// pinRuntimeHostKey records the runtime container's host keys, so the first
+// `ssh mpd-<NNN>` prompts for neither hop. Adds no trust the caller has not
+// already taken: the keys are read over the channel the VM's own pinned key
+// authenticates. Best-effort — an unpinned runtime is a prompt, not a
+// failure.
+func pinRuntimeHostKey(ctx context.Context, t host.Target, id vmid.ID) {
+	lines := runtimeHostKeyLines(ctx, t, id)
 	if len(lines) == 0 {
 		return
 	}
-	// Whatever this number used to be, it is not this machine.
-	forgetHostKeys(ctx, id)
-	added, err := appendKnownHosts(lines)
-	if err != nil {
-		fmt.Printf("  ⚠ could not write ~/.ssh/known_hosts: %v\n", err)
+	if err := replaceEntries(id, sshconfig.RuntimeKeyAlias(id), lines); err != nil {
+		fmt.Printf("  ⚠ could not pin the runtime host key: %v\n", err)
 		return
 	}
-	fmt.Printf("  ✓ %d host key(s) added to ~/.ssh/known_hosts (%s) — no first-connect prompt\n",
-		added, strings.Join(sshconfig.HostKeyAliases(id), ", "))
-}
-
-// vmHostKeyLines reads the key create pinned. The per-VM file is keyed by
-// the same HostKeyAlias the developer's config uses, so lines transfer
-// verbatim.
-func vmHostKeyLines(id vmid.ID) []string {
-	data, err := os.ReadFile(paths.KnownHosts(id))
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(string(data), "\n") {
-		if fields := strings.Fields(line); len(fields) >= 3 && fields[0] == id.Name() {
-			out = append(out, strings.TrimSpace(line))
-		}
-	}
-	return out
+	pass(fmt.Sprintf("runtime host key pinned (%s) — no first-connect prompt",
+		sshconfig.RuntimeKeyAlias(id)))
 }
 
 // runtimeHostKeyLines reads the runtime's public host keys from the VM's
@@ -68,7 +49,7 @@ func runtimeHostKeyLines(ctx context.Context, t host.Target, id vmid.ID) []strin
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return nil
 	}
-	alias := id.Name() + "-runtime"
+	alias := sshconfig.RuntimeKeyAlias(id)
 	var out []string
 	for _, line := range strings.Split(raw, "\n") {
 		// "<type> <base64> <comment>" → "<alias> <type> <base64>".
@@ -81,51 +62,26 @@ func runtimeHostKeyLines(ctx context.Context, t host.Target, id vmid.ID) []strin
 	return out
 }
 
-// appendKnownHosts adds the missing lines, creating ~/.ssh and the file
-// with the permissions ssh insists on.
-func appendKnownHosts(lines []string) (int, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return 0, err
-	}
-	dir := filepath.Join(home, ".ssh")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return 0, err
-	}
-	path := filepath.Join(dir, "known_hosts")
+// replaceEntries rewrites one alias's lines in the VM's known_hosts,
+// leaving every other alias alone. Replace, not append: a rebuilt runtime
+// generates a new key, and a stale line beside it is a refused connection.
+func replaceEntries(id vmid.ID, alias string, lines []string) error {
+	path := paths.EnsureKnownHosts(id)
 
-	existing := map[string]bool{}
+	var kept []string
 	if data, err := os.ReadFile(path); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
-			existing[strings.TrimSpace(line)] = true
+			if f := strings.Fields(line); len(f) > 0 && f[0] == alias {
+				continue
+			}
+			if strings.TrimSpace(line) != "" {
+				kept = append(kept, line)
+			}
 		}
+	} else if !os.IsNotExist(err) {
+		return err
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
 
-	added := 0
-	for _, line := range lines {
-		if line == "" || existing[line] {
-			continue
-		}
-		if _, err := fmt.Fprintln(f, line); err != nil {
-			return added, err
-		}
-		existing[line] = true
-		added++
-	}
-	return added, nil
-}
-
-// forgetHostKeys drops this VM's entries, so re-adopting the number later
-// is a clean first-contact prompt rather than a host-key-changed refusal.
-// `ssh-keygen -R` matches the alias exactly and keeps known_hosts.old;
-// IP-keyed entries are left alone. Silent — the caller reports.
-func forgetHostKeys(ctx context.Context, id vmid.ID) {
-	for _, alias := range sshconfig.HostKeyAliases(id) {
-		_, _ = exec.Capture(ctx, exec.Cmd{Name: "ssh-keygen", Args: []string{"-R", alias}})
-	}
+	body := strings.Join(append(kept, lines...), "\n") + "\n"
+	return os.WriteFile(path, []byte(body), 0o600)
 }

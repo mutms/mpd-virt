@@ -10,26 +10,35 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// A re-create of the same number must not stack duplicate lines.
-func TestAppendKnownHostsIsIdempotent(t *testing.T) {
+// A rebuilt runtime replaces its own alias and leaves the VM's key alone.
+func TestReplaceEntriesSwapsOneAlias(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	id := testVMID(t, 222)
 
-	lines := []string{"mpd-222 ssh-ed25519 AAAAkey1", "mpd-222-runtime ssh-ed25519 AAAAkey2"}
-	if n, err := appendKnownHosts(lines); err != nil || n != 2 {
-		t.Fatalf("first append = %d, %v; want 2, nil", n, err)
+	if err := replaceEntries(id, "mpd-222", []string{"mpd-222 ssh-ed25519 AAAAvm"}); err != nil {
+		t.Fatal(err)
 	}
-	if n, err := appendKnownHosts(lines); err != nil || n != 0 {
-		t.Fatalf("second append = %d, %v; want 0, nil", n, err)
+	if err := replaceEntries(id, "mpd-222-runtime", []string{"mpd-222-runtime ssh-ed25519 AAAAold"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceEntries(id, "mpd-222-runtime", []string{"mpd-222-runtime ssh-ed25519 AAAAnew"}); err != nil {
+		t.Fatal(err)
 	}
 
-	path := filepath.Join(home, ".ssh", "known_hosts")
+	path := filepath.Join(home, ".mpd-virt", "222", "known_hosts")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(string(data), "mpd-222 ssh-ed25519"); got != 1 {
-		t.Errorf("entry written %d times, want 1", got)
+	got := string(data)
+	if strings.Contains(got, "AAAAold") {
+		t.Errorf("stale runtime key kept:\n%s", got)
+	}
+	for _, want := range []string{"mpd-222 ssh-ed25519 AAAAvm", "mpd-222-runtime ssh-ed25519 AAAAnew"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
 	}
 	// ssh refuses a known_hosts it considers world-exposed.
 	fi, err := os.Stat(path)
@@ -39,32 +48,19 @@ func TestAppendKnownHostsIsIdempotent(t *testing.T) {
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("known_hosts mode = %v, want 0600", fi.Mode().Perm())
 	}
-	di, err := os.Stat(filepath.Join(home, ".ssh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if di.Mode().Perm() != 0o700 {
-		t.Errorf("~/.ssh mode = %v, want 0700", di.Mode().Perm())
-	}
 }
 
-// Only this VM's well-formed lines transfer out of the per-VM file.
-func TestVMHostKeyLinesSelectsThisVMOnly(t *testing.T) {
+// The developer's own ~/.ssh/known_hosts is never touched.
+func TestReplaceEntriesLeavesUserKnownHostsAlone(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	id := testVMID(t, 222)
 
-	dir := filepath.Join(home, ".mpd-virt", "222")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := replaceEntries(id, "mpd-222", []string{"mpd-222 ssh-ed25519 AAAAvm"}); err != nil {
 		t.Fatal(err)
 	}
-	body := "mpd-222 ssh-ed25519 AAAAmine\nmpd-223 ssh-ed25519 AAAAtheirs\nmpd-222 short\n\n"
-	if err := os.WriteFile(filepath.Join(dir, "known_hosts"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got := vmHostKeyLines(id)
-	if len(got) != 1 || got[0] != "mpd-222 ssh-ed25519 AAAAmine" {
-		t.Errorf("vmHostKeyLines = %v, want just this VM's well-formed line", got)
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "known_hosts")); !os.IsNotExist(err) {
+		t.Errorf("~/.ssh/known_hosts = %v, want untouched", err)
 	}
 }
 

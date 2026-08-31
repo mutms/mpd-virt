@@ -44,28 +44,31 @@ the per-VM file). The pin is stored under the stable alias `mpd-<NNN>`
 (`HostKeyAlias`), so a VM that moves to a new DHCP lease keeps its
 continuity instead of getting a fresh trust-on-first-use.
 
-`create` also copies the pin into your own `~/.ssh/known_hosts`, together
-with the runtime container's host key read from the VM over that pinned
-channel — so the first `ssh mpd-<NNN>` prompts for neither hop. This
-hands over a trust decision already made rather than making a new one,
-which is why `adopt` pointedly does not do it: an adopted VM is a machine
-mpd-virt is meeting for the first time, and your first connection to it
-should be a real trust-on-first-use with the printed fingerprint to
-compare. (The runtime key is worth pinning because mpd generates one per
-runtime and never ships one in an image — see mpd's `docs/security.md`.)
+That per-VM file is the *only* place host keys are recorded. The managed
+`~/.ssh/config` block points every stanza at it with
+`UserKnownHostsFile`, so your own `~/.ssh/known_hosts` is never written —
+not appended to, not edited with `ssh-keygen -R`. Nothing about
+verification is otherwise non-default: an unpinned key prompts, a changed
+key is refused.
 
-`remove` and `uninstall` discard that pin along with the VM: the per-VM
-file goes with `~/.mpd-virt/<NNN>/`, and the entries your own manual
-connects left in `~/.ssh/known_hosts` (`mpd-<NNN>` and
-`mpd-<NNN>-runtime`) are cleared with `ssh-keygen -R`. That is a
-deliberate discard, not a weakening — you have just typed the VM's name
-to confirm you are throwing the machine away, and the identity is part of
-it. What it buys is that a later re-adopt of the same number is a normal
-first-contact prompt, with adopt's fingerprint to compare, rather than a
-host-key-changed warning you would be tempted to clear by reflex. Nothing
-else in your `known_hosts` is touched: `ssh-keygen -R` matches the alias
-exactly, keeps the previous file as `known_hosts.old`, and entries keyed
-by IP are left alone.
+`adopt` also records the runtime container's host key there, read from
+the VM over the channel the VM's own pin authenticates, so the first
+`ssh mpd-<NNN>` prompts for neither hop. That hands over a trust decision
+already made rather than making a new one — the alternative prompt
+approves whatever answers. It is best-effort: a VM with no runtime key
+yet leaves you a normal first-connect prompt. (The runtime key is worth
+pinning because mpd generates one per runtime and never ships one in an
+image — see mpd's `docs/security.md`.) The write replaces the alias's
+existing lines, so a rebuilt runtime's new key supersedes the old one.
+
+`remove` and `uninstall` discard both pins along with the VM: they go
+with `~/.mpd-virt/<NNN>/`, one directory, nothing to unpick from a shared
+file. That is a deliberate discard, not a weakening — you have just typed
+the VM's name to confirm you are throwing the machine away, and the
+identity is part of it. What it buys is that a later re-adopt of the same
+number is a normal first-contact prompt, with adopt's fingerprint to
+compare, rather than a host-key-changed warning you would be tempted to
+clear by reflex.
 
 A legitimately re-keyed VM (rebuilt, rolled back to a snapshot) is the one
 case the refusal message names, with the exact `ssh-keygen -R` to run;

@@ -12,7 +12,8 @@
 #   - the runtime holds a key generated in the runtime;
 #   - /var/lib/mpd/state/runtime-ssh/ holds a copy, so a later
 #     `mpd --runtime-rebuild` answers with the same key;
-#   - ~/.ssh/known_hosts here pins it, or `ssh mpd-<NNN>` is refused.
+#   - ~/.mpd-virt/<NNN>/known_hosts here pins it, or `ssh mpd-<NNN>` is
+#     refused.
 #
 # Idempotent. A key generated in the container carries the comment
 # root@<container>, an image's carries the build host's — which is the
@@ -36,6 +37,12 @@ trap 'rm -f "${REMOTE_SCRIPT}"' EXIT
 cat > "${REMOTE_SCRIPT}" <<'REMOTE'
 set -euo pipefail
 KEEP=/var/lib/mpd/state/runtime-ssh
+
+# Only the public keys may reach stdout: the caller writes it into a
+# known_hosts file, and one stray line there invalidates the whole file.
+# `ssh-keygen -A` and podman both print, so stdout goes to stderr and the
+# keys are written to fd 3.
+exec 3>&1 1>&2
 
 RUNTIME="$(sudo podman ps --filter label=mpd.runtime --format '{{.Names}}' | head -n 1)"
 if [ -z "${RUNTIME}" ]; then
@@ -72,7 +79,7 @@ for f in $(sudo podman exec "${RUNTIME}" bash -c 'ls /etc/ssh/ssh_host_*'); do
 done
 echo "    stored in ${KEEP}" >&2
 
-sudo podman exec "${RUNTIME}" bash -c 'cat /etc/ssh/ssh_host_*_key.pub'
+sudo podman exec "${RUNTIME}" bash -c 'cat /etc/ssh/ssh_host_*_key.pub' >&3
 
 if [ -n "${RESTART:-}" ]; then
     sudo podman exec "${RUNTIME}" systemctl restart ssh
@@ -87,16 +94,20 @@ echo "==> VM: runtime host key"
 # it and the pin below is in place before anything reconnects.
 PUBKEYS="$(ssh "mpd-${NNN}-vm" bash -s < "${REMOTE_SCRIPT}")"
 
-echo "==> this host: pin mpd-${NNN}-runtime in ~/.ssh/known_hosts"
-# ssh-keygen -R exits 0 whether or not the entry was there, and keeps the
-# previous file as known_hosts.old. Only the runtime alias: the VM's own
-# key did not change.
-ssh-keygen -R "mpd-${NNN}-runtime" >/dev/null 2>&1 || true
+KNOWN_HOSTS=~/.mpd-virt/"${NNN}"/known_hosts
+echo "==> this host: pin mpd-${NNN}-runtime in ${KNOWN_HOSTS}"
+# The per-VM file, never ~/.ssh/known_hosts: the managed ssh-config block
+# points UserKnownHostsFile here. ssh-keygen -R exits 0 whether or not the
+# entry was there, and keeps the previous file as known_hosts.old. Only the
+# runtime alias: the VM's own key did not change.
+mkdir -p ~/.mpd-virt/"${NNN}" && chmod 700 ~/.mpd-virt/"${NNN}"
+touch "${KNOWN_HOSTS}" && chmod 600 "${KNOWN_HOSTS}"
+ssh-keygen -R "mpd-${NNN}-runtime" -f "${KNOWN_HOSTS}" >/dev/null 2>&1 || true
 
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-touch ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+# Key lines only. A line that is not one would invalidate the file for ssh.
 printf '%s\n' "${PUBKEYS}" \
-    | awk -v alias="mpd-${NNN}-runtime" 'NF >= 2 { print alias, $1, $2 }' \
-    >> ~/.ssh/known_hosts
+    | awk -v alias="mpd-${NNN}-runtime" \
+        'NF >= 2 && $1 ~ /^(ssh-|ecdsa-|sk-)/ { print alias, $1, $2 }' \
+    >> "${KNOWN_HOSTS}"
 
 echo "==> done — 'ssh mpd-${NNN}' connects with no prompt"

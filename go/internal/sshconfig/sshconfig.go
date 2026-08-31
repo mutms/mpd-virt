@@ -53,6 +53,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
@@ -67,6 +68,11 @@ func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 // VMAlias is the ssh Host name of the VM itself, as opposed to the bare
 // name, which reaches the runtime container running on it.
 func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
+
+// RuntimeKeyAlias is the HostKeyAlias the runtime stanza pins under. Not a
+// Host name you type — `ssh mpd-<NNN>` reaches the runtime — but the shared
+// HostName "runtime" would otherwise collide between VMs.
+func RuntimeKeyAlias(id vmid.ID) string { return id.Name() + "-runtime" }
 
 // runtimeHostName is what the runtime stanza connects to. Deliberately
 // the bare `runtime`, not the FQDN: with ProxyJump the *VM* resolves the
@@ -103,28 +109,30 @@ func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 // over plain SSH, independent of the mpd-proxy overlay, which is exactly
 // why they still work when it is down.
 //
-// Host keys are handled like any other SSH host: your first `ssh mpd-<NNN>`
-// prompts you to approve the key and records it in your own
-// ~/.ssh/known_hosts, and a later change trips the usual warning. The only
-// non-default touch is HostKeyAlias, which stores the entry under the stable
+// Host keys go to the per-VM ~/.mpd-virt/<NNN>/known_hosts, never to your
+// own ~/.ssh/known_hosts: UserKnownHostsFile points every stanza at the
+// same file mpd-virt's own SSH pins into, so the key adopt recorded and
+// printed the fingerprint for is the key your `ssh mpd-<NNN>` trusts.
+// Verification is otherwise stock — an unpinned key still prompts, a
+// changed one still refuses. HostKeyAlias stores each entry under a stable
 // name (mpd-<NNN>, and mpd-<NNN>-runtime for the container) rather than the
-// DHCP address — so the approval survives an IP change and each VM's runtime
+// DHCP address, so the approval survives an IP change and each VM's runtime
 // doesn't collide with the next one's under the shared HostName "runtime".
-// mpd-virt's own behind-the-scenes SSH (adopt/start, which can't stop to ask
-// you) keeps its key handling to a per-VM file, so it never writes to your
-// known_hosts and your first manual connect is a clean, normal prompt.
 // HostKeyAliases are the names host keys are stored under, which are not
 // the aliases you type: render() pins `-vm` and `-socks` under the bare
 // name and the runtime stanza under `<name>-runtime`. Kept beside render()
 // — an alias added there without a line here leaves an orphan entry.
 func HostKeyAliases(id vmid.ID) []string {
 	name := id.Name()
-	return []string{name, name + "-runtime"}
+	return []string{name, RuntimeKeyAlias(id)}
 }
 
 func render(id vmid.ID, ip, user string) string {
 	name := id.Name()
 	socksPort := strconv.Itoa(SocksPort)
+	// Quoted: ssh splits this value on whitespace, and a home directory
+	// may contain a space.
+	knownHosts := "    UserKnownHostsFile \"" + paths.KnownHosts(id) + "\""
 
 	lines := []string{
 		beginMarker(id),
@@ -132,7 +140,8 @@ func render(id vmid.ID, ip, user string) string {
 		"    HostName " + runtimeHostName,
 		"    User " + user,
 		"    ProxyJump " + user + "@" + ip,
-		"    HostKeyAlias " + name + "-runtime",
+		"    HostKeyAlias " + RuntimeKeyAlias(id),
+		knownHosts,
 		"",
 		// Both names: the alias for typing, the address because ProxyJump
 		// above names it literally and ssh matches Host patterns against
@@ -142,6 +151,7 @@ func render(id vmid.ID, ip, user string) string {
 		"    HostName " + ip,
 		"    User " + user,
 		"    HostKeyAlias " + name,
+		knownHosts,
 	}
 	lines = append(lines,
 		"",
@@ -149,6 +159,7 @@ func render(id vmid.ID, ip, user string) string {
 		"    HostName "+ip,
 		"    User "+user,
 		"    HostKeyAlias "+name,
+		knownHosts,
 		"    DynamicForward "+socksPort,
 		"    ServerAliveInterval 30",
 		"    ServerAliveCountMax 3",

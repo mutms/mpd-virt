@@ -61,12 +61,13 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		"Host mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
-		// Host keys go to the user's own known_hosts, stored under a stable
-		// alias (survives DHCP; keeps each VM's runtime from colliding under
-		// the shared HostName "runtime"). First connect is a normal
-		// interactive approval — no UserKnownHostsFile / accept-new override.
+		// Host keys go to the per-VM file, stored under a stable alias
+		// (survives DHCP; keeps each VM's runtime from colliding under the
+		// shared HostName "runtime"). Verification stays stock: no
+		// accept-new, so an unpinned key is still a normal prompt.
 		"    HostKeyAlias mpd-158\n",
 		"    HostKeyAlias mpd-158-runtime\n",
+		"    UserKnownHostsFile \"" + filepath.Join(os.Getenv("MPD_VIRT_TEST_ROOT"), "158", "known_hosts") + "\"\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("managed block should contain %q:\n%s", want, got)
@@ -80,9 +81,8 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		// anything that occupied the VM's address impersonate it.
 		"StrictHostKeyChecking no",
 		"/dev/null",
-		// The stanzas now use the user's own ~/.ssh/known_hosts with a
-		// normal interactive prompt — no per-VM file, no silent accept.
-		"UserKnownHostsFile",
+		// The per-VM file must not come with a silent accept: pinning is
+		// adopt's job, and anything unpinned is the developer's prompt.
 		"StrictHostKeyChecking accept-new",
 	} {
 		if strings.Contains(got, forbidden) {

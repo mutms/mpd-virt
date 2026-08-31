@@ -167,32 +167,34 @@ records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
 changed key is refused — by the aliases and by mpd-virt's own verbs alike.
 See `docs/security.md` for why that pin is the identity of the VM.
 
-Your own `~/.ssh/known_hosts` is separate from that per-VM file, and its
-entries are keyed by `HostKeyAlias` rather than by the alias you type:
-the `-vm` and `-socks` stanzas both pin under `mpd-<NNN>`, the bare
+**Your own `~/.ssh/known_hosts` is never written.** Every stanza carries
+`UserKnownHostsFile ~/.mpd-virt/<NNN>/known_hosts`, so your `ssh` and
+mpd-virt's own verbs read and write the one per-VM file. Nothing appends
+lines to a shared file, nothing runs `ssh-keygen -R` against one, and a
+bad write can only break the VM it belongs to.
+
+Entries there are keyed by `HostKeyAlias` rather than by the alias you
+type: the `-vm` and `-socks` stanzas both pin under `mpd-<NNN>`, the bare
 runtime alias under `mpd-<NNN>-runtime`. The list lives in
 `sshconfig.HostKeyAliases`, beside the `render` that pins them, and a
 test fails if the two drift.
 
-Three verbs touch that file, and the asymmetry is deliberate:
+Both entries are written for you, and nothing else about verification is
+non-default — an unpinned key still prompts, a changed one is still
+refused:
 
-- **`create` writes both entries**, so your first `ssh mpd-<NNN>` is not
-  two TOFU prompts (the VM, then the runtime it jumps to). It adds no
-  trust that create has not already taken: the VM's key is the one
-  first contact pinned, copied across rather than fetched again, and the
-  runtime's is read over that pinned channel from
-  `/var/lib/mpd/state/runtime-ssh/` on the VM — better than the prompt it
-  replaces, which approves whatever answers.
-- **`adopt` writes nothing.** An adopted VM already existed and mpd-virt
-  is meeting it for the first time; your own first `ssh` should be a real
-  trust-on-first-use, with adopt's printed fingerprint to compare against
-  the console.
-- **`remove` and `uninstall` clear both** with `ssh-keygen -R`, so
-  re-adopting a number later is a clean first-contact prompt instead of a
-  host-key-changed warning.
-
-Entries keyed by IP are left alone throughout — an address is not
-mpd-virt's to claim.
+- The **VM's** key is pinned by first contact (`adopt`, and `create`
+  through it), which prints the fingerprint to compare against the VM's
+  console.
+- The **runtime's** is added at the end of `adopt`, read over that
+  already-pinned channel from `/var/lib/mpd/state/runtime-ssh/` on the
+  VM (`pinRuntimeHostKey`). Best-effort: no key there means a normal
+  prompt on first connect, not a failure. It is written by alias
+  replacement, so a rebuilt runtime's new key supersedes the old line
+  instead of colliding with it.
+- **`remove` and `uninstall`** delete `~/.mpd-virt/<NNN>/`, which retires
+  both pins with the VM — so re-adopting a number later is a clean
+  first-contact prompt instead of a host-key-changed warning.
 
 `create` checks `~/.mpd-virt/<NNN>/` before it touches a backend. With a
 registry entry it stops — that is an adopted VM, and `remove` is the verb
@@ -264,7 +266,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── sans                       ← issued SAN list, so a re-issue reproduces it
 └── <NNN>/                         ← per-VM, removed by `remove`
     ├── vm.json                    ← registry record: identity + cached notes + your extra authorized_keys (see Registry above)
-    ├── known_hosts                ← the VM's pinned ssh host key (alias mpd-<NNN>); OpenSSH reads it raw, so not JSON
+    ├── known_hosts                ← pinned ssh host keys: the VM (alias mpd-<NNN>) and its runtime (mpd-<NNN>-runtime). The ssh-config stanzas point UserKnownHostsFile here; OpenSSH reads it raw, so not JSON
     └── ca/
         ├── vmCA.pem               ← this VM's signing CA, signed by the root
         └── vmCA-key.pem           ← 0600. Pushed to the VM
