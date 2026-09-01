@@ -71,9 +71,42 @@ func (parallels) Delete(context.Context, io.Writer, vmid.ID) error {
 	return fmt.Errorf("--full does not delete parallels VMs; delete it in Parallels Desktop")
 }
 
-func (parallels) Notes(context.Context, vmid.ID) string { return "" }
-func (parallels) Managed() bool                         { return true }
-func (parallels) Deletable() bool                       { return false }
+func (parallels) Notes(ctx context.Context, id vmid.ID) string {
+	return parallelsNotes(ctx, id.Name())
+}
+func (parallels) Managed() bool   { return true }
+func (parallels) Deletable() bool { return false }
+
+// parallelsNotes reads the VM's Description — the note field Parallels
+// Desktop shows in its configuration UI. It needs `-i`, which prints the
+// full record; the short listings the other helpers use omit it.
+func parallelsNotes(ctx context.Context, name string) string {
+	res, err := exec.Capture(ctx, exec.Cmd{Name: "prlctl", Args: []string{"list", name, "-i", "--json"}})
+	if err != nil || res.Failed() {
+		return ""
+	}
+	return parseParallelsNotes(res.Stdout, name)
+}
+
+// parseParallelsNotes pulls one VM's "Description" out of
+// `prlctl list <name> -i --json`. Matched by name for the same reason as
+// parseParallelsState: the same shape comes back for a full listing, and
+// another VM's note is worse than none.
+func parseParallelsNotes(stdout, name string) string {
+	var vms []struct {
+		Name        string `json:"Name"`
+		Description string `json:"Description"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &vms); err != nil {
+		return ""
+	}
+	for _, vm := range vms {
+		if strings.EqualFold(strings.TrimSpace(vm.Name), name) {
+			return strings.TrimSpace(vm.Description)
+		}
+	}
+	return ""
+}
 
 // parseParallelsState pulls one VM's "status" out of `prlctl list <name> -a
 // --json`. The name is matched rather than the first entry taken: the same JSON
