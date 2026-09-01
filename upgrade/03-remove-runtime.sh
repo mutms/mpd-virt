@@ -91,7 +91,9 @@ echo "==> VM side done"
 REMOTE
 
 echo "==> VM: remove the runtime"
-ssh "mpd-${NNN}-vm" bash -s < "${REMOTE_SCRIPT}"
+# The bare alias: `mpd-virt start` above rewrote the ssh-config block, so
+# it now reaches the VM directly.
+ssh "mpd-${NNN}" bash -s < "${REMOTE_SCRIPT}"
 
 # The developer's overlay tier moved with mpd's own: everything that was a
 # runtime tool is now a VM tool.
