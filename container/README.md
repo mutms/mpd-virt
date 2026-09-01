@@ -12,9 +12,9 @@ Build with the tag mpd-virt pins (`DefaultContainerImage()` in
 `go/internal/backend/create.go`); the local image shadows the published one:
 
 ```bash
-container build -t ghcr.io/mutms/mpd-virt-container-apple:13.6.2 container
+container build -t ghcr.io/mutms/mpd-virt-container-apple:13.6.3 container
 mpd-virt create 141 --backend=container
-container image rm ghcr.io/mutms/mpd-virt-container-apple:13.6.2   # back to the published image
+container image rm ghcr.io/mutms/mpd-virt-container-apple:13.6.3   # back to the published image
 ```
 
 ## Publishing
