@@ -288,8 +288,7 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	if err := sshconfig.Write(id, ip, username); err != nil {
 		return fmt.Errorf("ssh config: %w", err)
 	}
-	pass("~/.ssh/config block  (ssh " + id.Name() + ", " +
-		sshconfig.VMAlias(id) + " → the VM)")
+	pass("~/.ssh/config block  (ssh " + id.Name() + " → the VM)")
 
 	// --- WireGuard reachability via mpd-proxy. Best-effort: adoption is done,
 	//     so a proxy hiccup is a warning with a re-run hint, not a failure.

@@ -38,7 +38,7 @@ func useTempConfig(t *testing.T) string {
 }
 
 // The managed block carries two stanzas: the VM under the bare name,
-// its `-vm` synonym and its address, plus `-socks`. Nothing jumps any
+// and its address, plus `-socks`. Nothing jumps any
 // more — there is no second hop to reach.
 func TestWriteRendersVMAndSocksStanzas(t *testing.T) {
 	path := useTempConfig(t)
@@ -54,7 +54,7 @@ func TestWriteRendersVMAndSocksStanzas(t *testing.T) {
 	got := string(body)
 
 	for _, want := range []string{
-		"Host mpd-158 mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
+		"Host mpd-158 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
 		// Host keys go to the per-VM file, stored under a stable alias
@@ -130,7 +130,7 @@ func TestWriteReplacesLegacyBlock(t *testing.T) {
 	if strings.Contains(string(body), "mpd-158-php") {
 		t.Errorf("legacy alias survived the rewrite:\n%s", body)
 	}
-	if !strings.Contains(string(body), "mpd-158-vm") {
+	if !strings.Contains(string(body), "Host mpd-158 10.1.10.158") {
 		t.Errorf("new alias missing after rewrite:\n%s", body)
 	}
 }

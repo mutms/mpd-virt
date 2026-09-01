@@ -142,7 +142,6 @@ instructions whenever mpd-proxy isn't running.
   The developer, their IDE (PhpStorm Gateway, VS Code Remote-SSH) and
   their agent all work there, so it takes the bare name and needs no
   `ProxyJump`.
-- `mpd-<NNN>-vm` — a spelled-out synonym for the same host.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
 The address is listed as a `Host` pattern too, so `ssh <ip>` gets the

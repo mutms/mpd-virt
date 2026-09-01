@@ -6,7 +6,7 @@
 // every stanza for a VM — the VM itself and the SOCKS tier:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
-//	Host mpd-<NNN> mpd-<NNN>-vm <ip>
+//	Host mpd-<NNN> <ip>
 //	    HostName <ip>
 //	    ...
 //	Host mpd-<NNN>-socks
@@ -16,7 +16,7 @@
 //	# <<< mpd-<NNN> <<<
 //
 // The bare name reaches the VM directly: PHP, the tools and the agent all
-// run there, so there is nothing to jump to. `-vm` is a synonym for it.
+// run there, so there is nothing to jump to.
 //
 // The `-socks` alias is the SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a
 // SOCKS5 proxy on 127.0.0.1:1080 tunnelled through the VM, so a browser
@@ -52,9 +52,6 @@ const SocksPort = 1080
 
 // SocksAlias is the ssh Host name of a VM's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
-
-// VMAlias is a spelled-out synonym for the bare name.
-func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_TEST_SSH_CONFIG).
 func Path() string {
@@ -100,12 +97,12 @@ func render(id vmid.ID, ip, user string) string {
 	// may contain a space.
 	knownHosts := "    UserKnownHostsFile \"" + paths.KnownHosts(id) + "\""
 
-	// Three patterns on one stanza: the bare name you type, its `-vm`
-	// synonym, and the address — so `ssh <ip>` lands on the same
-	// HostKeyAlias instead of a second entry keyed by a DHCP address.
+	// Two patterns on one stanza: the bare name you type and the address,
+	// so `ssh <ip>` lands on the same HostKeyAlias instead of a second
+	// entry keyed by a DHCP address.
 	lines := []string{
 		beginMarker(id),
-		"Host " + name + " " + VMAlias(id) + " " + ip,
+		"Host " + name + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
 		"    HostKeyAlias " + name,
