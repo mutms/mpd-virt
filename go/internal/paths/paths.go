@@ -56,6 +56,16 @@ func Servers() string { return filepath.Join(Root(), "servers") }
 // the source of truth; the in-VM copy is dev-owned and replaced on overlay.
 func Assets() string { return filepath.Join(Root(), "assets") }
 
+// Installers is ~/.mpd-virt/installers — large third-party payloads, in
+// per-architecture subdirectories (installers/amd64, installers/arm64).
+// Separate from Assets: only the subdirectory matching a VM's architecture
+// is pushed, and an IDE backend is gigabytes that must not reach a VM that
+// cannot run it.
+func Installers() string { return filepath.Join(Root(), "installers") }
+
+// InstallersFor is the directory pushed to a VM of the given architecture.
+func InstallersFor(arch string) string { return filepath.Join(Installers(), arch) }
+
 // LanHosts is ~/.mpd-virt/conf/lan-hosts — the rendered hosts(5) file that
 // `server sync` pushes into every VM so containers resolve LAN names too.
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }

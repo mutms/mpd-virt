@@ -260,6 +260,10 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	// CA and the LAN names, nothing mpd-virt does depends on them.
 	syncAssets(ctx, t, id.String())
 
+	// The arch-matched third-party installers, if any. Same best-effort
+	// footing as the assets above.
+	syncInstallers(ctx, t, string(be), id.String())
+
 	// Their MPD_* defaults, same deal — and before the `mpd --vm-setup`
 	// below, which seeds that same path from mpd's own template only when
 	// nothing is there. Pushing first means an adopted vm starts out

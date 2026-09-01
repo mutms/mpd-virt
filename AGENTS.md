@@ -240,6 +240,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 ├── config.json                    ← OPTIONAL: mpd-virt's own host-side settings, hand-written (default_backend; see Backends)
 ├── backends/<name>.json           ← OPTIONAL: a backend's own config (proxmox: API endpoint + token), hand-written (see docs/proxmox.md)
 ├── assets/                        ← OPTIONAL: your own tools/dotfiles (vm/bin, vm/home), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
+├── installers/<arch>/             ← OPTIONAL: large third-party payloads (IDE backends), pushed to VMs of that architecture only (see Installers)
 ├── vm.env                         ← OPTIONAL: your env for the VM's own shells, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/lan-servers.md)
@@ -299,11 +300,9 @@ cross the wire once, not on every `start`. Delete that file on the VM to
 force a full re-push (the check does not notice files edited on the VM by
 hand).
 
-Large payloads belong outside `home/`. A Toolbox IDE backend goes in
-`~/.mpd-virt/assets/jetbrains/<app>.tgz`, since
-`/opt/mpd/assets/jetbrains/` is readable on the VM. mpd's
-`goland-install-app` and `phpstorm-install-app` read it there. Putting one under `home/` copies it
-into every home on top of the push.
+Large payloads belong outside `assets/` entirely — see **Installers**
+below. Putting one under `home/` copies it into every home on top of the
+push.
 
 Beyond tools, a `vm/home/` subtree is your **dotfiles**,
 applied to the dev user's home in two flavours:
@@ -359,6 +358,41 @@ a scratch tool — is a tool in your own tree, not a flag in this repo.
   `/opt/mpd/assets/`, and in the home `mpd --vm-setup` copies it to).
 - `sudo <tool>` will not find them (sudoers `secure_path` does not include
   the directory) — same as mpd's own tools. Tools `sudo` internally.
+
+## Installers
+
+`~/.mpd-virt/installers/<arch>/` holds large third-party payloads — a
+Toolbox IDE backend is the case it exists for. `adopt` and `update` push
+**only the subdirectory matching the VM's architecture** to
+`/opt/mpd/assets/installers/`, flat, so a tool on the VM opens one path
+and needs no architecture logic:
+
+```
+~/.mpd-virt/installers/
+├── amd64/goland.tgz
+└── arm64/goland.tgz      ← the only one an Apple-silicon VM receives
+```
+
+Separate from `assets/` for two reasons. They are gigabytes rather than
+dotfiles, and they are native binaries: an amd64 IDE backend unpacked on
+an arm64 VM installs without complaint and fails at launch, so the
+architecture split is what makes the push safe rather than tidy.
+
+A VM's architecture comes from its backend. `parallels`, `utm` and
+`container` are Apple silicon, so they are always `arm64`. The rest —
+`proxmox`, `libvirt`, `generic` — can be either and read an optional
+`"arch": "arm64"` from `~/.mpd-virt/backends/<name>.json`; unset means
+`amd64`. It sits with the backend rather than in `config.json` because it
+is a property of the machine those VMs run on.
+
+Digest-guarded like the assets overlay, and pushed with scp's progress
+meter unconditionally — these are the payloads where a silent multi-
+gigabyte copy looks like a hung adoption. Best-effort: a failure warns
+and never fails an adoption or an update.
+
+mpd's `goland-archive-app` makes one and prints the `scp` line with the
+architecture already filled in; `goland-install-app` unpacks whatever
+landed.
 
 ## Developer env
 

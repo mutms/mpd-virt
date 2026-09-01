@@ -65,3 +65,56 @@ func Load() (Config, error) {
 	}
 	return c, nil
 }
+
+// Architectures a VM can be. mpd builds nothing per-arch itself; this
+// exists so the right third-party installers reach a VM (see
+// paths.Installers).
+const (
+	ArchAMD64 = "amd64"
+	ArchARM64 = "arm64"
+)
+
+// fixedArch is the architecture a backend can only ever be: Parallels, UTM
+// and Apple container run on Apple silicon. The rest can be either, so they
+// read `arch` from their backend config and fall back to amd64.
+var fixedArch = map[string]string{
+	"parallels": ArchARM64,
+	"utm":       ArchARM64,
+	"container": ArchARM64,
+}
+
+// BackendArch reports the architecture of VMs on a backend, from the
+// optional `arch` key in ~/.mpd-virt/backends/<backend>.json.
+//
+// Backends that can only be one architecture ignore the key. For the rest —
+// proxmox, libvirt, generic — it is a property of the machine the VMs run
+// on, not of mpd, so it lives beside that backend's other settings. Unset
+// means amd64: it is what a server and a Linux workstation still usually
+// are, and an arm64 host is the deliberate case worth writing down.
+func BackendArch(backend string) (string, error) {
+	if a, ok := fixedArch[backend]; ok {
+		return a, nil
+	}
+	body, err := os.ReadFile(paths.BackendConfig(backend))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ArchAMD64, nil
+		}
+		return "", err
+	}
+	var f struct {
+		Arch string `json:"arch"`
+	}
+	if err := json.Unmarshal(body, &f); err != nil {
+		return "", fmt.Errorf("%s is not valid JSON: %w", paths.BackendConfig(backend), err)
+	}
+	switch f.Arch {
+	case "":
+		return ArchAMD64, nil
+	case ArchAMD64, ArchARM64:
+		return f.Arch, nil
+	default:
+		return "", fmt.Errorf("%s: arch %q is not one of %s, %s",
+			paths.BackendConfig(backend), f.Arch, ArchAMD64, ArchARM64)
+	}
+}
