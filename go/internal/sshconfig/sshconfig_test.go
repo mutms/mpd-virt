@@ -37,12 +37,10 @@ func useTempConfig(t *testing.T) string {
 	return path
 }
 
-// The managed block carries exactly three stanzas: the bare name for the
-// runtime, `-vm` for the VM, and `-socks`. The naive slice edit that
-// would render runtime.runtime.<zone> is what this test pins against, and
-// the bare name must never resolve to the VM's IP again — that was the
-// old meaning and silently landing on the VM is the regression to catch.
-func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
+// The managed block carries two stanzas: the VM under the bare name,
+// its `-vm` synonym and its address, plus `-socks`. Nothing jumps any
+// more — there is no second hop to reach.
+func TestWriteRendersVMAndSocksStanzas(t *testing.T) {
 	path := useTempConfig(t)
 	id := testID(t, 158)
 
@@ -56,17 +54,13 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 	got := string(body)
 
 	for _, want := range []string{
-		"Host mpd-158\n    HostName runtime\n",
-		"    ProxyJump dev@10.1.10.158\n",
-		"Host mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
+		"Host mpd-158 mpd-158-vm 10.1.10.158\n    HostName 10.1.10.158\n",
 		"Host mpd-158-socks\n",
 		"    DynamicForward 1080\n",
 		// Host keys go to the per-VM file, stored under a stable alias
-		// (survives DHCP; keeps each VM's runtime from colliding under the
-		// shared HostName "runtime"). Verification stays stock: no
-		// accept-new, so an unpinned key is still a normal prompt.
+		// that survives DHCP. Verification stays stock: no accept-new, so
+		// an unpinned key is still a normal prompt.
 		"    HostKeyAlias mpd-158\n",
-		"    HostKeyAlias mpd-158-runtime\n",
 		"    UserKnownHostsFile \"" + filepath.Join(os.Getenv("MPD_VIRT_TEST_ROOT"), "158", "known_hosts") + "\"\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -74,8 +68,12 @@ func TestWriteRendersSingleRuntimeStanza(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"-php", "-node", "-util", "runtime.runtime.", "runtime.158.mpd.test",
-		"Host mpd-158\n    HostName 10.1.10.158\n", // the pre-swap meaning
+		// One machine, one hop: a ProxyJump or a `runtime` target here
+		// would be a leftover from the runtime-container layout.
+		// (Retiring an older block is TestWriteReplacesLegacyBlock's job,
+		// not a substring match — "-php" would trip on any future alias.)
+		"ProxyJump",
+		"HostName runtime",
 		"Host mpd-158-runtime\n",
 		// The old disabled-verification block must never come back: it let
 		// anything that occupied the VM's address impersonate it.

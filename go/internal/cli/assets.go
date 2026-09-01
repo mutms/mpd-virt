@@ -22,11 +22,9 @@ import (
 // as a feature here.
 //
 // They land in /opt/mpd/assets so mpd's own wiring carries them for free:
-// a tool in vm/bin is on the VM's PATH, a tool in runtime/bin is on the
-// runtime containers' PATH (through the read-only /opt/mpd mount), exactly
-// like mpd's own tools — one search path, VM and runtimes, no second
-// profile.d drop-in. The Mac layout mirrors mpd's: a VM tool goes in
-// ~/.mpd-virt/assets/vm/bin, a runtime tool in ~/.mpd-virt/assets/runtime/bin.
+// a tool in vm/bin is on the VM's PATH exactly like mpd's own tools — one
+// search path, no second profile.d drop-in. The Mac layout mirrors mpd's:
+// a tool goes in ~/.mpd-virt/assets/vm/bin.
 //
 // An overlay, not a mirror: mpd's own files under /opt/mpd/assets are never
 // touched, and the files this drops are recorded in a managed block in
@@ -168,7 +166,7 @@ func assetDigest(root string, rels []string) (string, error) {
 }
 
 // assetRelPaths lists the developer's files as slash-separated paths
-// relative to the assets root (vm/bin/foo, runtime/bin/bar), plus their
+// relative to the assets root (vm/bin/foo), plus their
 // total size — what decides the progress meter. Directories and macOS
 // litter are left out; they carry no meaning in the manifest.
 func assetRelPaths(root string) ([]string, int64, error) {
@@ -293,7 +291,7 @@ func syncAssets(ctx context.Context, t host.Target, idPad string) {
 	}
 	switch state {
 	case assetsPushed:
-		pass("assets overlaid → " + mpdAssetsDir + "  (vm/bin, runtime/bin on PATH)")
+		pass("assets overlaid → " + mpdAssetsDir + "  (vm/bin on PATH)")
 	case assetsCurrent:
 		pass("assets overlay already current → " + mpdAssetsDir)
 	}

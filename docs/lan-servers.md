@@ -20,7 +20,7 @@ naming rules in the next section.
 ## Why bother
 
 Everything in this setup already trusts the mpd root CA: the Mac's System
-Keychain, every VM's three trust stores, every runtime container. Giving a LAN
+Keychain, every VM's three trust stores. Giving a LAN
 machine a name under `mpd.test` lets it join that trust relationship instead
 of standing outside it — scripting a hypervisor's REST API, or a CI runner
 cloning over HTTPS, with no `--insecure`, no `GIT_SSL_NO_VERIFY`, and no

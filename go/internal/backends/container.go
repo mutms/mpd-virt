@@ -110,7 +110,7 @@ func (container) Deletable() bool                       { return true }
 // adoption would otherwise do. The tag is <debian point release>.<build>; bump
 // the build number here when the image is republished because Debian has
 // drifted far enough to slow adoption's package step again (see the
-// Containerfile header). Only the Apple `container` runtime is supported;
+// Containerfile header). Only the Apple `container` VM is supported;
 // --image overrides it, e.g. for a locally built tag.
 func DefaultContainerImage() string {
 	return "ghcr.io/mutms/mpd-virt-container-apple:13.6.2" // darwin/Apple `container`
@@ -183,7 +183,7 @@ func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 // containerIP reads a native container's current vmnet address from
 // `container inspect` — the authoritative source, since the address changes on
 // every start and the name does not resolve through the OS. Empty on any
-// failure (runtime absent, container stopped), so locate falls back.
+// failure (container stopped), so locate falls back.
 func containerIP(ctx context.Context, name string) string {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"inspect", name}})
 	if err != nil || res.Failed() {

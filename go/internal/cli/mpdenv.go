@@ -11,17 +11,13 @@ import (
 )
 
 // The developer's own general-purpose environment, carried from the Mac into
-// every VM mpd-virt owns: ~/.mpd-virt/vm.env → the VM's own shells, and
-// ~/.mpd-virt/runtime.env → every runtime shell. Both land in mpd's
-// /var/lib/mpd/env, and mpd sources each into the corresponding shell's
-// ~/.bashrc (vm.env on the VM, runtime.env in the runtime — the latter
-// bind-mounted RO into the container). Ambient environment, not part of
-// mpd's mpd.env config layering.
+// every VM mpd-virt owns: ~/.mpd-virt/vm.env → the VM's shells. It lands in
+// mpd's /var/lib/mpd/env, and mpd sources it from ~/.bashrc. Ambient
+// environment, not part of mpd's mpd.env config layering.
 //
-// Scoped to the *developer*, not the VM: a VM runs one runtime, so "per-VM"
-// was a distinction without a difference, while a developer routinely runs
-// several VMs that should agree on how they behave. Holding the files here
-// and pushing them is what makes one edit reach all of them.
+// Scoped to the *developer*, not the VM: a developer routinely runs several
+// VMs that should agree on how they behave. Holding the file here and
+// pushing it is what makes one edit reach all of them.
 //
 // Pushed as the dev user, not root: /var/lib/mpd/env is dev-owned, and mpd's
 // own --vm-setup only ensures that directory exists (it seeds nothing), so
@@ -35,7 +31,6 @@ type envFile struct {
 func envFiles() []envFile {
 	return []envFile{
 		{paths.VMEnv(), "/var/lib/mpd/env/vm.env", "vm.env"},
-		{paths.RuntimeEnv(), "/var/lib/mpd/env/runtime.env", "runtime.env"},
 	}
 }
 
@@ -71,8 +66,7 @@ func pushEnvFile(ctx context.Context, t host.Target, f envFile) (bool, error) {
 // syncEnv is the best-effort wrapper the lifecycle verbs use. Like the assets
 // overlay, these are the developer's own material: failing to carry one is
 // never a reason to fail an adoption, a start, or an update. Nothing needs
-// restarting after — each file takes effect in the next shell that sources it
-// (runtime.env in the runtime, through the directory mount; vm.env on the VM).
+// restarting after — it takes effect in the next shell that sources it.
 func syncEnv(ctx context.Context, t host.Target, idPad string) {
 	for _, f := range envFiles() {
 		pushed, err := pushEnvFile(ctx, t, f)

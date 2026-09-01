@@ -84,7 +84,7 @@ func setupReachability(ctx context.Context, t host.Target, id vmid.ID, ip string
 		Endpoint:  fmt.Sprintf("%s:%d", ip, wgListenPort),
 		// Route the whole 10.163.<NNN>.0/24 container subnet over the tunnel —
 		// that is the tunnel's entire purpose: the Mac browses project URLs
-		// served at runtime-container IPs, and reaches databases and service
+		// served on the VM's .2, and reaches databases and service
 		// containers directly. DNS also lives on the gateway .1. The VM-side
 		// nft rule (mpd vm-setup) exempts wg0 and seals the subnet only from
 		// the LAN/public interface.
@@ -203,8 +203,7 @@ func startCmd() *cobra.Command {
 			// /opt/mpd/assets at adoption and survive reboots, so the frequent
 			// `start` skips the trip — edit-and-repush is `mpd-virt update`.
 			// Same loop for the developer's MPD_* defaults, and nothing to
-			// republish after it — mpd re-reads the file per command, and
-			// the runtime sees it through a directory mount.
+			// republish after it — mpd re-reads the file per command.
 			syncEnv(cmd.Context(), t, id.String())
 			// And the extra ssh keys the developer authorized in vm.json — a
 			// bastion, a second device. e carries them from the Load above.

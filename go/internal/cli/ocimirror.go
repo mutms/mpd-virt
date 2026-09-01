@@ -25,7 +25,8 @@ import (
 // cert the VM already trusts.
 const registryMirrorPath = "/etc/containers/registries.conf.d/50-mpd-mirror.conf"
 
-// mirrorUpstreams are the registries mpd's runtimes pull from; only these gain
+// mirrorUpstreams are the registries mpd pulls database and service images
+// from; only these gain
 // a mirror. Anything else a project pulls goes straight upstream.
 var mirrorUpstreams = []string{"docker.io", "ghcr.io"}
 

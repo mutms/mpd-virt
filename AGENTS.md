@@ -13,7 +13,7 @@ bootstraps them over SSH, installs the in-VM `mpd` platform, issues their
 certificates from a local root CA, and wires host-side reachability. A single
 Go binary built from `go/`; no Xcode, no Swift.
 
-The family: **mpd** runs inside each VM (projects, runtime containers, DNS,
+The family: **mpd** runs inside each VM (projects, the dev stack, DNS,
 TLS); **mpd-virt** (this repo) is the host side and owns the root CA;
 [mpd-proxy](https://github.com/mutms/mpd-proxy) is the optional root-only
 WireGuard + split-DNS helper for transparent `*.mpd.test`;
@@ -106,7 +106,7 @@ flavors and the API token setup.
 | `list` (`ls`)      | `--json`                                                                                        | Registered VMs, with a live `:22` reachability probe. The `NOTES` column (second, beside `NNN` — the two you read together to pick a VM for `start`/`stop`) shows a proxmox VM's Notes (the API's config `description`), first line only, trimmed to ~20 chars and stripped of control characters. It is cached in the VM's `vm.json` record on every successful read and shown from there when the Proxmox host is unreachable or the VM is off. Blank for every other backend and for a VM with no Notes. A row prints green only when its VM is reachable now (SSH `up`) **and** live on the mpd-proxy overlay (membership queried once over the proxy's control socket) — the at-a-glance answer to which VMs this host actually reaches. A stopped or down VM still in the peer list stays plain (it is not reachable), and an `up` row that is *not* green is powered but off the overlay, so its `10.163.<NNN>.x` services are unreachable. Colour is suppressed when stdout is not a terminal or `NO_COLOR` is set; `--json` reports it as an `overlay` boolean.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `server …`         | `add / list / delete / cert / sync`                                                             | Manage LAN service hosts (non-VM machines) and their certs — see [`docs/lan-servers.md`](docs/lan-servers.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `ca [export]`      | `--path=`                                                                                       | Print the root CA's public certificate (to install in another host's trust store).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `uninstall`        | `--yes`                                                                                         | Stop every VM (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA and your `vm.env`/`runtime.env`**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `uninstall`        | `--yes`                                                                                         | Stop every VM (kept, re-adoptable), wipe `~/.mpd-virt` **except the root CA and your `vm.env`**, strip ssh-config blocks, and report the follow-ups it won't do for you (mpd-proxy, keychain, binary).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## Reachability: two tiers
 
@@ -138,28 +138,20 @@ instructions whenever mpd-proxy isn't running.
 
 `adopt`/`start` write one managed block per VM into `~/.ssh/config`:
 
-- `mpd-<NNN>` — the unified runtime container, via `ProxyJump` through the
-  VM (works with or without the overlay, since the jump rides the VM's
-  sshd). The bare name goes here because it is where the developer, their
-  IDE (PhpStorm Gateway, VS Code Remote-SSH) and their agent actually work.
-- `mpd-<NNN>-vm` — the VM itself: `mpd`, podman, the assets tree.
+- `mpd-<NNN>` — the VM: `mpd`, podman, PHP, the tools, the assets tree.
+  The developer, their IDE (PhpStorm Gateway, VS Code Remote-SSH) and
+  their agent all work there, so it takes the bare name and needs no
+  `ProxyJump`.
+- `mpd-<NNN>-vm` — a spelled-out synonym for the same host.
 - `mpd-<NNN>-socks` — `DynamicForward 1080`, the SOCKS tier above.
 
-The runtime stanza's `HostName` is the bare `runtime`, not the FQDN: with
-`ProxyJump` the *VM* resolves the target, and mpd publishes `runtime` as
-an alias on the runtime's line in the VM's `/etc/hosts`. That makes the
-block directly transcribable into an SSH app that offers a jump-host field
-but reads no config file (Terminus on an iPad, say) — **jump =
-`mpd-<NNN>-vm` at the VM's address, host = `runtime`**.
+The address is listed as a `Host` pattern too, so `ssh <ip>` gets the
+same `HostKeyAlias` instead of a second entry keyed by a DHCP address.
 
-Host side only. Inside the VM the bare `mpd-<NNN>` is that machine's own
-hostname, so mpd's in-VM aliases for the runtime stay `runtime` and
-`mpd-<NNN>-runtime` (see the sibling repo's `vm.EnsureSSHConfig`). The
-runtime's prompt renders `mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, so the
-prompt always echoes the alias you typed — cosmetic only, no hostname is
-changed.
+Host side only. Inside the VM there is nothing to alias: you are already
+on the machine.
 
-All ride plain SSH to the VM, so they work even when mpd-proxy is down.
+Both ride plain SSH to the VM, so they work even when mpd-proxy is down.
 
 Every stanza pins the VM's ssh host key: first contact (adopt/create)
 records it into `~/.mpd-virt/<NNN>/known_hosts` under the stable alias
@@ -174,26 +166,18 @@ lines to a shared file, nothing runs `ssh-keygen -R` against one, and a
 bad write can only break the VM it belongs to.
 
 Entries there are keyed by `HostKeyAlias` rather than by the alias you
-type: the `-vm` and `-socks` stanzas both pin under `mpd-<NNN>`, the bare
-runtime alias under `mpd-<NNN>-runtime`. The list lives in
+type: every stanza pins under `mpd-<NNN>`. The list lives in
 `sshconfig.HostKeyAliases`, beside the `render` that pins them, and a
 test fails if the two drift.
 
-Both entries are written for you, and nothing else about verification is
-non-default — an unpinned key still prompts, a changed one is still
-refused:
+Nothing about verification is non-default — an unpinned key still
+prompts, a changed one is still refused:
 
 - The **VM's** key is pinned by first contact (`adopt`, and `create`
   through it), which prints the fingerprint to compare against the VM's
   console.
-- The **runtime's** is added at the end of `adopt`, read over that
-  already-pinned channel from `/var/lib/mpd/state/runtime-ssh/` on the
-  VM (`pinRuntimeHostKey`). Best-effort: no key there means a normal
-  prompt on first connect, not a failure. It is written by alias
-  replacement, so a rebuilt runtime's new key supersedes the old line
-  instead of colliding with it.
 - **`remove` and `uninstall`** delete `~/.mpd-virt/<NNN>/`, which retires
-  both pins with the VM — so re-adopting a number later is a clean
+  the pin with the VM — so re-adopting a number later is a clean
   first-contact prompt instead of a host-key-changed warning.
 
 `create` checks `~/.mpd-virt/<NNN>/` before it touches a backend. With a
@@ -256,9 +240,8 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── utm-staging/<name>/        ← disk + cidata seed while UTM imports them (transient)
 ├── config.json                    ← OPTIONAL: mpd-virt's own host-side settings, hand-written (default_backend; see Backends)
 ├── backends/<name>.json           ← OPTIONAL: a backend's own config (proxmox: API endpoint + token), hand-written (see docs/proxmox.md)
-├── assets/                        ← OPTIONAL: your own tools/dotfiles (vm/bin, runtime/bin, vm/home, runtime/home), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
+├── assets/                        ← OPTIONAL: your own tools/dotfiles (vm/bin, vm/home), overlaid onto /opt/mpd/assets in every VM (see Developer assets)
 ├── vm.env                         ← OPTIONAL: your env for the VM's own shells, pushed into every VM — SURVIVES `uninstall` (see Developer env)
-├── runtime.env                     ← OPTIONAL: your env for every runtime, pushed into every VM — SURVIVES `uninstall` (see Developer env)
 ├── proxy/                         ← mpd-proxy's control socket dir (0700, created and used by mpd-proxy; socket dies with the proxy)
 ├── servers/<name>/                ← LAN service hosts (see docs/lan-servers.md)
 │   ├── env                        ← MPD_SERVER_{NAME,IP}
@@ -266,7 +249,7 @@ Saves the lifecycle verbs do (`adopt`, `start`) never wipe them:
 │   └── sans                       ← issued SAN list, so a re-issue reproduces it
 └── <NNN>/                         ← per-VM, removed by `remove`
     ├── vm.json                    ← registry record: identity + cached notes + your extra authorized_keys (see Registry above)
-    ├── known_hosts                ← pinned ssh host keys: the VM (alias mpd-<NNN>) and its runtime (mpd-<NNN>-runtime). The ssh-config stanzas point UserKnownHostsFile here; OpenSSH reads it raw, so not JSON
+    ├── known_hosts                ← the VM's pinned ssh host key (alias mpd-<NNN>). The ssh-config stanzas point UserKnownHostsFile here; OpenSSH reads it raw, so not JSON
     └── ca/
         ├── vmCA.pem               ← this VM's signing CA, signed by the root
         └── vmCA-key.pem           ← 0600. Pushed to the VM
@@ -285,10 +268,10 @@ off the developer's real files; production always uses the real paths.
 Keeping the root CA across `remove` and `uninstall` is deliberate: a re-adopt
 reuses the same trust anchor, so you never have to re-trust a fresh-fingerprint
 CA. Delete `caroot/` by hand only when you truly want a new one. Your
-`vm.env` and `runtime.env` survive `uninstall` for a different reason —
+`vm.env` survives `uninstall` for a different reason —
 mpd-virt never wrote them, so it cannot write them back; nothing this tool
 generated is worth losing your own env over. Delete them by hand too. `~/.mpd/` is
-**not** created on the host — that path is exclusively the in-VM runtime state
+**not** created on the host — that path is exclusively the in-VM state
 directory inside each mpd VM.
 
 The certificate design (why there are two CAs, name constraints, what a
@@ -299,18 +282,16 @@ compromised VM can and cannot forge) and the trust model live in
 
 `~/.mpd-virt/assets/` is an optional directory of **your own** tools and
 files — private hacks, experiments, site-specific wiring. It mirrors mpd's
-own asset layout, so a VM tool goes in `~/.mpd-virt/assets/vm/bin/` and a
-runtime tool in `~/.mpd-virt/assets/runtime/bin/`. `adopt` and `update`
+own asset layout, so a tool goes in `~/.mpd-virt/assets/vm/bin/`.
+`adopt` and `update`
 overlay it onto mpd's own tree at `/opt/mpd/assets/` on every VM; files in a
 `bin/` are made executable there (no `chmod +x` needed on the Mac). Nothing
 else happens: mpd-virt carries the files and never runs, reads, or
 interprets them.
 
 Landing in `/opt/mpd/assets/` is the whole point: mpd's own wiring then
-carries them for free — `vm/bin` is on the VM's PATH and `runtime/bin` is on
-the runtime containers' PATH (through the read-only `/opt/mpd` mount),
-exactly like mpd's own tools. One search path, VM and runtimes, no separate
-drop-in to maintain.
+carries them for free — `vm/bin` is on the VM's PATH, exactly like mpd's
+own tools. One search path, no separate drop-in to maintain.
 
 The push is skipped when the VM already carries the same bytes: a digest of
 the tree is recorded at `/opt/mpd/.git/info/mpd-virt-assets.manifest` after a
@@ -320,13 +301,12 @@ force a full re-push (the check does not notice files edited on the VM by
 hand).
 
 Large payloads belong outside `home/`. A Toolbox IDE backend goes in
-`~/.mpd-virt/assets/jetbrains/<app>.tgz` — one place for both audiences,
-since `/opt/mpd/assets/jetbrains/` is readable on the VM and inside every
-runtime through the read-only mount. mpd's `goland-install-app` and
-`phpstorm-install-app` read it there. Putting one under `home/` copies it
+`~/.mpd-virt/assets/jetbrains/<app>.tgz`, since
+`/opt/mpd/assets/jetbrains/` is readable on the VM. mpd's
+`goland-install-app` and `phpstorm-install-app` read it there. Putting one under `home/` copies it
 into every home on top of the push.
 
-Beyond tools, a `vm/home/` or `runtime/home/` subtree is your **dotfiles**,
+Beyond tools, a `vm/home/` subtree is your **dotfiles**,
 applied to the dev user's home in two flavours:
 
 - `home/default/` — **seeded**: copied only when the file doesn't yet exist, so
@@ -337,9 +317,9 @@ applied to the dev user's home in two flavours:
   on the Mac, not in the box.
 
 Neither ever deletes — a file you remove from the overlay stays in the home, so
-this can't lose data. Applied to the VM's home by `mpd --vm-setup` and to a
-runtime's home at create + on every `--vm-setup` (so `forced/` reaches existing
-runtimes). It is the home-dir counterpart to the `bin/` PATH overlay, and the
+this can't lose data. Applied to the VM's home by `mpd --vm-setup` on every
+run (so `forced/` reaches existing VMs). It is the home-dir counterpart to
+the `bin/` PATH overlay, and the
 reason opinionated dotfiles live in your overlay rather than shipping with mpd.
 (Despite the name, `vm/home/` is not an `/etc/skel`: the VM's dev account
 already exists, so mpd overlays onto the live home rather than seeding a fresh
@@ -373,8 +353,7 @@ a scratch tool — is a tool in your own tree, not a flag in this repo.
 - **A big overlay copies with a progress meter.** Up to 16 MiB the push is
   silent; from there it streams scp's own percentage, rate and ETA, because
   an overlay carrying something large — an IDE tarball seeded through
-  `vm/home/default/` or `runtime/home/default/` so new VMs and runtimes
-  skip the download — is minutes of transfer
+  `vm/home/default/` so new VMs skip the download — is minutes of transfer
   that otherwise look like a hung adoption. Note it is sent in full on every
   `adopt` and `update`: scp has no delta, so a gigabyte in the overlay is a
   gigabyte each time, and it then lives twice on the VM (in
@@ -384,31 +363,25 @@ a scratch tool — is a tool in your own tree, not a flag in this repo.
 
 ## Developer env
 
-Two optional files of **your own** environment variables, pushed into every
+One optional file of **your own** environment variables, pushed into every
 VM at `/var/lib/mpd/env/`:
 
-- `~/.mpd-virt/vm.env` → general environment for the VM's own shells (login,
-  interactive, and `ssh mpd-<NNN>-vm cmd`), sourced from the dev user's
-  `~/.bashrc`.
-- `~/.mpd-virt/runtime.env` → general environment for every runtime shell,
-  sourced from the runtime's `~/.bashrc` (bind-mounted RO into the runtime).
-  This is where a variable you want in every runtime execution goes — e.g. a
-  Moodle admin password `mdl-install` reads.
+- `~/.mpd-virt/vm.env` → general environment for every shell on the VM
+  (login, interactive, and `ssh mpd-<NNN> cmd`), sourced from the dev
+  user's `~/.bashrc`. This is where a variable you want in every execution
+  goes — e.g. a Moodle admin password `mdl-install` reads.
 
-They are the runtime-side and VM-side twins of the same idea: ambient
-variables for every shell in that context. They are **not** part of mpd's
-`mpd.env` config layering — a project's own `mpd.env` still wins for the keys
-mpd manages (see `docs/architecture.md` §8). Both are the developer's own
-trusted files (never from git), so mpd **plain-sources** them — they may
-export any variable, not just `MPD_*`. mpd-virt only carries the files. (For
-runtime-wide `mpd.env` *defaults* — a different, rarely-needed thing — overlay
-a file through the assets tree as `~/.mpd-virt/assets/vm/mpd-defaults.env`.)
+Ambient variables, **not** part of mpd's `mpd.env` config layering — a
+project's own `mpd.env` still wins for the keys mpd manages (see
+`docs/architecture.md` §8). It is the developer's own trusted file (never
+from git), so mpd **plain-sources** it — it may export any variable, not
+just `MPD_*`. mpd-virt only carries the file. (For VM-wide `mpd.env`
+*defaults* — a different, rarely-needed thing — overlay a file through the
+assets tree as `~/.mpd-virt/assets/vm/mpd-defaults.env`.)
 
-The layer they feed is scoped to *you*, not to a VM. A VM runs one runtime,
-so per-VM defaults were a distinction without a difference — while a
-developer routinely runs several VMs that should agree on how they
-behave. Holding the files on the Mac is what makes one edit reach all of
-them.
+The layer it feeds is scoped to *you*, not to a VM: a developer routinely
+runs several VMs that should agree on how they behave. Holding the file on
+the Mac is what makes one edit reach all of them.
 
 - **The Mac is the source of truth**, as with assets: an edit made inside a
   VM survives only until the next lifecycle verb.
@@ -417,12 +390,11 @@ them.
   survives until you actually put one on the Mac.
 - **Digest-guarded.** Every lifecycle verb calls it, and the common case
   costs one remote `sha256sum` per file and nothing else.
-- **Best-effort**, and nothing to republish afterwards: each takes effect in
-  the next shell that sources it — `runtime.env` in the runtime (through the
-  directory bind-mount), `vm.env` on the VM.
+- **Best-effort**, and nothing to republish afterwards: it takes effect in
+  the next shell that sources it.
 - **Pushed as the dev user.** `/var/lib/mpd/env` is mpd's, dev-owned;
   `mpd --vm-setup` only ensures the directory exists (it seeds nothing).
-- **Survive `uninstall`**, alongside the root CA. They are yours, and unlike
+- **Survives `uninstall`**, alongside the root CA. It is yours, and unlike
   `assets/` there is no copy on a VM worth restoring from.
 
 ## Code layout
@@ -458,8 +430,8 @@ into `docs/` proper (or straight into code comments), and shipped behavior is
 documented only in the canonical files above. Hosts are macOS and Linux,
 in this one codebase (the `libvirt` backend is the Linux-only part; the
 overlay helper mpd-proxy runs on both). Proprietary Windows is not
-on the roadmap and never will be — WSL containers cannot run the mpd
-runtime's systemd, and mdl-demo covers Windows users.
+on the roadmap and never will be — mpd needs a real VM with systemd, and
+mdl-demo covers Windows users.
 
 ## Validation
 

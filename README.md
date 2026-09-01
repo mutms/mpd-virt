@@ -54,15 +54,15 @@ mpd-virt adopt 141 10.0.0.141 --backend=generic     # …or given explicitly, if
 **Or, on Apple Silicon, create one locally (experimental).** The Apple
 `container` CLI lets `create` provision *and* adopt a fresh VM in a single
 step — no separate Debian install or prep. It is the quickest way to a VM,
-but the `container` runtime is young, so treat this backend as experimental;
+but the `container` VM is young, so treat this backend as experimental;
 UTM, Parallels, or an adopted Debian VM are the steadier choices:
 
 ```bash
 mpd-virt create 141 --backend=container   # pulls the published base image, creates + provisions mpd-141
 ```
 
-Either way you now have a running mpd VM. `ssh mpd-141` lands in the
-runtime, where you work — follow
+Either way you now have a running mpd VM. `ssh mpd-141` lands where you
+work — follow
 [mpd's USAGE](https://github.com/mutms/mpd/blob/main/docs/usage.md) from
 there.
 

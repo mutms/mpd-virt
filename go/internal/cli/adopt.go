@@ -288,11 +288,8 @@ func runAdopt(ctx context.Context, id vmid.ID, ip, username string, be backend.B
 	if err := sshconfig.Write(id, ip, username); err != nil {
 		return fmt.Errorf("ssh config: %w", err)
 	}
-	pass("~/.ssh/config block  (ssh " + id.Name() + " → runtime, " +
+	pass("~/.ssh/config block  (ssh " + id.Name() + ", " +
 		sshconfig.VMAlias(id) + " → the VM)")
-	// After the block, which names the file this writes into. `mpd
-	// --vm-setup` above created the runtime, so its key exists to read.
-	pinRuntimeHostKey(ctx, t, id)
 
 	// --- WireGuard reachability via mpd-proxy. Best-effort: adoption is done,
 	//     so a proxy hiccup is a warning with a re-run hint, not a failure.

@@ -50,8 +50,8 @@ func Config() string { return filepath.Join(Root(), "config.json") }
 func Servers() string { return filepath.Join(Root(), "servers") }
 
 // Assets is ~/.mpd-virt/assets — the developer's own tools and files,
-// overlaid onto mpd's own tree at /opt/mpd/assets on every VM (vm/bin and
-// runtime/bin on PATH, like mpd's own tools). Optional: absent means
+// overlaid onto mpd's own tree at /opt/mpd/assets on every VM (vm/bin on
+// PATH, like mpd's own tools). Optional: absent means
 // mpd-virt pushes nothing and leaves whatever a VM already has. This Mac is
 // the source of truth; the in-VM copy is dev-owned and replaced on overlay.
 func Assets() string { return filepath.Join(Root(), "assets") }
@@ -60,17 +60,14 @@ func Assets() string { return filepath.Join(Root(), "assets") }
 // `server sync` pushes into every VM so containers resolve LAN names too.
 func LanHosts() string { return filepath.Join(Conf(), "lan-hosts") }
 
-// VMEnv and RuntimeEnv are the developer's own general environment files,
-// pushed into every VM at /var/lib/mpd/env/. VMEnv (~/.mpd-virt/vm.env) is
-// sourced into the VM's own shells; RuntimeEnv (~/.mpd-virt/runtime.env) is
-// sourced into every runtime shell (ambient env, not an mpd.env config
-// layer). Optional, like Assets: an absent file means mpd-virt pushes
-// nothing and leaves whatever a VM already has.
+// VMEnv is the developer's own general environment file, pushed into every
+// VM at /var/lib/mpd/env/vm.env and sourced into its shells (ambient env,
+// not an mpd.env config layer). Optional, like Assets: an absent file means
+// mpd-virt pushes nothing and leaves whatever a VM already has.
 //
 // At the root rather than under conf/ because they are the developer's files
 // to write, not identity mpd-virt generates and manages on their behalf.
-func VMEnv() string      { return filepath.Join(Root(), "vm.env") }
-func RuntimeEnv() string { return filepath.Join(Root(), "runtime.env") }
+func VMEnv() string { return filepath.Join(Root(), "vm.env") }
 
 // CloudImages is ~/.mpd-virt/conf/cloud-images — the cached cloud-image
 // archive(s) the UTM (and future cloud-init) backends materialize VMs from.

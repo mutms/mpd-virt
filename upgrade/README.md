@@ -7,8 +7,8 @@ adoptions always land on the latest shape; keeping the shipped path free of
 migration cruft is deliberate.
 
 Occasionally a change can't reach an *already-adopted* VM through a normal
-`update`/re-`adopt` alone — something baked into a runtime's home at create
-time, say, or a hand-managed file. For those special cases, a one-off script
+`update`/re-`adopt` alone — a hand-managed file, say, or state a newer
+layout no longer creates. For those special cases, a one-off script
 lands here.
 
 ## Running them

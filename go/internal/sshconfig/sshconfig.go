@@ -1,16 +1,12 @@
 // Package sshconfig maintains one managed block per VM in ~/.ssh/config,
-// so `ssh mpd-<NNN>` reaches the runtime container the developer works in.
+// so `ssh mpd-<NNN>` reaches the VM the developer works in.
 //
 // The block sits between name-stamped markers so several VMs coexist in
 // one config and each can be found and stripped cleanly. One fence holds
-// every stanza for a VM — the runtime, the VM itself, and the SOCKS tier:
+// every stanza for a VM — the VM itself and the SOCKS tier:
 //
 //	# >>> mpd-<NNN> (managed by mpd-virt) >>>
-//	Host mpd-<NNN>
-//	    HostName runtime
-//	    ProxyJump <user>@<ip>
-//	    ...
-//	Host mpd-<NNN>-vm <ip>
+//	Host mpd-<NNN> mpd-<NNN>-vm <ip>
 //	    HostName <ip>
 //	    ...
 //	Host mpd-<NNN>-socks
@@ -19,16 +15,8 @@
 //	    ...
 //	# <<< mpd-<NNN> <<<
 //
-// The bare name is the runtime because that is where the developer (and
-// their IDE, and their agent) actually works; the VM that manages the
-// containers is the occasional destination, so it takes the `-vm` suffix.
-// `ssh mpd-<NNN>` jumps through the VM, which resolves the bare
-// `runtime` from the alias mpd keeps on the runtime's line in its
-// /etc/hosts.
-//
-// Note this is the host side only. Inside the VM, mpd writes its own
-// aliases for the runtime (`runtime`, `mpd-<NNN>-runtime`) — there the
-// bare `mpd-<NNN>` is the VM's own hostname and cannot mean the runtime.
+// The bare name reaches the VM directly: PHP, the tools and the agent all
+// run there, so there is nothing to jump to. `-vm` is a synonym for it.
 //
 // The `-socks` alias is the SOCKS tier: `ssh -N mpd-<NNN>-socks` opens a
 // SOCKS5 proxy on 127.0.0.1:1080 tunnelled through the VM, so a browser
@@ -65,27 +53,8 @@ const SocksPort = 1080
 // SocksAlias is the ssh Host name of a VM's SOCKS alias.
 func SocksAlias(id vmid.ID) string { return id.Name() + "-socks" }
 
-// VMAlias is the ssh Host name of the VM itself, as opposed to the bare
-// name, which reaches the runtime container running on it.
+// VMAlias is a spelled-out synonym for the bare name.
 func VMAlias(id vmid.ID) string { return id.Name() + "-vm" }
-
-// RuntimeKeyAlias is the HostKeyAlias the runtime stanza pins under. Not a
-// Host name you type — `ssh mpd-<NNN>` reaches the runtime — but the shared
-// HostName "runtime" would otherwise collide between VMs.
-func RuntimeKeyAlias(id vmid.ID) string { return id.Name() + "-runtime" }
-
-// runtimeHostName is what the runtime stanza connects to. Deliberately
-// the bare `runtime`, not the FQDN: with ProxyJump the *VM* resolves the
-// target, and mpd publishes `runtime` as a hosts alias on the runtime's
-// line in the VM's /etc/hosts, so libc there answers it directly. Works
-// over plain SSH with the mpd-proxy overlay down.
-//
-// The bare form is also the documentation: this block is what a developer
-// reads when wiring up an SSH app that has a jump-host field but no
-// config file (Terminus and friends). Everything such an app needs is
-// then literal on the page — jump = <user>@<ip>, host = runtime — with
-// no alias to chase into another stanza.
-const runtimeHostName = "runtime"
 
 // Path is the ssh config file mpd-virt manages (or $MPD_VIRT_TEST_SSH_CONFIG).
 func Path() string {
@@ -103,28 +72,25 @@ func beginMarker(id vmid.ID) string {
 func endMarker(id vmid.ID) string { return "# <<< " + id.Name() + " <<<" }
 
 // render is the self-contained managed block for one VM: the bare alias
-// for the runtime container, the `-vm` alias for the VM itself, and the
-// `-socks` alias (see the package doc). The `-vm` and `-socks` stanzas
-// target the VM's direct IP, and the runtime alias jumps through it — all
-// over plain SSH, independent of the mpd-proxy overlay, which is exactly
-// why they still work when it is down.
+// and its `-vm` synonym for the VM itself, plus the `-socks` alias (see
+// the package doc). Both stanzas target the VM's direct IP over plain
+// SSH, independent of the mpd-proxy overlay, which is exactly why they
+// still work when it is down.
 //
 // Host keys go to the per-VM ~/.mpd-virt/<NNN>/known_hosts, never to your
 // own ~/.ssh/known_hosts: UserKnownHostsFile points every stanza at the
 // same file mpd-virt's own SSH pins into, so the key adopt recorded and
 // printed the fingerprint for is the key your `ssh mpd-<NNN>` trusts.
 // Verification is otherwise stock — an unpinned key still prompts, a
-// changed one still refuses. HostKeyAlias stores each entry under a stable
-// name (mpd-<NNN>, and mpd-<NNN>-runtime for the container) rather than the
-// DHCP address, so the approval survives an IP change and each VM's runtime
-// doesn't collide with the next one's under the shared HostName "runtime".
-// HostKeyAliases are the names host keys are stored under, which are not
-// the aliases you type: render() pins `-vm` and `-socks` under the bare
-// name and the runtime stanza under `<name>-runtime`. Kept beside render()
-// — an alias added there without a line here leaves an orphan entry.
+// changed one still refuses. HostKeyAlias stores every entry under the
+// stable mpd-<NNN> rather than the DHCP address, so the approval survives
+// an IP change.
+
+// HostKeyAliases are the names host keys are stored under. Kept beside
+// render() — an alias added there without a line here leaves an orphan
+// entry.
 func HostKeyAliases(id vmid.ID) []string {
-	name := id.Name()
-	return []string{name, RuntimeKeyAlias(id)}
+	return []string{id.Name()}
 }
 
 func render(id vmid.ID, ip, user string) string {
@@ -134,20 +100,12 @@ func render(id vmid.ID, ip, user string) string {
 	// may contain a space.
 	knownHosts := "    UserKnownHostsFile \"" + paths.KnownHosts(id) + "\""
 
+	// Three patterns on one stanza: the bare name you type, its `-vm`
+	// synonym, and the address — so `ssh <ip>` lands on the same
+	// HostKeyAlias instead of a second entry keyed by a DHCP address.
 	lines := []string{
 		beginMarker(id),
-		"Host " + name,
-		"    HostName " + runtimeHostName,
-		"    User " + user,
-		"    ProxyJump " + user + "@" + ip,
-		"    HostKeyAlias " + RuntimeKeyAlias(id),
-		knownHosts,
-		"",
-		// Both names: the alias for typing, the address because ProxyJump
-		// above names it literally and ssh matches Host patterns against
-		// the string it was given — so the jump to the IP gets the same
-		// HostKeyAlias as `ssh <alias>` instead of a second entry keyed by IP.
-		"Host " + VMAlias(id) + " " + ip,
+		"Host " + name + " " + VMAlias(id) + " " + ip,
 		"    HostName " + ip,
 		"    User " + user,
 		"    HostKeyAlias " + name,

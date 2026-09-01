@@ -10,7 +10,7 @@ import (
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-// A rebuilt runtime replaces its own alias and leaves the VM's key alone.
+// Replacing one alias leaves every other alias's key alone.
 func TestReplaceEntriesSwapsOneAlias(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -19,10 +19,10 @@ func TestReplaceEntriesSwapsOneAlias(t *testing.T) {
 	if err := replaceEntries(id, "mpd-222", []string{"mpd-222 ssh-ed25519 AAAAvm"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := replaceEntries(id, "mpd-222-runtime", []string{"mpd-222-runtime ssh-ed25519 AAAAold"}); err != nil {
+	if err := replaceEntries(id, "mpd-223", []string{"mpd-223 ssh-ed25519 AAAAold"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := replaceEntries(id, "mpd-222-runtime", []string{"mpd-222-runtime ssh-ed25519 AAAAnew"}); err != nil {
+	if err := replaceEntries(id, "mpd-223", []string{"mpd-223 ssh-ed25519 AAAAnew"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -33,9 +33,9 @@ func TestReplaceEntriesSwapsOneAlias(t *testing.T) {
 	}
 	got := string(data)
 	if strings.Contains(got, "AAAAold") {
-		t.Errorf("stale runtime key kept:\n%s", got)
+		t.Errorf("stale key kept:\n%s", got)
 	}
-	for _, want := range []string{"mpd-222 ssh-ed25519 AAAAvm", "mpd-222-runtime ssh-ed25519 AAAAnew"} {
+	for _, want := range []string{"mpd-222 ssh-ed25519 AAAAvm", "mpd-223 ssh-ed25519 AAAAnew"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q:\n%s", want, got)
 		}

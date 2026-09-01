@@ -51,17 +51,12 @@ not appended to, not edited with `ssh-keygen -R`. Nothing about
 verification is otherwise non-default: an unpinned key prompts, a changed
 key is refused.
 
-`adopt` also records the runtime container's host key there, read from
-the VM over the channel the VM's own pin authenticates, so the first
-`ssh mpd-<NNN>` prompts for neither hop. That hands over a trust decision
-already made rather than making a new one — the alternative prompt
-approves whatever answers. It is best-effort: a VM with no runtime key
-yet leaves you a normal first-connect prompt. (The runtime key is worth
-pinning because mpd generates one per runtime and never ships one in an
-image — see mpd's `docs/security.md`.) The write replaces the alias's
-existing lines, so a rebuilt runtime's new key supersedes the old one.
+There is one key per VM and one hop, so `ssh mpd-<NNN>` prompts once, at
+first contact, and never again while the key holds. The write replaces
+the alias's existing lines, so a re-imaged VM's new key supersedes the
+old one rather than colliding with it.
 
-`remove` and `uninstall` discard both pins along with the VM: they go
+`remove` and `uninstall` discard the pin along with the VM: it goes
 with `~/.mpd-virt/<NNN>/`, one directory, nothing to unpick from a shared
 file. That is a deliberate discard, not a weakening — you have just typed
 the VM's name to confirm you are throwing the machine away, and the
@@ -90,10 +85,9 @@ Two consequences worth knowing. The SOCKS browser proxies *everything*
 (remote DNS included) through the compromised-by-assumption VM — full
 visibility, plain-HTTP tampering — so "a dedicated browser" is load-bearing,
 not a convenience. And an agent or IDE is only inside the boundary when it
-runs inside the VM: an AI agent running on the Mac that merely SSHes into
-the runtime keeps its Mac-side tools, and a prompt injection in hostile
-project code walks straight back out through them. Run the agent binary in
-the runtime container.
+runs inside the VM: an AI agent running on the Mac that merely SSHes in
+keeps its Mac-side tools, and a prompt injection in hostile project code
+walks straight back out through them. Run the agent binary on the VM.
 
 ## Supply-chain pins
 
