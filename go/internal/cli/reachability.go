@@ -233,9 +233,10 @@ func stopCmd() *cobra.Command {
 		Use:   "stop <NNN>",
 		Short: "Take an adopted VM out of service: detach it from the WireGuard overlay",
 		Long: "Detaches the VM from the overlay — removes its mpd-proxy peer, so\n" +
-			"the Mac stops routing to its 10.163.<NNN>.x network — and powers the\n" +
-			"VM off through its backend (container/parallels/utm; a no-op for\n" +
-			"generic/proxmox, which keep running so `start` re-attaches them).",
+			"the Mac stops routing to its 10.163.<NNN>.x network — then shuts the\n" +
+			"VM down cleanly from inside the guest (sudo systemctl poweroff) and\n" +
+			"waits until it is off, so an immediate `start` won't collide with a VM\n" +
+			"still shutting down. Ctrl-C skips the wait; the VM keeps shutting down.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := vmid.Parse(args[0])
@@ -254,7 +255,9 @@ func stopCmd() *cobra.Command {
 			} else {
 				pass("detached from overlay (mpd-proxy peer removed)")
 			}
-			// Power the VM off through its backend (a no-op for generic/proxmox).
+			// Shut the VM down and wait until it is off. The overlay detach
+			// above already ran, so a Ctrl-C during the wait leaves nothing
+			// half-written.
 			return backend.Stop(cmd.Context(), cmd.OutOrStdout(), id, backend.Backend(e.Backend))
 		},
 	}

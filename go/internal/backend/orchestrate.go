@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd-virt/go/internal/host"
+	"github.com/mutms/mpd-virt/go/internal/paths"
 	"github.com/mutms/mpd-virt/go/internal/registry"
 	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
@@ -85,8 +87,9 @@ func Start(ctx context.Context, out io.Writer, id vmid.ID, be Backend) (string, 
 	}
 }
 
-// Stop powers a VM off through its backend (a no-op for backends mpd-virt does
-// not control). Detaching it from the overlay is the caller's job.
+// Stop shuts a VM down cleanly over SSH and waits until it is off, so a
+// following `start` won't collide with a VM still shutting down. Overlay detach
+// is the caller's job, done before this.
 func Stop(ctx context.Context, out io.Writer, id vmid.ID, be Backend) error {
 	powerOff(ctx, out, id, be)
 	return nil
@@ -108,14 +111,83 @@ func powerOn(ctx context.Context, out io.Writer, id vmid.ID, be Backend) State {
 	return st
 }
 
-// powerOff powers a VM down, skipping a VM that is already off.
+// stopWait bounds the wait for the VM to go off.
+const stopWait = 90 * time.Second
+
+// powerOff shuts a VM down cleanly over SSH, then waits until it is off. If the
+// guest is unreachable the backend's own power-off is the fallback (a no-op for
+// generic).
 func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 	st := probeState(ctx, id, be)
 	if st == StateStopped {
 		fmt.Fprintf(out, "  ✓ %s is already stopped\n", id.Name())
 		return
 	}
-	backendFor(be).Power(ctx, out, id, "stop", st)
+	if !gracefulShutdown(ctx, out, id) {
+		backendFor(be).Power(ctx, out, id, "stop", st)
+	}
+	waitOff(ctx, out, id, be)
+}
+
+// gracefulShutdown powers the guest off cleanly over SSH, returning whether it
+// was reached (false → caller falls back to the hypervisor). The command's own
+// exit is ignored since the session dies as the guest goes down. A var so tests
+// can drive powerOff without a live VM.
+var gracefulShutdown = func(ctx context.Context, out io.Writer, id vmid.ID) bool {
+	t, ok := vmTargetFor(id)
+	if !ok || !t.Reachable(ctx) {
+		return false
+	}
+	fmt.Fprintf(out, "  ▶ %s: sudo systemctl poweroff (in-guest)\n", id.Name())
+	_, _ = t.Run(ctx, "sudo systemctl poweroff")
+	return true
+}
+
+// waitOff polls until the VM is off or stopWait elapses. "Off" is the backend
+// reporting it stopped; for a backend that can't report power state (generic)
+// it's the ssh port going quiet — the same :22 probe locate uses.
+func waitOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
+	off := func() bool { return probeState(ctx, id, be) == StateStopped }
+	if !backendFor(be).Managed() {
+		off = func() bool {
+			t, ok := vmTargetFor(id)
+			return !ok || !sshReachable(ctx, t.Host)
+		}
+	}
+	deadline := time.Now().Add(stopWait)
+	waited := false
+	for {
+		if off() {
+			if waited {
+				fmt.Fprintf(out, "  ✓ %s is off\n", id.Name())
+			}
+			return
+		}
+		if !time.Now().Before(deadline) {
+			fmt.Fprintf(out, "  ⚠ %s hasn't gone off after %s — it may still be shutting down\n", id.Name(), stopWait)
+			return
+		}
+		if !waited {
+			fmt.Fprintf(out, "  … waiting for %s to power off (Ctrl-C to skip)\n", id.Name())
+			waited = true
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// vmTargetFor builds the ssh target (user@ip, pinned host key) for an adopted
+// VM from its registry record. False when it isn't registered or has no IP.
+func vmTargetFor(id vmid.ID) (host.Target, bool) {
+	e, err := registry.Load(id)
+	if err != nil || e.IP == "" {
+		return host.Target{}, false
+	}
+	return host.Target{
+		User:           e.User,
+		Host:           e.IP,
+		KnownHostsFile: paths.KnownHosts(id),
+		HostKeyAlias:   id.Name(),
+	}, true
 }
 
 // --- address discovery ------------------------------------------------------
