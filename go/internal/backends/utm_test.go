@@ -8,13 +8,17 @@ import (
 	"testing"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
-	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
-func TestUTMCanonicalIP(t *testing.T) {
-	id, _ := vmid.Parse("158")
-	if got := utmCanonicalIP(id); got != "192.168.64.158" {
-		t.Errorf("utmCanonicalIP(158) = %q, want 192.168.64.158", got)
+// `query ip` lists every address on every interface; only the LAN IPv4 ones
+// are candidates.
+func TestUTMLANAddrs(t *testing.T) {
+	got := utmLANAddrs("192.168.64.7, 10.163.158.1, 127.0.0.1, 169.254.3.4, fe80::1c2b:3aff:fe4d:5e6f, junk")
+	if len(got) != 1 || got[0] != "192.168.64.7" {
+		t.Errorf("utmLANAddrs = %v, want [192.168.64.7]", got)
+	}
+	if got := utmLANAddrs(""); got != nil {
+		t.Errorf("utmLANAddrs(\"\") = %v, want nil", got)
 	}
 }
 
@@ -28,21 +32,6 @@ func TestAsQuote(t *testing.T) {
 	for in, want := range cases {
 		if got := asQuote(in); got != want {
 			t.Errorf("asQuote(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestUTMNetworkConfig(t *testing.T) {
-	got := utmNetworkConfig("192.168.64.158")
-	for _, want := range []string{
-		"version: 2",
-		"enp0s1:",
-		"addresses: [192.168.64.158/24]",
-		"gateway4: 192.168.64.1",
-		"addresses: [192.168.64.1]", // nameserver = gateway
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("utmNetworkConfig missing %q in:\n%s", want, got)
 		}
 	}
 }
@@ -80,7 +69,7 @@ func TestUTMLivePlumbing(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed := filepath.Join(dir, "seed.iso")
-	if err := backend.MakeCidataISO(ctx, seed, "skodak", "ssh-ed25519 AAAATEST test@mac", name, utmNetworkConfig(utmCanonicalIP(vmid.ID(199)))); err != nil {
+	if err := backend.MakeCidataISO(ctx, seed, "skodak", "ssh-ed25519 AAAATEST test@mac", name, ""); err != nil {
 		t.Fatalf("makeCidataISO: %v", err)
 	}
 	if fi, err := os.Stat(seed); err != nil || fi.Size() == 0 {

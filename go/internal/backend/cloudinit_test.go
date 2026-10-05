@@ -32,11 +32,16 @@ func TestVerifySHA512(t *testing.T) {
 // The pinned constant must stay a plausible SHA-512 — a truncated paste would
 // otherwise refuse every download with a confusing mismatch.
 func TestPinnedArchiveDigestShape(t *testing.T) {
-	if len(cloudArchiveSHA512) != 128 {
-		t.Fatalf("cloudArchiveSHA512 is %d hex chars, want 128", len(cloudArchiveSHA512))
-	}
-	if _, err := hex.DecodeString(cloudArchiveSHA512); err != nil {
-		t.Fatalf("cloudArchiveSHA512 is not hex: %v", err)
+	for name, sum := range map[string]string{
+		"cloudArchiveSHA512": cloudArchiveSHA512,
+		"cloudQcow2SHA512":   cloudQcow2SHA512,
+	} {
+		if len(sum) != 128 {
+			t.Errorf("%s is %d hex chars, want 128", name, len(sum))
+		}
+		if _, err := hex.DecodeString(sum); err != nil {
+			t.Errorf("%s is not hex: %v", name, err)
+		}
 	}
 }
 
@@ -51,6 +56,8 @@ func TestCidataUserData(t *testing.T) {
 		"- ssh-ed25519 AAAAKEY dev@mac",
 		"ssh_pwauth: false",
 		"resize_rootfs: true",
+		"- avahi-daemon",
+		"- qemu-guest-agent",
 		"systemctl enable --now ssh",
 	} {
 		if !strings.Contains(got, want) {

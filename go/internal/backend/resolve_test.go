@@ -171,3 +171,20 @@ func TestLocateRejectsNonAddressCandidates(t *testing.T) {
 		t.Errorf("junk-only discovery should yield 'no candidate', got %v", err)
 	}
 }
+
+// WaitLocated returns the first address locate finds, and once the timeout is
+// spent hands back locate's own error — the one naming what was tried.
+func TestWaitLocated(t *testing.T) {
+	isolateRegistry(t)
+	stub(t, []string{"10.1.1.143"}, "10.1.1.143")
+	got, err := WaitLocated(context.Background(), mustID(t, "139"), "generic", 0)
+	if err != nil || got != "10.1.1.143" {
+		t.Errorf("WaitLocated = %q, %v; want 10.1.1.143", got, err)
+	}
+
+	stub(t, []string{"10.0.0.5"}) // resolves, never answers
+	_, err = WaitLocated(context.Background(), mustID(t, "139"), "generic", 0)
+	if err == nil || !strings.Contains(err.Error(), "10.0.0.5") {
+		t.Errorf("a timed-out wait should name the dead candidate, got %v", err)
+	}
+}

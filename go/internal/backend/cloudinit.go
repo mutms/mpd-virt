@@ -39,10 +39,11 @@ func WaitCloudInitDone(ctx context.Context, out io.Writer, t host.Target, timeou
 // multi-GB raw on disk is more annoying than re-running tar. Everything shells
 // to macOS built-ins — curl, tar, hdiutil — so nothing needs installing.
 
-// Debian Trixie "generic", arm64. Bump in lockstep with the sibling mpd's image
-// pin when refreshing — all three constants together: the SHA-512 comes from the
-// SHA512SUMS file in the same dated directory, and pinning it means the archive
-// that becomes every VM's operating system is exactly the published one,
+// Debian Trixie "generic": the arm64 raw archive (UTM) and the amd64 qcow2
+// (libvirt), both from one dated directory. Bump in lockstep with the sibling
+// mpd's image pin when refreshing — all five constants together: the SHA-512s
+// come from the SHA512SUMS file in that directory, and pinning them means the
+// image that becomes every VM's operating system is exactly the published one,
 // whatever a mirror or CDN served.
 //
 // "generic", NOT "genericcloud". genericcloud is built on Debian's cloud kernel,
@@ -51,9 +52,11 @@ func WaitCloudInitDone(ctx context.Context, out io.Writer, t host.Target, timeou
 // greeter — is a black screen with no useful error in any log. generic carries
 // the full kernel and is still cloud-init driven, for roughly 90 MB more download.
 const (
-	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20260819-2575"
-	cloudArchive       = "debian-13-generic-arm64-20260819-2575.tar.xz"
-	cloudArchiveSHA512 = "2ddf5cb28ff545d47645a1860bcd9e62d08e97f8454b19986327f7cd728f9dd689e127c449ca273b7bc2a8c6ccca2168186da6eb6265010a5f1f4f6022693caf"
+	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20261001-2618"
+	cloudArchive       = "debian-13-generic-arm64-20261001-2618.tar.xz"
+	cloudArchiveSHA512 = "cb80554bf05aa9eb42d0b99a9a395fefad04edc8435514c5387e32f4da83b7827c34809f6249b365dedacd3f0688580f2957fd13b388639c987058bbe127fa8d"
+	cloudQcow2         = "debian-13-generic-amd64-20261001-2618.qcow2"
+	cloudQcow2SHA512   = "6f0f93335bdef4ccf523c4317cc663ea52ca23b862667785f3d6d186ab4674a937385ccff0c55996b4b2e4c19e440cdf211e2a75ffa2f6548037ab43950c841d"
 )
 
 func cachedArchivePath() string { return filepath.Join(paths.CloudImages(), cloudArchive) }
@@ -234,15 +237,9 @@ func MakeCidataISO(ctx context.Context, outputPath, username, sshPubKey, localHo
 	return nil
 }
 
-// Debian Trixie "generic", amd64, as qcow2 — the libvirt backend's base. Same
-// dated directory as the arm64 archive; bump the three together.
-const (
-	cloudQcow2       = "debian-13-generic-amd64-20260819-2575.qcow2"
-	cloudQcow2SHA512 = "ae204682c015fd026838b71f1ce82585368dbb8c050b779ffd8a21a90a6c94f20648133dd078ee8fca9f0aa956e6901a943899be69ee24480035da6aeecd4f68"
-)
-
-// EnsureCloudQcow2 downloads and verifies the amd64 qcow2 into the cache on
-// first use and returns its path — ensureBaseArchive's twin.
+// EnsureCloudQcow2 downloads and verifies the amd64 qcow2 — the libvirt
+// backend's base — into the cache on first use and returns its path:
+// ensureBaseArchive's twin.
 func EnsureCloudQcow2(ctx context.Context, out io.Writer) (string, error) {
 	dst := filepath.Join(paths.CloudImages(), cloudQcow2)
 	if _, err := os.Stat(dst); err == nil {
@@ -284,7 +281,10 @@ func cidataMetaData(localHostname string) string {
 
 // cidataUserData is the #cloud-config: create only the dev user (no `debian`
 // default) with passwordless sudo and key-only auth, grow the rootfs to fill the
-// disk we extended, and start sshd, so the VM comes up adoption-ready.
+// disk we extended, and start sshd, so the VM comes up adoption-ready. avahi
+// and the guest agent are installed here rather than left to mpd's bootstrap:
+// a VM on DHCP has to be findable (mpd-<NNN>.local, or the hypervisor's
+// guest-agent query) before adoption can reach it to run that bootstrap.
 func cidataUserData(username, sshPubKey, localHostname string) string {
 	return fmt.Sprintf(`#cloud-config
 hostname: %s
@@ -305,6 +305,11 @@ growpart:
   devices: ['/']
 
 resize_rootfs: true
+
+package_update: true
+packages:
+  - avahi-daemon
+  - qemu-guest-agent
 
 runcmd:
   - systemctl enable --now ssh

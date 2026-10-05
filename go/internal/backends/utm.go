@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,13 +21,13 @@ import (
 // surface that works for everyone. `create` materializes a fresh Debian VM from
 // the cloud .raw + a cidata seed (cloudinit.go); start/stop are thin osascript
 // wrappers. Deleting the VM itself is UTM's business — mpd-virt's `remove` only
-// un-adopts. No UUID (the registry and `list` don't use it); a pinned vmnet IP
-// instead of a guest-IP query.
+// un-adopts. No UUID (the registry and `list` don't use it).
 //
-// Networking: UTM's `mode:shared` uses macOS vmnet, fixed at 192.168.64.0/24 by
-// vmnet.framework. So each mpd-<NNN> UTM VM is pinned (via cloud-init
-// network-config) to 192.168.64.<NNN>, gateway .1 — which is also how locate
-// finds it, since UTM exposes no clean guest-IP query.
+// Networking: UTM's `mode:shared` is macOS vmnet, and the VM takes whatever
+// lease vmnet's DHCP hands it — the seed carries no network-config. The address
+// is found rather than known: UTM's guest-agent query first, then
+// mpd-<NNN>.local over mDNS (locate's own fallback). The cidata seed installs
+// qemu-guest-agent and avahi so both answer on a VM not yet adopted.
 type utm struct{}
 
 // UTM is this backend's name — UTM Desktop VM (macOS, osascript-driven). Stored in vm.json's
@@ -38,7 +38,6 @@ func init() { backend.Register(UTM, utm{}) }
 
 const (
 	utmAppPath        = "/Applications/UTM.app"
-	utmSubnet         = "192.168.64"
 	utmDefaultDiskGiB = 80
 	utmDefaultCPUs    = 4
 )
@@ -53,13 +52,10 @@ func (utm) Power(ctx context.Context, out io.Writer, id vmid.ID, verb string, _ 
 }
 
 func (utm) Candidates(ctx context.Context, id vmid.ID) []string {
-	// UTM exposes no clean guest-IP query, so the VM is pinned to its canonical
-	// vmnet address; offer it only when the VM actually exists, and let locate's
-	// ssh probe confirm it is up.
-	if utmVMExists(ctx, id.Name()) {
-		return []string{utmCanonicalIP(id)}
-	}
-	return nil
+	// The guest agent's answer is the address the VM holds right now. Empty
+	// while the VM is off or the agent is not up yet — locate then falls
+	// through to mDNS and the last recorded address.
+	return utmQueryIPs(ctx, id.Name())
 }
 
 func (utm) Create(ctx context.Context, out io.Writer, id vmid.ID, opts backend.CreateOpts) (string, error) {
@@ -74,10 +70,7 @@ func (utm) Notes(context.Context, vmid.ID) string { return "" }
 func (utm) Managed() bool                         { return true }
 func (utm) Deletable() bool                       { return false }
 
-// utmCanonicalIP is the pinned vmnet address for a UTM VM: 192.168.64.<NNN>.
-func utmCanonicalIP(id vmid.ID) string { return utmSubnet + "." + strconv.Itoa(int(id)) }
-
-// utmCreate provisions a fresh UTM VM and returns its (pinned) IP, ready for
+// utmCreate provisions a fresh UTM VM and returns its current IP, ready for
 // adoption. Untestable end-to-end without nested virt (the guest won't boot),
 // but every step up to the boot wait — download, clone, seed, and the osascript
 // VM creation — runs on any Mac with UTM installed.
@@ -89,7 +82,6 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 	if utmVMExists(ctx, name) {
 		return "", fmt.Errorf("UTM already has a VM named %s — pick a different id, or delete that VM in UTM first (and `mpd-virt remove %s` if it is adopted)", name, id.String())
 	}
-	canonIP := utmCanonicalIP(id)
 
 	// The CLI's --memory default is the single source of truth; a value that
 	// does not parse is an error, not a silent fallback.
@@ -116,9 +108,9 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 	if err := backend.MaterializeDisk(ctx, out, diskPath, diskGiB); err != nil {
 		return "", err
 	}
-	netCfg := utmNetworkConfig(canonIP)
+	// No network-config: cloud-init falls back to DHCP on the one NIC.
 	fmt.Fprintf(out, "  ▶ writing cidata seed → %s\n", seedPath)
-	if err := backend.MakeCidataISO(ctx, seedPath, opts.User, opts.PubKey, name, netCfg); err != nil {
+	if err := backend.MakeCidataISO(ctx, seedPath, opts.User, opts.PubKey, name, ""); err != nil {
 		return "", err
 	}
 
@@ -148,15 +140,21 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 		return "", err
 	}
 
+	// The VM is findable once cloud-init has installed the guest agent and
+	// avahi, which is well into first boot.
+	ip, err := backend.WaitLocated(ctx, id, UTM, 300*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("UTM VM %s was not found on the network within 5 min (UTM's guest-agent query and %s.local both came up empty) — cloud-init may still be running or have failed; open the UTM console to inspect.\n\n%w", name, name, err)
+	}
 	// Pin the fresh VM's host key from the very first contact, in the same
 	// per-VM file adoption will use — the key recorded while cloud-init's output
 	// is still on the UTM console carries through the whole lifecycle.
 	t := host.Target{
-		User: opts.User, Host: canonIP,
+		User: opts.User, Host: ip,
 		KnownHostsFile: paths.EnsureKnownHosts(id), HostKeyAlias: id.Name(),
 	}
 	if err := backend.WaitReachableOrWhy(ctx, t, 300*time.Second); err != nil {
-		return "", fmt.Errorf("UTM VM %s did not come up at %s within 5 min — cloud-init may still be running or have failed; open the UTM console to inspect.\n\n%w", name, canonIP, err)
+		return "", fmt.Errorf("UTM VM %s did not accept ssh at %s within 5 min — cloud-init may still be running or have failed; open the UTM console to inspect.\n\n%w", name, ip, err)
 	}
 	if err := backend.WaitCloudInitDone(ctx, out, t, 300*time.Second); err != nil {
 		return "", err
@@ -176,14 +174,19 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 	if _, err := runOsascript(ctx, utmStartScript(name)); err != nil {
 		return "", err
 	}
-	if !backend.WaitReachable(ctx, t, 180*time.Second) {
-		return "", fmt.Errorf("UTM VM %s did not come back at %s within 3 min after the cidata detach — inspect via UTM", name, canonIP)
+	// Located afresh: the reboot may have come back on a different lease.
+	if ip, err = backend.WaitLocated(ctx, id, UTM, 180*time.Second); err != nil {
+		return "", fmt.Errorf("UTM VM %s did not come back within 3 min after the cidata detach — inspect via UTM.\n\n%w", name, err)
+	}
+	t.Host = ip
+	if !backend.WaitReachable(ctx, t, 60*time.Second) {
+		return "", fmt.Errorf("UTM VM %s did not accept ssh at %s after the cidata detach — inspect via UTM", name, ip)
 	}
 
 	ok = true
 	_ = os.RemoveAll(staging)
-	fmt.Fprintf(out, "  ▶ UTM VM ready: %s\n", canonIP)
-	return canonIP, nil
+	fmt.Fprintf(out, "  ▶ UTM VM ready: %s\n", ip)
+	return ip, nil
 }
 
 // utmPower runs a start/stop power verb for a UTM VM via osascript, matching the
@@ -252,25 +255,44 @@ end tell`, asQuote(name)))
 	return out
 }
 
+// utmQueryIPs asks UTM for the guest's addresses — its `query ip` command,
+// answered by qemu-guest-agent inside the VM. Nil on any failure (VM off, agent
+// not running yet).
+func utmQueryIPs(ctx context.Context, name string) []string {
+	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
+	return query ip of virtual machine named %s
+end tell`, asQuote(name)))
+	if err != nil {
+		return nil
+	}
+	return utmLANAddrs(out)
+}
+
+// utmLANAddrs picks the LAN candidates out of `query ip`'s answer, which
+// osascript prints as one comma-separated list of every address on every
+// interface. Only IPv4 is kept, minus loopback, link-local and the overlay
+// range (the VM's own container bridge) — the filter proxmoxAgentIPs applies
+// to the same guest-agent data.
+func utmLANAddrs(list string) []string {
+	var ips []string
+	for _, f := range strings.Split(list, ",") {
+		addr, err := netip.ParseAddr(strings.TrimSpace(f))
+		if err != nil || !addr.Is4() {
+			continue
+		}
+		if addr.IsLoopback() || addr.IsLinkLocalUnicast() || overlayRange.Contains(addr) {
+			continue
+		}
+		ips = append(ips, addr.String())
+	}
+	return ips
+}
+
 // asQuote renders an AppleScript string literal, escaping backslash and quote.
 func asQuote(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
 	return `"` + s + `"`
-}
-
-// utmNetworkConfig is the cloud-init v2 network-config pinning the VM to its
-// canonical vmnet address from boot one.
-func utmNetworkConfig(ip string) string {
-	gateway := utmSubnet + ".1"
-	return fmt.Sprintf(`version: 2
-ethernets:
-  enp0s1:
-    addresses: [%s/24]
-    gateway4: %s
-    nameservers:
-      addresses: [%s]
-`, ip, gateway, gateway)
 }
 
 func utmCreateScript(name string, memMiB, cpus int, diskPath, seedPath string) string {

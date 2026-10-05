@@ -87,6 +87,27 @@ func Start(ctx context.Context, out io.Writer, id vmid.ID, be Backend) (string, 
 	}
 }
 
+// WaitLocated polls locate until the VM answers on ssh at some address, or the
+// timeout. For a backend's Create, whose fresh VM takes its address from DHCP:
+// there is nothing to dial until the guest has booted far enough to be found.
+func WaitLocated(ctx context.Context, id vmid.ID, be Backend, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		ip, err := locate(ctx, id, be)
+		if err == nil {
+			return ip, nil
+		}
+		if !time.Now().Before(deadline) {
+			return "", err
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 // Stop shuts a VM down cleanly over SSH and waits until it is off, so a
 // following `start` won't collide with a VM still shutting down. Overlay detach
 // is the caller's job, done before this.
