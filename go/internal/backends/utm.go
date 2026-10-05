@@ -20,8 +20,14 @@ import (
 // only; the App Store build ships no `utmctl`, so AppleScript is the only
 // surface that works for everyone. `create` materializes a fresh Debian VM from
 // the cloud .raw + a cidata seed (cloudinit.go); start/stop are thin osascript
-// wrappers. Deleting the VM itself is UTM's business — mpd-virt's `remove` only
-// un-adopts. No UUID (the registry and `list` don't use it).
+// wrappers, and `remove --full` deletes the VM, bundle and all. No UUID (the
+// registry and `list` don't use it).
+//
+// The cidata seed stays attached for the VM's life, as it does on libvirt and
+// proxmox. UTM copies it into the VM's bundle on creation, so it needs no host
+// file and is deleted with the VM. It does no harm on later boots: the
+// instance-id never changes, and mpd's own cloud-init drop-in leaves cloud-init
+// nothing but growing the disk.
 //
 // Networking: UTM's `mode:shared` is macOS vmnet, and the VM takes whatever
 // lease vmnet's DHCP hands it — the seed carries no network-config. The address
@@ -62,13 +68,13 @@ func (utm) Create(ctx context.Context, out io.Writer, id vmid.ID, opts backend.C
 	return utmCreate(ctx, out, id, opts)
 }
 
-func (utm) Delete(context.Context, io.Writer, vmid.ID) error {
-	return fmt.Errorf("--full does not delete UTM VMs (its AppleScript bridge is not wired for it); delete it in UTM")
+func (utm) Delete(ctx context.Context, out io.Writer, id vmid.ID) error {
+	return utmDelete(ctx, out, id)
 }
 
 func (utm) Notes(context.Context, vmid.ID) string { return "" }
 func (utm) Managed() bool                         { return true }
-func (utm) Deletable() bool                       { return false }
+func (utm) Deletable() bool                       { return true }
 
 // utmCreate provisions a fresh UTM VM and returns its current IP, ready for
 // adoption. Untestable end-to-end without nested virt (the guest won't boot),
@@ -96,7 +102,8 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 
 	// Per-VM staging: the clone + seed live outside the UTM bundle, wiped first
 	// so a half-failed prior attempt does not poison this run. UTM copies the
-	// sources into its own bundle on import, so we clean up after.
+	// sources into its own bundle on import — disk and seed alike — so we clean
+	// up after.
 	staging := paths.UTMStaging(name)
 	_ = os.RemoveAll(staging)
 	if err := os.MkdirAll(staging, 0o755); err != nil {
@@ -160,33 +167,37 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 		return "", err
 	}
 
-	// Detach the cidata CD cleanly: graceful shutdown → delete seed.iso on the
-	// host → prune the now-zero-sized drive → restart.
-	fmt.Fprintf(out, "  ▶ detaching cidata CD (shutdown → prune → restart) …\n")
-	_, _ = t.Run(ctx, "sudo shutdown -h now")
-	if err := waitVMStopped(ctx, name, 120*time.Second); err != nil {
-		return "", err
-	}
-	_ = os.Remove(seedPath)
-	if _, err := runOsascript(ctx, utmDetachZeroDrivesScript(name)); err != nil {
-		return "", err
-	}
-	if _, err := runOsascript(ctx, utmStartScript(name)); err != nil {
-		return "", err
-	}
-	// Located afresh: the reboot may have come back on a different lease.
-	if ip, err = backend.WaitLocated(ctx, id, UTM, 180*time.Second); err != nil {
-		return "", fmt.Errorf("UTM VM %s did not come back within 3 min after the cidata detach — inspect via UTM.\n\n%w", name, err)
-	}
-	t.Host = ip
-	if !backend.WaitReachable(ctx, t, 60*time.Second) {
-		return "", fmt.Errorf("UTM VM %s did not accept ssh at %s after the cidata detach — inspect via UTM", name, ip)
-	}
-
 	ok = true
 	_ = os.RemoveAll(staging)
 	fmt.Fprintf(out, "  ▶ UTM VM ready: %s\n", ip)
 	return ip, nil
+}
+
+// utmDelete destroys the VM and everything in its bundle — disk and cidata seed
+// — the inverse of utmCreate. UTM asks for no confirmation; `remove --full` has
+// already taken it. A VM still running is forced off first: its disk is about
+// to go, so there is nothing a graceful shutdown would save. A VM already gone
+// is success, so a half-finished remove can be re-run.
+func utmDelete(ctx context.Context, out io.Writer, id vmid.ID) error {
+	if err := requireUTM(); err != nil {
+		return err
+	}
+	name := id.Name()
+	if !utmVMExists(ctx, name) {
+		return nil
+	}
+	if utmVMStatus(ctx, name) != "stopped" {
+		fmt.Fprintf(out, "  ▶ osascript UTM stop %s (forced)\n", name)
+		_, _ = runOsascript(ctx, utmKillScript(name))
+		if err := waitVMStopped(ctx, name, 60*time.Second); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(out, "  ▶ osascript UTM delete %s\n", name)
+	if _, err := runOsascript(ctx, utmDeleteScript(name)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // utmPower runs a start/stop power verb for a UTM VM via osascript, matching the
@@ -297,7 +308,9 @@ func asQuote(s string) string {
 
 func utmCreateScript(name string, memMiB, cpus int, diskPath, seedPath string) string {
 	// Mirrors mpd/setup/macos-utm/lib/create-vm.sh: qemu, aarch64, shared
-	// network, two drives (system disk + cidata seed).
+	// network, two drives (system disk + cidata seed). Neither drive is marked
+	// removable, so UTM imports both: the images are copied into the bundle and
+	// the staging files can go once create is done.
 	return fmt.Sprintf(`tell application "UTM"
 	set diskFile to POSIX file %s
 	set seedFile to POSIX file %s
@@ -329,25 +342,6 @@ func utmKillScript(name string) string {
 
 func utmDeleteScript(name string) string {
 	return fmt.Sprintf("tell application \"UTM\"\n\tdelete virtual machine named %s\nend tell", asQuote(name))
-}
-
-// utmDetachZeroDrivesScript drops any drive whose host source file has vanished
-// (host size == 0) — how the historical macos-utm flow prunes the cidata CD
-// after the seed.iso is removed on the host.
-func utmDetachZeroDrivesScript(name string) string {
-	return fmt.Sprintf(`tell application "UTM"
-	set vm to virtual machine named %s
-	set config to configuration of vm
-	set vmDrives to drives of config
-	set keptDrives to {}
-	repeat with vmDrive in vmDrives
-		if (host size of vmDrive) is not 0 then
-			set end of keptDrives to vmDrive
-		end if
-	end repeat
-	set drives of config to keptDrives
-	update configuration of vm with config
-end tell`, asQuote(name))
 }
 
 func waitVMStopped(ctx context.Context, name string, timeout time.Duration) error {

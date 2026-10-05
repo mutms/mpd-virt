@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mutms/mpd-virt/go/internal/backend"
+	"github.com/mutms/mpd-virt/go/internal/vmid"
 )
 
 // `query ip` lists every address on every interface; only the LAN IPv4 ones
@@ -90,15 +91,24 @@ func TestUTMLivePlumbing(t *testing.T) {
 	}
 	t.Logf("VM status after create: %q", utmVMStatus(ctx, name))
 
-	// Deleting the VM itself is UTM's business now (mpd-virt's `remove` only
-	// un-adopts), so the teardown here uses the raw scripts — the same ones
-	// create's own failure rollback runs.
-	_, _ = runOsascript(ctx, utmKillScript(name))
-	if _, err := runOsascript(ctx, utmDeleteScript(name)); err != nil {
-		t.Fatalf("utmDeleteScript: %v", err)
+	// The teardown is the real `remove --full` path, and deleting twice must
+	// succeed — a re-run of a half-finished remove.
+	var out strings.Builder
+	if err := (utm{}).Delete(ctx, &out, vmid.ID(199)); err != nil {
+		t.Fatalf("Delete: %v\n%s", err, out.String())
 	}
 	if utmVMExists(ctx, name) {
 		t.Fatal("VM still exists after delete")
+	}
+	if err := (utm{}).Delete(ctx, &out, vmid.ID(199)); err != nil {
+		t.Fatalf("Delete of an already-deleted VM: %v", err)
+	}
+}
+
+// `remove --full` gates on this.
+func TestUTMDeletable(t *testing.T) {
+	if !(utm{}).Deletable() {
+		t.Error("utm should be deletable: remove --full is the inverse of create")
 	}
 }
 
