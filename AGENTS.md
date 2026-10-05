@@ -385,14 +385,18 @@ A VM's architecture comes from its backend. `parallels`, `utm` and
 `amd64`. It sits with the backend rather than in `config.json` because it
 is a property of the machine those VMs run on.
 
-Digest-guarded like the assets overlay, and pushed with scp's progress
-meter unconditionally — these are the payloads where a silent multi-
-gigabyte copy looks like a hung adoption. Best-effort: a failure warns
-and never fails an adoption or an update.
+Only what is missing is copied: a file is pushed when the VM has none by
+that name, and that is the whole check — no digest, nothing removed,
+nothing replaced. An archive is only a seed: the IDE updates itself once
+installed, so its age does not matter. Copies run with scp's progress
+meter — these are the payloads where a silent multi-gigabyte copy looks
+like a hung adoption. Best-effort: a failure warns and never fails an
+adoption or an update.
 
-mpd's `goland-archive-app` makes one and prints the `scp` line with the
-architecture already filled in; `goland-install-app` unpacks whatever
-landed.
+mpd's `goland-archive-app` writes the archive straight into
+`/opt/mpd/assets/installers/` and prints the `scp` line with the
+architecture already filled in; `goland-install-app` unpacks it. The VM
+that made an archive already has it, so it is not sent back.
 
 ## Developer env
 

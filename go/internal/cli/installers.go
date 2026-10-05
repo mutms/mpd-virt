@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/mutms/mpd-virt/go/internal/config"
@@ -21,89 +23,70 @@ import (
 // The VM side is flat: everything lands directly in
 // /opt/mpd/assets/installers/, so a tool there opens one path and needs no
 // architecture logic of its own.
-const (
-	installersDir = mpdAssetsDir + "/installers"
+const installersDir = mpdAssetsDir + "/installers"
 
-	// installersDigestFile records, on the VM, the digest of the set it
-	// carries. Same purpose as digestFile and separate from it: the two
-	// are pushed independently.
-	installersDigestFile = mpdRepoDir + "/.git/info/mpd-virt-installers.manifest"
-)
-
-// pushInstallers copies the arch's installers to the VM when they differ
-// from what it already has. Absent directory means nothing to do.
+// pushInstallers copies to the VM the arch's installers it does not have
+// yet. Presence is by name and nothing else: no hashing of gigabytes on
+// every verb, and a VM that made an archive itself (mpd's *-archive-app
+// writes straight into this directory) is not sent it back. Nothing is ever
+// removed or replaced: an archive is a seed, and the IDE it installs updates
+// itself.
+// Absent directory on the Mac means nothing to do.
 func pushInstallers(ctx context.Context, t host.Target, arch string) (assetState, error) {
 	local := paths.InstallersFor(arch)
-	fi, err := os.Stat(local)
-	if err != nil || !fi.IsDir() {
+	entries, err := os.ReadDir(local)
+	if err != nil {
 		return assetsNone, nil
 	}
-	rels, size, err := assetRelPaths(local)
-	if err != nil {
-		return assetsNone, err
+	var names []string
+	for _, e := range entries {
+		// Flat by design; the name goes to a remote shell, so it must be plain.
+		if e.Type().IsRegular() && plainName.MatchString(e.Name()) {
+			names = append(names, e.Name())
+		}
 	}
-	if len(rels) == 0 {
+	if len(names) == 0 {
 		return assetsNone, nil
 	}
 
-	digest, err := assetDigest(local, rels)
+	r, err := t.Run(ctx, "mkdir -p "+installersDir+" && ls -1 "+installersDir)
 	if err != nil {
 		return assetsNone, err
 	}
-	if r, err := t.Run(ctx, "cat "+installersDigestFile+" 2>/dev/null || true"); err == nil &&
-		strings.TrimSpace(r.Stdout) == strings.TrimSpace(digest) && digest != "" {
-		return assetsCurrent, nil
+	if r.Failed() {
+		return assetsNone, fmt.Errorf("listing %s: %s", installersDir, strings.TrimSpace(r.Stderr))
+	}
+	have := map[string]bool{}
+	for _, name := range strings.Split(r.Stdout, "\n") {
+		have[strings.TrimSpace(name)] = true
 	}
 
-	staging, err := t.Line(ctx, "mktemp -d")
-	if err != nil {
-		return assetsNone, err
+	state := assetsCurrent
+	for _, name := range names {
+		if have[name] {
+			continue
+		}
+		// Metered: a silent multi-gigabyte copy looks like a hung adoption.
+		// Under a temporary name first, so an interrupted copy is not taken
+		// for the file on the next run.
+		fmt.Printf("  ▶ installer %s (%s) — copying to the VM\n", name, arch)
+		dest := installersDir + "/" + name
+		if err := t.ScpFileLive(ctx, filepath.Join(local, name), dest+".partial"); err != nil {
+			return assetsNone, err
+		}
+		if r, err := t.Run(ctx, "mv -f "+dest+".partial "+dest); err != nil {
+			return assetsNone, err
+		} else if r.Failed() {
+			return assetsNone, fmt.Errorf("installer %s: %s", name, strings.TrimSpace(r.Stderr))
+		}
+		state = assetsPushed
 	}
-	if staging == "" {
-		return assetsNone, fmt.Errorf("mktemp -d returned nothing")
-	}
-	defer func() { _, _ = t.Run(ctx, "rm -rf "+staging) }()
-
-	// Always metered: these are the payloads scpMeterFrom was written for,
-	// and a silent multi-gigabyte copy looks like a hung adoption.
-	fmt.Printf("  ▶ installers (%s): %d file(s), %s — copying to the VM\n",
-		arch, len(rels), humanBytes(size))
-	if err := t.ScpTreeLive(ctx, local, staging+"/installers"); err != nil {
-		return assetsNone, err
-	}
-	if err := t.WriteRemote(ctx, digest, staging+"/digest", "0644"); err != nil {
-		return assetsNone, err
-	}
-
-	if r, err := t.Run(ctx, installersScript(staging)); err != nil {
-		return assetsNone, err
-	} else if r.Failed() {
-		return assetsNone, fmt.Errorf("installers %s: %s", installersDir, strings.TrimSpace(r.Stderr))
-	}
-	return assetsPushed, nil
+	return state, nil
 }
 
-// installersScript replaces the directory wholesale. Unlike the assets
-// overlay it shares no space with mpd's own files, so there is nothing to
-// merge and a rename on the Mac must not leave the old name behind.
-func installersScript(staging string) string {
-	return "set -eu\n" +
-		"STAGED=" + staging + "\n" +
-		"DIR=" + installersDir + "\n" +
-		"DIGEST=" + installersDigestFile + "\n" +
-		`
-rm -rf "$DIR"
-mkdir -p "$DIR"
-find "$STAGED/installers" -name .DS_Store -delete 2>/dev/null || true
-cp -a "$STAGED/installers/." "$DIR/"
-chmod -R u+rwX,go-w "$DIR"
-
-# Last: the digest is only true once the copy landed.
-if [ -d "$(dirname "$DIGEST")" ]; then
-    cp "$STAGED/digest" "$DIGEST"
-fi
-`
-}
+// plainName is a file name safe to pass to a remote shell unquoted. Dotfiles
+// (.DS_Store) and scp's own .partial leftovers fall outside it.
+var plainName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
 
 // syncInstallers is the best-effort wrapper the lifecycle verbs use. Like
 // the assets overlay, this is the developer's own material: failing to

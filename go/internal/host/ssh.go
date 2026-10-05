@@ -209,6 +209,20 @@ func (t Target) ScpTreeLive(ctx context.Context, localDir, remoteDest string) er
 	return nil
 }
 
+// ScpFileLive copies one local file to remotePath (whose directory must
+// exist) with scp's progress meter on, keeping the mode bits — ScpTreeLive
+// for a single large file.
+func (t Target) ScpFileLive(ctx context.Context, localPath, remotePath string) error {
+	code, err := exec.Run(ctx, exec.Cmd{Name: "scp", Args: append([]string{"-p"}, t.scpArgs(localPath, remotePath)...)})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("scp %s: exit %d (scp's own message is above)", path.Base(remotePath), code)
+	}
+	return nil
+}
+
 // WriteRemote writes content to a file on the VM at remotePath with the
 // given octal mode, as the dev user (via a local temp file + Install).
 func (t Target) WriteRemote(ctx context.Context, content, remotePath, mode string) error {
