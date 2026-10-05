@@ -73,7 +73,7 @@ laptop itself) the file holds just this one key.
 | `generic`   | anywhere             | Adopt an **already-running** Debian VM by IP — a cloud VM, bare metal. No power control (it stays up). The path for anything not on the laptop.                                                                                                                                                                                      |
 | `parallels` | macOS laptop         | Parallels Desktop Pro (`prlctl`): power on/off + find the VM's current DHCP IP.                                                                                                                                                                                                                                                      |
 | `container` | Apple-Silicon laptop | Native Apple `container`: power on/off + read the vmnet lease. `create` runs the [container/](container) base image — build it first.                                                                                                                                                                                                |
-| `utm`       | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~290 MB Debian cloud image on first use, seeds cloud-init, and leaves the VM on DHCP in UTM's shared network — its address is found through UTM's guest-agent query or `mpd-<NNN>.local`. The seed stays attached, inside the VM's bundle; power on/off; `remove --full` deletes the VM. |
+| `utm`       | Apple-Silicon laptop | UTM.app, driven via AppleScript (the App Store build ships no CLI). `create` downloads the ~290 MB Debian cloud image on first use, seeds cloud-init, and leaves the VM on DHCP in UTM's shared network — its address is found through UTM's guest-agent query or `mpd-<NNN>.local`. The seed stays attached, inside the VM's bundle; power on/off; `remove --full` deletes the VM. See [`docs/utm.md`](docs/utm.md). |
 | `libvirt`   | a Linux host         | A KVM VM on the Linux VM mpd-virt runs on, driven by `virsh` against `qemu:///system`. `create` downloads the amd64 Debian cloud qcow2 once, seeds cloud-init, pins the VM to `192.168.122.<NNN>` on the `default` NAT network; power on/off; `remove --full` deletes it. One-time host prep in [`docs/libvirt.md`](docs/libvirt.md). |
 | `proxmox`   | a Proxmox host       | A Debian VM on a Proxmox host: power on/off + state through the Proxmox REST API (token in `~/.mpd-virt/backends/proxmox.json` — see [`docs/proxmox.md`](docs/proxmox.md)). `create` full-clones the `mpd-template` VM (`template_vmid`) and sets the clone's cloud-init hostname, static IP, user and key; `remove --full` destroys the clone and its disks. |
 
@@ -456,6 +456,7 @@ The binary is Go, built from `go/` into `bin/mpd-virt` by `make build`:
 - this file — the detailed reference (verbs, backends, state, layout)
 - `docs/security.md` — trust model, certificate chain, CA backup, known gaps
 - `docs/lan-servers.md` — LAN service hosts (non-VM machines) and their certs
+- `docs/utm.md` — the UTM backend: addressing, serial console, disk
 - `container/README.md` — the Apple `container` base image
 
 There is no `docs/proposals/` and none should be created — design notes go
