@@ -77,9 +77,10 @@ func (utm) Managed() bool                                { return true }
 func (utm) Deletable() bool                              { return true }
 
 // utmNotes reads the Notes field of the VM's UTM settings, "" on any failure.
+// The explicit get is required: UTM cannot resolve notes inside its own path.
 func utmNotes(ctx context.Context, name string) string {
 	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
-	return notes of (configuration of virtual machine named %s)
+	return notes of (get configuration of virtual machine named %s)
 end tell`, asQuote(name)))
 	if err != nil {
 		return ""
