@@ -277,6 +277,8 @@ func utmVMStatus(ctx context.Context, name string) string {
 	return (status of virtual machine named %s) as string
 end tell`, asQuote(name)))
 	if err != nil {
+		// A missing VM fails here with -1700, not -1728, so ask UTM instead
+		// of matching error numbers.
 		if utmVMLookup(ctx, name) == "no" {
 			return "absent"
 		}
