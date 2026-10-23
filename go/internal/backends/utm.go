@@ -254,11 +254,16 @@ end tell`, asQuote(name))
 	return err == nil && out == "yes"
 }
 
-// utmVMStatus returns UTM's bare status word (started/stopped/paused/…), or ""
-// on error.
+// utmVMStatus returns UTM's bare status word (started/stopped/paused/…),
+// "absent" when UTM has no VM by that name (AppleScript error -1728), or ""
+// on any other error.
 func utmVMStatus(ctx context.Context, name string) string {
 	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
-	return (status of virtual machine named %s) as string
+	try
+		return (status of virtual machine named %s) as string
+	on error number -1728
+		return "absent"
+	end try
 end tell`, asQuote(name)))
 	if err != nil {
 		return ""

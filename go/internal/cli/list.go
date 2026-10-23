@@ -204,7 +204,7 @@ func shortNotes(raw string) string {
 // booting or firewalled), and the dial is the true liveness signal.
 func entryState(ctx context.Context, e registry.Entry) string {
 	switch state := powerState(ctx, e.ID, backend.Backend(e.Backend)); state {
-	case "stopped", "suspended", "paused":
+	case "stopped", "suspended", "paused", "absent":
 		return state
 	}
 	return sshState(ctx, e.IP)

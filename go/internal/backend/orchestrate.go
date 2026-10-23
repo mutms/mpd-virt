@@ -144,6 +144,10 @@ func powerOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 		fmt.Fprintf(out, "  ✓ %s is already stopped\n", id.Name())
 		return
 	}
+	if st == StateAbsent {
+		fmt.Fprintf(out, "  ✓ %s no longer exists in its hypervisor\n", id.Name())
+		return
+	}
 	if !gracefulShutdown(ctx, out, id) {
 		backendFor(be).Power(ctx, out, id, "stop", st)
 	}
@@ -168,7 +172,10 @@ var gracefulShutdown = func(ctx context.Context, out io.Writer, id vmid.ID) bool
 // reporting it stopped; for a backend that can't report power state (generic)
 // it's the ssh port going quiet — the same :22 probe locate uses.
 func waitOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
-	off := func() bool { return probeState(ctx, id, be) == StateStopped }
+	off := func() bool {
+		st := probeState(ctx, id, be)
+		return st == StateStopped || st == StateAbsent
+	}
 	if !backendFor(be).Managed() {
 		off = func() bool {
 			t, ok := vmTargetFor(id)
@@ -189,7 +196,7 @@ func waitOff(ctx context.Context, out io.Writer, id vmid.ID, be Backend) {
 			return
 		}
 		if !waited {
-			fmt.Fprintf(out, "  … waiting for %s to power off (Ctrl-C to skip)\n", id.Name())
+			fmt.Fprintf(out, "  … waiting for %s to power off (Ctrl-C aborts)\n", id.Name())
 			waited = true
 		}
 		time.Sleep(2 * time.Second)

@@ -19,6 +19,7 @@ func TestNormalize(t *testing.T) {
 		"Stopped":   StateStopped,
 		"suspended": StateSuspended,
 		"paused":    StatePaused,
+		"absent":    StateAbsent,
 		"starting":  StateUnknown,
 		"stopping":  StateUnknown,
 		"shut off":  StateUnknown, // libvirt's word for off — deliberately unknown
@@ -93,6 +94,25 @@ func TestPowerOffSkipsStoppedVms(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "mpd-160 is already stopped") {
 		t.Errorf("output should say the VM is already stopped, got: %s", out.String())
+	}
+}
+
+// A VM deleted in its hypervisor is neither shut down nor waited for.
+func TestPowerOffSkipsAbsentVms(t *testing.T) {
+	stubState(t, StateAbsent)
+	stubGracefulShutdown(t, true)
+	f := registerFake(t, "utm")
+	id := mustID(t, "180")
+	var out bytes.Buffer
+	powerOff(context.Background(), &out, id, "utm")
+	if f.called {
+		t.Errorf("an absent VM should not be powered off")
+	}
+	if strings.Contains(out.String(), "waiting") {
+		t.Errorf("an absent VM should not be waited for, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "mpd-180 no longer exists") {
+		t.Errorf("output should say the VM no longer exists, got: %s", out.String())
 	}
 }
 

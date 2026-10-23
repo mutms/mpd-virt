@@ -50,6 +50,7 @@ const (
 	StateStopped   State = "stopped"
 	StateSuspended State = "suspended" // memory parked on disk
 	StatePaused    State = "paused"    // frozen but resident
+	StateAbsent    State = "absent"    // the hypervisor has no VM by that name
 )
 
 // Normalize maps backends' status words onto State; anything unsettled (a
@@ -64,6 +65,8 @@ func Normalize(word string) State {
 		return StateSuspended
 	case "paused":
 		return StatePaused
+	case "absent":
+		return StateAbsent
 	}
 	return StateUnknown
 }
