@@ -23,6 +23,23 @@ func TestUTMLANAddrs(t *testing.T) {
 	}
 }
 
+// A VM missing from UTM's list is absent; a prefix of another name is not a match.
+func TestUTMStatusFromList(t *testing.T) {
+	list := "mpd-template\tstopped\nmpd-182\tstarted\nmpd-1800\tpaused\n"
+	for name, want := range map[string]string{
+		"mpd-182":      "started",
+		"mpd-template": "stopped",
+		"mpd-180":      "absent",
+	} {
+		if got := utmStatusFromList(list, name); got != want {
+			t.Errorf("utmStatusFromList(%q) = %q, want %q", name, got, want)
+		}
+	}
+	if got := utmStatusFromList("", "mpd-182"); got != "absent" {
+		t.Errorf("an empty list should make every VM absent, got %q", got)
+	}
+}
+
 func TestAsQuote(t *testing.T) {
 	cases := map[string]string{
 		"mpd-158":      `"mpd-158"`,

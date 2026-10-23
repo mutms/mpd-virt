@@ -254,37 +254,34 @@ end tell`, asQuote(name))
 	return err == nil && out == "yes"
 }
 
-// utmVMLookup asks UTM whether a VM by that name exists: "yes", "no", or ""
-// when UTM could not be asked.
-func utmVMLookup(ctx context.Context, name string) string {
-	script := fmt.Sprintf(`tell application "UTM"
-	if exists virtual machine named %s then
-		return "yes"
-	end if
-	return "no"
-end tell`, asQuote(name))
-	out, err := runOsascript(ctx, script)
+// utmVMStatus returns UTM's bare status word (started/stopped/paused/…),
+// "absent" when UTM lists no VM by that name, or "" when UTM can't be asked.
+func utmVMStatus(ctx context.Context, name string) string {
+	out, err := runOsascript(ctx, utmListScript)
 	if err != nil {
 		return ""
 	}
-	return out
+	return utmStatusFromList(out, name)
 }
 
-// utmVMStatus returns UTM's bare status word (started/stopped/paused/…),
-// "absent" when UTM has no VM by that name, or "" on any other error.
-func utmVMStatus(ctx context.Context, name string) string {
-	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
-	return (status of virtual machine named %s) as string
-end tell`, asQuote(name)))
-	if err != nil {
-		// A missing VM fails here with -1700, not -1728, so ask UTM instead
-		// of matching error numbers.
-		if utmVMLookup(ctx, name) == "no" {
-			return "absent"
-		}
-		return ""
-	}
+// utmListScript prints one "<name><TAB><status>" line per UTM VM.
+const utmListScript = `tell application "UTM"
+	set out to ""
+	repeat with vm in every virtual machine
+		set out to out & (name of vm) & tab & ((status of vm) as string) & linefeed
+	end repeat
 	return out
+end tell`
+
+// utmStatusFromList picks one VM's status out of utmListScript's output.
+func utmStatusFromList(list, name string) string {
+	for _, line := range strings.Split(list, "\n") {
+		vm, status, ok := strings.Cut(line, "\t")
+		if ok && vm == name {
+			return strings.TrimSpace(status)
+		}
+	}
+	return "absent"
 }
 
 // utmQueryIPs asks UTM for the guest's addresses — its `query ip` command,
