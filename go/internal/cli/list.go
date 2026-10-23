@@ -72,7 +72,7 @@ func padNotes(s string) string {
 }
 
 // probe is the per-VM data a live listing gathers: the SSH column and, for a
-// backend that carries a per-VM note (proxmox), the tidied first line of it.
+// backend that carries a per-VM note (proxmox, parallels, utm), the tidied first line of it.
 // Both are best-effort — a failure leaves the field its zero value.
 type probe struct {
 	ssh   string

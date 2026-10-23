@@ -72,9 +72,20 @@ func (utm) Delete(ctx context.Context, out io.Writer, id vmid.ID) error {
 	return utmDelete(ctx, out, id)
 }
 
-func (utm) Notes(context.Context, vmid.ID) string { return "" }
-func (utm) Managed() bool                         { return true }
-func (utm) Deletable() bool                       { return true }
+func (utm) Notes(ctx context.Context, id vmid.ID) string { return utmNotes(ctx, id.Name()) }
+func (utm) Managed() bool                                { return true }
+func (utm) Deletable() bool                              { return true }
+
+// utmNotes reads the Notes field of the VM's UTM settings, "" on any failure.
+func utmNotes(ctx context.Context, name string) string {
+	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
+	return notes of (configuration of virtual machine named %s)
+end tell`, asQuote(name)))
+	if err != nil {
+		return ""
+	}
+	return out
+}
 
 // utmCreate provisions a fresh UTM VM and returns its current IP, ready for
 // adoption. Untestable end-to-end without nested virt (the guest won't boot),
