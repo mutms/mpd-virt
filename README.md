@@ -97,6 +97,8 @@ find it:
 - [docs/security.md](docs/security.md) — trust model, why two CAs, CA backup
 - [docs/lan-servers.md](docs/lan-servers.md) — certificates for non-VM LAN
   machines
+- [docs/utm.md](docs/utm.md), [docs/libvirt.md](docs/libvirt.md),
+  [docs/proxmox.md](docs/proxmox.md) — backend setup
 - [container/README.md](container/README.md) — the base image
 
 

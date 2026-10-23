@@ -1,9 +1,7 @@
 # AI Agent Starting Point
 
 Neutral bootstrap document for AI agents working in this repository — and the
-detailed reference the terse `README.md` points at. `CLAUDE.md` imports this
-file via `@AGENTS.md` so Claude Code, Codex, Aider, and other tools that read
-AGENTS.md natively all see the same instructions.
+detailed reference the terse `README.md` points at.
 
 ## What mpd-virt is
 

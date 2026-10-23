@@ -40,11 +40,10 @@ func WaitCloudInitDone(ctx context.Context, out io.Writer, t host.Target, timeou
 // to macOS built-ins — curl, tar, hdiutil — so nothing needs installing.
 
 // Debian Trixie "generic": the arm64 raw archive (UTM) and the amd64 qcow2
-// (libvirt), both from one dated directory. Bump in lockstep with the sibling
-// mpd's image pin when refreshing — all five constants together: the SHA-512s
-// come from the SHA512SUMS file in that directory, and pinning them means the
-// image that becomes every VM's operating system is exactly the published one,
-// whatever a mirror or CDN served.
+// (libvirt), both from one dated directory. Bump all five constants together:
+// the SHA-512s come from the SHA512SUMS file in that directory, and pinning
+// them means the image that becomes every VM's operating system is exactly the
+// published one, whatever a mirror or CDN served.
 //
 // "generic", NOT "genericcloud". genericcloud is built on Debian's cloud kernel,
 // whose module tree contains no DRM drivers at all, so a VM built from it has no
@@ -52,11 +51,11 @@ func WaitCloudInitDone(ctx context.Context, out io.Writer, t host.Target, timeou
 // greeter — is a black screen with no useful error in any log. generic carries
 // the full kernel and is still cloud-init driven, for roughly 90 MB more download.
 const (
-	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20261001-2618"
-	cloudArchive       = "debian-13-generic-arm64-20261001-2618.tar.xz"
-	cloudArchiveSHA512 = "cb80554bf05aa9eb42d0b99a9a395fefad04edc8435514c5387e32f4da83b7827c34809f6249b365dedacd3f0688580f2957fd13b388639c987058bbe127fa8d"
-	cloudQcow2         = "debian-13-generic-amd64-20261001-2618.qcow2"
-	cloudQcow2SHA512   = "6f0f93335bdef4ccf523c4317cc663ea52ca23b862667785f3d6d186ab4674a937385ccff0c55996b4b2e4c19e440cdf211e2a75ffa2f6548037ab43950c841d"
+	cloudBase          = "https://cloud.debian.org/images/cloud/trixie/20261021-2638"
+	cloudArchive       = "debian-13-generic-arm64-20261021-2638.tar.xz"
+	cloudArchiveSHA512 = "bdfe38702f6ff8100ebbb8a9ffdc1995204da1a0c8e6ed454f995a88540fdff06445d7b5b6588d52ab8a31ddf9050d2fe298c2219d5f3b7176d7657475832d8b"
+	cloudQcow2         = "debian-13-generic-amd64-20261021-2638.qcow2"
+	cloudQcow2SHA512   = "70ef6adc1c16155f8d575731b37d0f976d1c60b6144ac3f57914a3f4b30b202b69584d5d143aa39da0f0fe81df9e5b698909c0d94c7d91c6f6c4bb6581ead5f0"
 )
 
 func cachedArchivePath() string { return filepath.Join(paths.CloudImages(), cloudArchive) }

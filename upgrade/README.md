@@ -18,7 +18,7 @@ inside a VM. They drive the fleet through `mpd-virt` and `ssh`, the same as any
 other management command. Each takes the VM id:
 
 ```
-./upgrade/01-bashrc-include.sh <NNN>
+./upgrade/03-remove-runtime.sh <NNN>
 ```
 
 The numeric prefix (`01-`, `02-`, …) is run order — not to be confused with
