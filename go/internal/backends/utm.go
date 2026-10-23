@@ -254,18 +254,32 @@ end tell`, asQuote(name))
 	return err == nil && out == "yes"
 }
 
+// utmVMLookup asks UTM whether a VM by that name exists: "yes", "no", or ""
+// when UTM could not be asked.
+func utmVMLookup(ctx context.Context, name string) string {
+	script := fmt.Sprintf(`tell application "UTM"
+	if exists virtual machine named %s then
+		return "yes"
+	end if
+	return "no"
+end tell`, asQuote(name))
+	out, err := runOsascript(ctx, script)
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 // utmVMStatus returns UTM's bare status word (started/stopped/paused/…),
-// "absent" when UTM has no VM by that name (AppleScript error -1728), or ""
-// on any other error.
+// "absent" when UTM has no VM by that name, or "" on any other error.
 func utmVMStatus(ctx context.Context, name string) string {
 	out, err := runOsascript(ctx, fmt.Sprintf(`tell application "UTM"
-	try
-		return (status of virtual machine named %s) as string
-	on error number -1728
-		return "absent"
-	end try
+	return (status of virtual machine named %s) as string
 end tell`, asQuote(name)))
 	if err != nil {
+		if utmVMLookup(ctx, name) == "no" {
+			return "absent"
+		}
 		return ""
 	}
 	return out
