@@ -219,6 +219,9 @@ func startCmd() *cobra.Command {
 				verifyReachable(cmd.Context(), id)
 			}
 			checkCATrust(cmd.Context(), id)
+			if wired {
+				verifyTestSite(cmd.Context(), id)
+			}
 			return nil
 		},
 	}

@@ -75,6 +75,7 @@ func updateCmd() *cobra.Command {
 			}
 			if wired {
 				verifyReachable(cmd.Context(), id)
+				verifyTestSite(cmd.Context(), id)
 			}
 			return nil
 		},

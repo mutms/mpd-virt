@@ -132,6 +132,13 @@ System Keychain (transparent, every app) or imported into that dedicated browser
 (no `sudo`). `start`/`adopt` check Keychain trust and print the SOCKS
 instructions whenever mpd-proxy isn't running.
 
+Once the overlay is wired, `start`, `adopt` and `update` fetch two pages of
+the VM's `exttests` project with known content
+(`https://exttests.<NNN>.mpd.test/test.html` by md5, and the start page
+over plain `http://`). That checks DNS, routing, CA trust, the project
+frontdoor and PHP end to end, and names the layer that failed. Failures
+only warn.
+
 ## ssh-config
 
 `adopt`/`start` write one managed block per VM into `~/.ssh/config`:
