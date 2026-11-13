@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 
 // container is the native Apple `container` backend: run the published base
 // image, wait for systemd, seed the dev user + sudo + key over `container
-// exec`, read the leased vmnet IP. Power is `container start/stop`; delete is
+// exec`, read the IP `container` assigned on its vmnet network. Power is `container start/stop`; delete is
 // `container delete` (the inverse of create).
 type container struct{}
 
@@ -27,15 +28,40 @@ func init() { backend.Register(Container, container{}) }
 
 func (container) State(ctx context.Context, id vmid.ID) backend.State {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"inspect", id.Name()}})
-	if err != nil || res.Failed() {
+	if err != nil {
+		return backend.StateUnknown
+	}
+	if res.Failed() {
+		if containerNotFound(res) {
+			return backend.StateAbsent
+		}
 		return backend.StateUnknown
 	}
 	return backend.Normalize(parseContainerState(res.Stdout))
 }
 
+// containerNotFound reports whether a failed `container inspect` failed because
+// no container has that name ("container not found: mpd-141") — as opposed to
+// the CLI or its API server being unavailable, which stays "can't say". The
+// difference lets stop/remove skip the shutdown wait for a container already
+// deleted by hand.
+func containerNotFound(r exec.Result) bool {
+	return strings.Contains(strings.ToLower(r.Stderr+r.Stdout), "container not found")
+}
+
+// containerStopGrace is how long the hard-stop fallback lets the guest's
+// systemd shut down before `container stop` SIGKILLs it. The CLI's own default
+// is 5s — too short for a VM running databases. Only reached when the guest
+// could not be shut down over ssh.
+const containerStopGrace = "30"
+
 func (container) Power(ctx context.Context, out io.Writer, id vmid.ID, verb string, _ backend.State) bool {
 	fmt.Fprintf(out, "  ▶ container %s %s\n", verb, id.Name())
-	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{verb, id.Name()}})
+	args := []string{verb, id.Name()}
+	if verb == "stop" {
+		args = []string{verb, "--time", containerStopGrace, id.Name()}
+	}
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: args})
 	if err != nil {
 		fmt.Fprintf(out, "    … container unavailable here (%v) — assuming the VM is managed elsewhere\n", err)
 		return false
@@ -56,14 +82,26 @@ func (container) Candidates(ctx context.Context, id vmid.ID) []string {
 
 func (container) Create(ctx context.Context, out io.Writer, id vmid.ID, opts backend.CreateOpts) (string, error) {
 	name := id.Name()
+	if err := checkContainerVersion(ctx); err != nil {
+		return "", err
+	}
 	if containerExists(ctx, name) {
 		return "", fmt.Errorf("a container named %s already exists — remove it first:\n    container stop %s && container rm %s", name, name, name)
 	}
 
-	fmt.Fprintf(out, "  ▶ container run --name %s (%s, %s)\n", name, opts.Image, opts.Memory)
-	if r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{
-		"run", "-d", "--name", name, "--cap-add", "ALL", "--memory", opts.Memory, opts.Image,
-	}}); err != nil {
+	// No --cpus leaves the count to `container` itself: 4, or `[container] cpus`
+	// in ~/.config/container/config.toml.
+	// --read-only-path NONE: a container gets /proc/sys read-only by default,
+	// and this is a VM — podman, WireGuard and sysctl.d all write there.
+	args := []string{"run", "-d", "--name", name, "--cap-add", "ALL", "--read-only-path", "NONE", "--memory", opts.Memory}
+	cpus := "default cpus"
+	if opts.CPUs > 0 {
+		args = append(args, "--cpus", strconv.Itoa(opts.CPUs))
+		cpus = fmt.Sprintf("%d cpus", opts.CPUs)
+	}
+	args = append(args, opts.Image)
+	fmt.Fprintf(out, "  ▶ container run --name %s (%s, %s, %s)\n", name, opts.Image, opts.Memory, cpus)
+	if r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: args}); err != nil {
 		return "", err
 	} else if r.Failed() {
 		return "", fmt.Errorf("`container run` for %s failed: %s", name, backend.ShortErr(r))
@@ -113,21 +151,75 @@ func (container) Deletable() bool                       { return true }
 // Containerfile header). Only the Apple `container` VM is supported;
 // --image overrides it, e.g. for a locally built tag.
 func DefaultContainerImage() string {
-	return "ghcr.io/mutms/mpd-virt-container-apple:13.7.0" // darwin/Apple `container`
+	return "ghcr.io/mutms/mpd-virt-container-apple:13.7.1" // darwin/Apple `container`
+}
+
+// containerMinVersion is the oldest `container` release create accepts. One
+// floor instead of per-flag feature checks: the CLI moves fast and ships
+// security fixes, so the answer to an old one is "update", not a fallback.
+var containerMinVersion = [3]int{1, 7, 1}
+
+// checkContainerVersion refuses a `container` CLI older than
+// containerMinVersion. A version that cannot be read or parsed (a local dev
+// build) passes: `container run` is then the judge.
+func checkContainerVersion(ctx context.Context) error {
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"system", "version", "--format", "json"}})
+	if err != nil {
+		return fmt.Errorf("the `container` CLI is not available: %w", err)
+	}
+	have, ok := parseContainerVersion(r.Stdout)
+	if !ok || !versionLess(have, containerMinVersion) {
+		return nil
+	}
+	min := containerMinVersion
+	return fmt.Errorf("Apple `container` %d.%d.%d is too old — mpd-virt needs %d.%d.%d or later.\n    Update it: https://github.com/apple/container/releases",
+		have[0], have[1], have[2], min[0], min[1], min[2])
+}
+
+// parseContainerVersion pulls the CLI's own version out of `container system
+// version --format json` — the entry whose appName is "container" (the API
+// server's entry carries a full sentence, not a version). Anything after the
+// three numbers ("1.7.1-6-g16e8d488") is ignored.
+func parseContainerVersion(stdout string) ([3]int, bool) {
+	var comps []struct {
+		AppName string `json:"appName"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &comps); err != nil {
+		return [3]int{}, false
+	}
+	for _, c := range comps {
+		if c.AppName != "container" {
+			continue
+		}
+		var v [3]int
+		if n, _ := fmt.Sscanf(strings.TrimSpace(c.Version), "%d.%d.%d", &v[0], &v[1], &v[2]); n == 3 {
+			return v, true
+		}
+	}
+	return [3]int{}, false
+}
+
+func versionLess(a, b [3]int) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }
 
 // containerExists reports whether a container of that name is already known
-// (running or stopped), so create refuses to clobber it.
+// (running or stopped), so create refuses to clobber it. `ls -a -q` prints one
+// container ID per line — the name, since create passes it as --name.
 func containerExists(ctx context.Context, name string) bool {
-	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"ls", "-a"}})
+	r, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"ls", "-a", "-q"}})
 	if err != nil || r.Failed() {
 		return false
 	}
 	for _, line := range strings.Split(r.Stdout, "\n") {
-		for _, f := range strings.Fields(line) {
-			if f == name {
-				return true
-			}
+		if strings.TrimSpace(line) == name {
+			return true
 		}
 	}
 	return false
@@ -181,8 +273,9 @@ func seedIdentity(ctx context.Context, name, user, pubkey string) error {
 }
 
 // containerIP reads a native container's current vmnet address from
-// `container inspect` — the authoritative source, since the address changes on
-// every start and the name does not resolve through the OS. Empty on any
+// `container inspect` — the authoritative source, since `container` hands out
+// the next free address on every start (no DHCP, nothing to pin) and the bare
+// name does not resolve through the OS. Empty on any
 // failure (container stopped), so locate falls back.
 func containerIP(ctx context.Context, name string) string {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "container", Args: []string{"inspect", name}})

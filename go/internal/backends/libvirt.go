@@ -89,6 +89,10 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.
 	if memMiB == 0 {
 		return "", fmt.Errorf("cannot parse --memory %q (use e.g. 8g or 8192m)", opts.Memory)
 	}
+	cpus := libvirtDefaultCPUs
+	if opts.CPUs > 0 {
+		cpus = opts.CPUs
+	}
 	diskGiB := backend.ParseSizeGiB(opts.Disk)
 	if diskGiB == 0 {
 		diskGiB = libvirtDefaultDiskGiB
@@ -126,10 +130,10 @@ func libvirtCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.
 	}
 
 	xmlPath := filepath.Join(dir, "domain.xml")
-	if err := os.WriteFile(xmlPath, []byte(libvirtDomainXML(name, id, memMiB, libvirtDefaultCPUs, diskPath, seedPath)), 0o644); err != nil {
+	if err := os.WriteFile(xmlPath, []byte(libvirtDomainXML(name, id, memMiB, cpus, diskPath, seedPath)), 0o644); err != nil {
 		return "", err
 	}
-	fmt.Fprintf(out, "  ▶ virsh define %s (%d MiB, %d cpus)\n", name, memMiB, libvirtDefaultCPUs)
+	fmt.Fprintf(out, "  ▶ virsh define %s (%d MiB, %d cpus)\n", name, memMiB, cpus)
 	if r, err := virsh(ctx, "define", xmlPath); err != nil {
 		return "", err
 	} else if r.Failed() {

@@ -133,7 +133,7 @@ func printSocksHint(id vmid.ID) {
 // startCmd brings an adopted VM into service and points the Mac at it: power
 // it on through its backend, resolve its current IP, wire WireGuard
 // reachability, and verify the overlay. It re-resolves by name so a VM that
-// moved (a restarted container's new lease) is found wherever it is now. This
+// moved (a restarted container's new address) is found wherever it is now. This
 // is the one command to run after a VM (re)starts or moves — there is no
 // separate "sync".
 func startCmd() *cobra.Command {

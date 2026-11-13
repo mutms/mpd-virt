@@ -105,7 +105,7 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 	// does not parse is an error, not a silent fallback.
 	memMiB := backend.ParseSizeMiB(opts.Memory)
 	if memMiB == 0 {
-		return "", fmt.Errorf("cannot parse --memory %q (use e.g. 10g or 10240m)", opts.Memory)
+		return "", fmt.Errorf("cannot parse --memory %q (use e.g. 12g or 12288m)", opts.Memory)
 	}
 	diskGiB := backend.ParseSizeGiB(opts.Disk)
 	if diskGiB == 0 {
@@ -133,8 +133,12 @@ func utmCreate(ctx context.Context, out io.Writer, id vmid.ID, opts backend.Crea
 		return "", err
 	}
 
-	fmt.Fprintf(out, "  ▶ creating UTM VM %s (%d MiB, %d cpus, %d GB)\n", name, memMiB, utmDefaultCPUs, diskGiB)
-	if _, err := runOsascript(ctx, utmCreateScript(name, memMiB, utmDefaultCPUs, diskPath, seedPath)); err != nil {
+	cpus := utmDefaultCPUs
+	if opts.CPUs > 0 {
+		cpus = opts.CPUs
+	}
+	fmt.Fprintf(out, "  ▶ creating UTM VM %s (%d MiB, %d cpus, %d GB)\n", name, memMiB, cpus, diskGiB)
+	if _, err := runOsascript(ctx, utmCreateScript(name, memMiB, cpus, diskPath, seedPath)); err != nil {
 		return "", err
 	}
 	// From here a failure should remove the half-built VM so a retry is not

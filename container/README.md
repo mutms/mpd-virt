@@ -12,9 +12,9 @@ Build with the tag mpd-virt pins (`DefaultContainerImage()` in
 `go/internal/backends/container.go`); the local image shadows the published one:
 
 ```bash
-container build -t ghcr.io/mutms/mpd-virt-container-apple:13.7.0 container
+container build -t ghcr.io/mutms/mpd-virt-container-apple:13.7.1 container
 mpd-virt create 141 --backend=container
-container image rm ghcr.io/mutms/mpd-virt-container-apple:13.7.0   # back to the published image
+container image rm ghcr.io/mutms/mpd-virt-container-apple:13.7.1   # back to the published image
 ```
 
 ## Publishing
@@ -37,5 +37,12 @@ container/github-publish.sh           # builds + pushes
 - Hostname `mpd-<NNN>` comes from the container `--name`.
 - Nothing about the user is baked in: the account, sudo and key are added
   after start via `container exec`, so one image serves every VM.
-- The IP is whatever vmnet leased, read from `container inspect`; a
+- The IP is whatever `container` assigned from its vmnet network — the next
+  free address on every start, no DHCP — read from `container inspect`; a
   guest-side pin strands the VM.
+- `/proc/sys` is read-only in a container by default, and this is a VM:
+  `create` passes `--read-only-path NONE`. (mpd's own
+  `mpd-proc-sys-rw.service` still remounts it at boot for containers created
+  before that.)
+- Needs `container` 1.7.1 or later (`create` refuses an older one — update
+  it) on macOS 26 or later, the only release `container` supports.

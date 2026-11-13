@@ -35,7 +35,7 @@ func (generic) Create(_ context.Context, _ io.Writer, id vmid.ID, _ backend.Crea
 }
 
 func (generic) Delete(context.Context, io.Writer, vmid.ID) error {
-	return fmt.Errorf("--full can delete Apple containers, libvirt and proxmox VMs only; a generic VM is not mpd-virt's to delete")
+	return fmt.Errorf("--full can delete Apple containers, UTM, libvirt and proxmox VMs only; a generic VM is not mpd-virt's to delete")
 }
 
 func (generic) Notes(context.Context, vmid.ID) string { return "" }

@@ -60,8 +60,8 @@ func adoptCmd() *cobra.Command {
 		Use:   "adopt <NNN> [IP]",
 		Short: "Adopt a Debian VM as mpd-<NNN> (IP resolved by name if omitted)",
 		Long: "With no IP, mpd-virt finds the VM by name: it resolves mpd-<NNN>\n" +
-			"through the system resolver (how Parallels and Apple containers\n" +
-			"register a VM, and how a VM running mDNS advertises itself), and\n" +
+			"through its backend (Parallels, `container inspect`, a guest agent)\n" +
+			"and the system resolver (how a VM running mDNS advertises itself), and\n" +
 			"failing that falls back to the last address on file — which covers\n" +
 			"Proxmox and any re-adoption. An explicit <IP> always overrides, and\n" +
 			"is required for the first adoption of a VM that neither resolves nor\n" +

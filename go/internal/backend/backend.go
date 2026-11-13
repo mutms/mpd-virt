@@ -74,7 +74,8 @@ func Normalize(word string) State {
 // CreateOpts carries what Create needs beyond the id and backend.
 type CreateOpts struct {
 	Image  string // base image to run (container backend), e.g. mpd-virt-container-apple
-	Memory string // memory: container "10g", or a VM RAM like "8g" (utm)
+	Memory string // memory: container "12g", or a VM RAM like "8g" (utm)
+	CPUs   int    // virtual CPUs (container, utm, libvirt); 0 = the backend's default
 	Disk   string // VM disk size, e.g. "80g" (utm); ignored by the container backend
 	User   string // dev account to seed
 	PubKey string // the public key to authorize, one line ("ssh-ed25519 …")

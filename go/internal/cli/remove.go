@@ -138,7 +138,7 @@ func removeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "skip the typed confirmation")
-	cmd.Flags().BoolVar(&full, "full", false, "also delete the VM itself (Apple containers, libvirt and proxmox VMs)")
+	cmd.Flags().BoolVar(&full, "full", false, "also delete the VM itself (Apple containers, UTM, libvirt and proxmox VMs)")
 	return cmd
 }
 
